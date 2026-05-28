@@ -123,6 +123,12 @@ async function readJsonResponse(response){
   catch(e){ return {raw:text}; }
 }
 
+async function ghlTry(method,path,body){
+  const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
+  const data=await readJsonResponse(r);
+  return {ok:r.ok,status:r.status,path,data};
+}
+
 function readJson(file,fallback){
   try{ return JSON.parse(fs.readFileSync(file,'utf8')); }
   catch(e){ return fallback; }
@@ -890,16 +896,48 @@ app.get('/api/meetings',async(req,res)=>{
   }
 });
 
+async function fetchGhlOpportunities({status='open',limit=100}={}){
+  const encodedLoc=encodeURIComponent(GHL_LOC);
+  const encodedStatus=encodeURIComponent(status);
+  const attempts=[
+    `/opportunities/search?location_id=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
+    `/opportunities/search?locationId=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
+    `/opportunities/search?location_id=${encodedLoc}&limit=${limit}`,
+    `/opportunities/search?locationId=${encodedLoc}&limit=${limit}`
+  ];
+  const results=[];
+  for(const path of attempts){
+    const r=await ghlTry('GET',path);
+    const opportunities=(r.data&&Array.isArray(r.data.opportunities))?r.data.opportunities:[];
+    results.push({path,status:r.status,ok:r.ok,count:opportunities.length,error:r.ok?'':(r.data?.message||r.data?.error||r.data?.raw||'')});
+    if(r.ok&&opportunities.length){
+      if(!path.includes('status=')){
+        const open=opportunities.filter(o=>String(o.status||'').toLowerCase()==='open');
+        if(open.length) r.data={...r.data,opportunities:open,meta:{...(r.data.meta||{}),total:open.length}};
+      }
+      return {path,data:r.data,attempts:results};
+    }
+  }
+  const firstOk=results.find(r=>r.ok);
+  if(firstOk){
+    const r=await ghlTry('GET',firstOk.path);
+    return {path:firstOk.path,data:r.data||{},attempts:results};
+  }
+  throw new Error('GHL opportunities search failed: '+results.map(r=>`${r.status} ${r.path}`).join(' | '));
+}
+
 app.get('/api/pipeline',async(req,res)=>{
   try{
-    const d=await ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100`);
+    if(!GHL_KEY||!GHL_LOC){
+      return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL_KEY or GHL_LOC'}});
+    }
+    const found=await fetchGhlOpportunities({status:'open',limit:100});
+    const d=found.data||{};
     const opps=d.opportunities||[];
     const now=Date.now();
     const stalled=opps.filter(o=>(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000);
 
-    // Enrich each opp with contact notes
-    const enriched=await Promise.all(opps.map(async o=>{
-      console.log('RAW OPP FIELDS:', JSON.stringify({pipelineStage:o.pipelineStage, stage:o.stage, stageName:o.stageName, pipelineId:o.pipelineId, pipelineStageId:o.pipelineStageId, status:o.status}));
+    const enriched=await mapWithConcurrency(opps,6,async o=>{
       const stage=o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage||'Unknown Stage';
       const contactId=o.contact?.id||o.contactId;
       let notes=[];
@@ -907,12 +945,10 @@ app.get('/api/pipeline',async(req,res)=>{
       let contactPhone='';
       try{
         if(contactId){
-          const [notesData,contactData]=await Promise.all([
-            ghl('GET',`/contacts/${contactId}/notes`),
+          const [notes,contactData]=await Promise.all([
+            fetchContactNotes(contactId,20),
             ghl('GET',`/contacts/${contactId}`)
           ]);
-          console.log('RAW NOTES:', JSON.stringify(notesData).substring(0,300));
-          notes=(notesData.notes||notesData.data||[]).map(n=>n.body||n.note||n.text||n.content||'').filter(Boolean).slice(0,3);
           contactEmail=contactData.contact?.email||'';
           contactPhone=contactData.contact?.phone||'';
         }
@@ -933,10 +969,38 @@ app.get('/api/pipeline',async(req,res)=>{
         daysInStage:Math.floor((now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())/(24*60*60*1000)),
         stalled:(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000
       };
-    }));
+    });
 
-    res.json({pipelineActive:d.meta?.total||opps.length,stalledDeals:stalled.length,opportunities:enriched});
-  }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[]});}
+    res.json({pipelineActive:d.meta?.total||opps.length,stalledDeals:stalled.length,opportunities:enriched,_debug:{configured:true,path:found.path,attempts:found.attempts}});
+  }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{error:e.message}});}
+});
+
+app.get('/api/debug/ghl-pipeline',async(req,res)=>{
+  try{
+    if(!GHL_KEY||!GHL_LOC){
+      return res.json({configured:false,error:'Missing GHL_KEY or GHL_LOC'});
+    }
+    const found=await fetchGhlOpportunities({status:req.query.status||'open',limit:Number(req.query.limit||100)});
+    res.json({
+      configured:true,
+      locationId:GHL_LOC,
+      selectedPath:found.path,
+      attempts:found.attempts,
+      count:(found.data.opportunities||[]).length,
+      sample:(found.data.opportunities||[]).slice(0,3).map(o=>({
+        id:o.id,
+        name:o.name,
+        contactName:o.contact?.name||o.contactName,
+        contactId:o.contact?.id||o.contactId,
+        status:o.status,
+        stage:o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage,
+        pipelineId:o.pipelineId,
+        pipelineStageId:o.pipelineStageId
+      }))
+    });
+  }catch(e){
+    res.json({configured:!!(GHL_KEY&&GHL_LOC),error:e.message});
+  }
 });
 
 app.get('/api/calendar',async(req,res)=>{
@@ -1993,7 +2057,32 @@ async function recentMemoryContext(query){
 
 function noteBody(note){
   if(!note)return '';
-  return String(note.body||note.note||note.text||note.content||note.message||note.description||'').replace(/\s+/g,' ').trim();
+  const text=String(note.body||note.note||note.text||note.content||note.message||note.description||'').replace(/\s+/g,' ').trim();
+  if(!text)return '';
+  const ts=note.dateAdded||note.date_added||note.createdAt||note.created_at||note.updatedAt||note.updated_at;
+  if(!ts)return text;
+  const d=new Date(ts);
+  const stamp=isNaN(d.getTime())?'':d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  return stamp ? `${stamp}: ${text}` : text;
+}
+function normalizeNotesPayload(data){
+  const raw=data?.notes||data?.data||data?.contactNotes||data?.contact_notes||data?.items||[];
+  return Array.isArray(raw)?raw:[];
+}
+async function fetchContactNotes(contactId,limit=25){
+  if(!contactId)return [];
+  const encoded=encodeURIComponent(contactId);
+  const paths=[
+    `/contacts/${encoded}/notes`,
+    `/contacts/${encoded}/notes?locationId=${encodeURIComponent(GHL_LOC)}`,
+    `/contacts/notes?contactId=${encoded}&locationId=${encodeURIComponent(GHL_LOC)}`
+  ];
+  for(const path of paths){
+    const r=await ghlTry('GET',path);
+    const notes=normalizeNotesPayload(r.data).map(noteBody).filter(Boolean);
+    if(r.ok&&notes.length)return notes.slice(0,limit);
+  }
+  return [];
 }
 function contactDisplayName(contact){
   const c=contact?.contact||contact||{};
@@ -2023,14 +2112,13 @@ function collectContactIdsFromDashboard(dashboard){
 }
 async function getContactNotesContextForId(contactId){
   try{
-    const [contactData,notesData]=await Promise.all([
+    const [contactData,notes]=await Promise.all([
       ghl('GET',`/contacts/${contactId}`).catch(()=>({})),
-      ghl('GET',`/contacts/${contactId}/notes`)
+      fetchContactNotes(contactId,30)
     ]);
     const contact=contactData.contact||contactData;
-    const notes=(notesData.notes||notesData.data||notesData.contactNotes||[]).map(noteBody).filter(Boolean).slice(0,5);
     if(!notes.length)return '';
-    return `Contact: ${contactDisplayName(contact)}${contact.email?' | '+contact.email:''}${contact.phone?' | '+contact.phone:''}\nLatest GHL notes:\n- ${notes.join('\n- ')}`;
+    return `Contact: ${contactDisplayName(contact)}${contact.email?' | '+contact.email:''}${contact.phone?' | '+contact.phone:''}\nGHL notes and call transcript history:\n- ${notes.join('\n- ')}`;
   }catch(e){return '';}
 }
 async function ghlContactNotesContext(query,dashboard){
@@ -2852,7 +2940,7 @@ Tool governance: GHL is the execution layer for CRM, contacts, pipelines, appoin
 
 Mark Bierman / GOALL configuration: this VAL supports Mark Bierman, founder of the GOALL program. The primary operating use case is an AI-supported sales call center command center. Prioritize pipeline clarity, caller context, call notes, contact notes, transcript history, next best action, deal risk, salesperson accountability, and concise executive visibility.
 
-Contact notes are critical context. GHL creates notes after phone calls with transcript content. When GHL contact notes are provided in context, treat them as source material for caller history, objections, promises, sales status, risks, follow-up needs, and next actions.
+Contact notes are critical context. GHL creates notes after phone calls with transcript content. When a contact, caller, prospect, or opportunity is discussed, use all available GHL notes provided in context as source material. Always give Mark a clear overview of what the notes reveal: caller history, objections, promises, buying signals, sales status, risks, follow-up needs, and next actions. Do not summarize a contact without checking the provided GHL note history.
 
 GOALL Agency lead intelligence: when the user asks to research a lead, identify a target market, qualify a company, structure prospect data, or prepare CRM fields, evaluate whether the company is a strong business lead for GOALL based on employee count, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Use the GOALL standard: factual, restrained, source-prioritized, no guessing, and structured for GHL.
 

@@ -2992,6 +2992,9 @@ function chat(msg,inp){
     ctx+='Pipeline ownership:\n';
     dashData.opportunities.slice(0,15).forEach(function(o){
       ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.owner?' | GHL owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
+      if(o.notes&&o.notes.length){
+        ctx+='    GHL notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
+      }
     });
   }
   if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
@@ -3798,18 +3801,22 @@ function askComms(){
 function askPipeline(){
   fetch(HOOK_PIPELINE).then(r=>r.json()).then(function(d){
     var opps=d.opportunities||[];
-    if(!opps.length){ask('I have no active pipeline deals right now. Suggest who I should be prospecting.');return;}
+    if(!opps.length){
+      var debug=d._debug&&d._debug.error?'\n\nPipeline connection detail: '+d._debug.error:'';
+      ask("I am not seeing active pipeline deals in Mark's GHL data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
+      return;
+    }
     var detail=opps.map(function(o){
       var line='- '+o.contactName+(o.owner?' | GHL owner: '+o.owner:'')+' | Stage: '+o.stage+(o.value?' | Value: $'+o.value:'')+(o.daysInStage?' | '+o.daysInStage+' days in stage':'')+(o.stalled?' ⚠ STALLED':'');
       if(o.contactEmail) line+='\n  Email: '+o.contactEmail;
       if(o.contactPhone) line+='\n  Phone: '+o.contactPhone;
-      if(o.notes&&o.notes.length) line+='\n  Notes: '+o.notes.join(' / ');
+      if(o.notes&&o.notes.length) line+='\n  GHL notes overview: '+o.notes.join(' / ');
       return line;
     }).join('\n');
     var stalled=opps.filter(function(o){return o.stalled;});
     ask('I am '+valActor+'. Here are the '+opps.length+' active pipeline deal'+(opps.length>1?'s':'')+' right now'+(stalled.length?' ('+stalled.length+' stalled)':'')+':'
       +'\n\n'+detail
-      +'\n\nGroup leads by owner when ownership is available. For each person: what stage are they in, what do the notes tell us, and what is the best next action to move them forward?');
+      +'\n\nGroup leads by owner when ownership is available. For each person: what stage are they in, what do all available GHL notes and call transcripts tell us, and what is the best next action to move them forward?');
   }).catch(function(){ask('Show my active pipeline deals, what stage each person is in, and what action I should take next.');});
 }
 
