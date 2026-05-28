@@ -258,6 +258,7 @@ function statusPayload(){
     time:new Date().toISOString(),
     config:{
       ghlConfigured:!!(GHL_KEY&&GHL_LOC),
+      ghlMissing:['GHL_KEY','GHL_LOC'].filter(k=>!process.env[k]),
       openAiConfigured:!!OPENAI_KEY,
       databaseConfigured:!!process.env.DATABASE_URL,
       googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
