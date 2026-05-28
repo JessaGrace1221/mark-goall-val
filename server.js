@@ -22,6 +22,7 @@ const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
 const GHL_CALENDAR_ID = process.env.GHL_CALENDAR_ID || '';
+const GHL_CALENDAR_IDS = String(process.env.GHL_CALENDAR_IDS || GHL_CALENDAR_ID || '').split(',').map(v=>v.trim()).filter(Boolean);
 const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || process.env.GHL_PIPELINE_ID || '';
 const GHL_OPPORTUNITY_STAGE_ID = process.env.GHL_OPPORTUNITY_STAGE_ID || process.env.GHL_PIPELINE_STAGE_ID || '';
 const GHL_OPPORTUNITY_PIPELINE_NAME = process.env.GHL_OPPORTUNITY_PIPELINE_NAME || 'GOALL';
@@ -554,28 +555,80 @@ app.get('/auth/status', async (req, res) => {
 
 app.get('/api/google/calendar', async (req, res) => {
   try {
-    const token = await getGoogleToken();
-    if(!token) return res.json({calendarEvents:[], needsAuth: true, authUrl: '/auth/google'});
     const now = new Date();
     const weekEnd = new Date(); weekEnd.setDate(weekEnd.getDate()+7);
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now.toISOString()}&timeMax=${weekEnd.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`;
-    const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
-    const d = await r.json();
-    const events = (d.items||[]).map(e=>({
-      id: e.id,
-      summary: e.summary||'(No title)',
-      startTime: e.start?.dateTime||e.start?.date,
-      endTime: e.end?.dateTime||e.end?.date,
-      location: e.location,
-      description: e.description,
-      attendees: (e.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
-      status: e.status
-    }));
+    const events = await fetchGoogleCalendarEvents(now,weekEnd,50);
     res.json({calendarEvents: events});
   } catch(e) {
-    res.json({calendarEvents:[], error: e.message});
+    res.json({calendarEvents:[], needsAuth: /google auth/i.test(e.message), authUrl:'/auth/google', error: e.message});
   }
 });
+
+async function fetchGoogleCalendarEvents(start,end,maxResults=50){
+  const token = await getGoogleToken();
+  if(!token) throw new Error('Google auth required');
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=${maxResults}`;
+  const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message || 'Google calendar error');
+  return (d.items||[]).map(e=>({
+    id: e.id,
+    summary: e.summary||'(No title)',
+    title: e.summary||'(No title)',
+    startTime: e.start?.dateTime||e.start?.date,
+    endTime: e.end?.dateTime||e.end?.date,
+    location: e.location,
+    description: e.description,
+    attendees: (e.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
+    status: e.status,
+    source: 'google',
+    calendarName: 'Mark Google Calendar'
+  }));
+}
+
+async function fetchGhlCalendarEvents(start,end){
+  const calendarMap = new Map();
+  let calendarIds = GHL_CALENDAR_IDS.slice();
+  if(!calendarIds.length){
+    try{
+      const data = await ghl('GET',`/calendars/?locationId=${GHL_LOC}`);
+      const calendars = data.calendars || [];
+      calendars.forEach(c=>{ if(c.id){ calendarMap.set(String(c.id),c.name||c.title||'GHL Calendar'); calendarIds.push(String(c.id)); } });
+    }catch(e){ console.error('GHL calendar list error:',e.message); }
+  }
+  calendarIds = Array.from(new Set(calendarIds));
+  const range = `locationId=${GHL_LOC}&startTime=${start.getTime()}&endTime=${end.getTime()}`;
+  const calls = calendarIds.length
+    ? calendarIds.map(id=>ghl('GET',`/calendars/events?${range}&calendarId=${encodeURIComponent(id)}`).then(d=>({id,data:d})))
+    : [ghl('GET',`/calendars/events?${range}`).then(d=>({id:'all',data:d}))];
+  const results = await Promise.allSettled(calls);
+  const seen = new Set();
+  const events = [];
+  results.forEach(r=>{
+    if(r.status!=='fulfilled') return;
+    const calendarId = r.value.id;
+    const list = r.value.data.events || r.value.data.appointments || [];
+    list.forEach(ev=>{
+      const key = `${ev.id||ev.appointmentId||ev.startTime||ev.start}-${calendarId}`;
+      if(seen.has(key)) return;
+      seen.add(key);
+      events.push({
+        id: ev.id||ev.appointmentId,
+        title: ev.title||ev.name||ev.summary,
+        summary: ev.title||ev.name||ev.summary,
+        contactName: ev.contactName||ev.contact?.name,
+        startTime: ev.startTime||ev.start,
+        endTime: ev.endTime||ev.end,
+        status: ev.appointmentStatus||ev.status,
+        source: 'ghl',
+        owner: inferValOwner(ev),
+        calendarId,
+        calendarName: calendarMap.get(String(calendarId)) || ev.calendarName || 'GHL Calendar'
+      });
+    });
+  });
+  return events;
+}
 
 // ════════════════════════════════════════════════════════
 // GMAIL — replies from GHL contacts only
@@ -808,21 +861,16 @@ app.get('/api/meetings',async(req,res)=>{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setHours(23,59,59,999);
 
-    const ghlRes = await Promise.resolve(
-      ghl('GET',`/calendars/events?locationId=${GHL_LOC}&calendarId=${GHL_CALENDAR_ID}&startTime=${s.getTime()}&endTime=${e.getTime()}`)
-    ).then(value=>({status:'fulfilled',value})).catch(reason=>({status:'rejected',reason}));
+    const [ghlRes,googleRes] = await Promise.allSettled([
+      fetchGhlCalendarEvents(s,e),
+      fetchGoogleCalendarEvents(s,e,25)
+    ]);
 
-    const ghlEvents=(ghlRes.status==='fulfilled'?(ghlRes.value.events||ghlRes.value.appointments||[]):[]).map(ev=>({
-      id:ev.id, title:ev.title||ev.name, contactName:ev.contactName||ev.contact?.name,
-      startTime:ev.startTime||ev.start, endTime:ev.endTime||ev.end,
-      status:ev.appointmentStatus||ev.status, source:'ghl',
-      owner:inferValOwner(ev),
-      calendarId:GHL_CALENDAR_ID
-    }));
-
-    const allEvents=[...ghlEvents];
+    const ghlEvents = ghlRes.status==='fulfilled' ? ghlRes.value : [];
+    const googleEvents = googleRes.status==='fulfilled' ? googleRes.value : [];
+    const allEvents=[...ghlEvents,...googleEvents];
     allEvents.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
-    res.json({meetingsToday:allEvents.length, appointments:allEvents, calendarSource:'ghl', calendarId:GHL_CALENDAR_ID});
+    res.json({meetingsToday:allEvents.length, appointments:allEvents, calendarSource:'ghl+google', calendarId:GHL_CALENDAR_ID, _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:googleRes.status==='rejected'}});
   }catch(e){
     console.error('meetings error:',e);
     res.json({meetingsToday:0,appointments:[]});
@@ -883,39 +931,23 @@ app.get('/api/calendar',async(req,res)=>{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
 
-    async function getGHLEvents(){
-      try{
-        const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&calendarId=${GHL_CALENDAR_ID}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
-        return d.events||d.appointments||[];
-      }catch(err){
-        console.error('getGHLEvents error:',err.message);
-        return [];
-      }
-    }
-
-    const ghlRes = await Promise.resolve(getGHLEvents()).then(value=>({status:'fulfilled',value})).catch(reason=>({status:'rejected',reason}));
+    const [ghlRes,googleRes] = await Promise.allSettled([
+      fetchGhlCalendarEvents(s,e),
+      fetchGoogleCalendarEvents(s,e,75)
+    ]);
 
     const ghlEvents = ghlRes.status==='fulfilled'?ghlRes.value:[];
+    const googleEvents = googleRes.status==='fulfilled'?googleRes.value:[];
 
-    console.log(`Calendar: ${ghlEvents.length} GHL events from ${GHL_CALENDAR_ID}`);
+    console.log(`Calendar: ${ghlEvents.length} GHL events across ${GHL_CALENDAR_IDS.length||'all'} calendars; ${googleEvents.length} Google events`);
 
-    const mapped = [
-      ...ghlEvents.map(ev=>({
-        id:ev.id, summary:ev.title||ev.name||ev.summary,
-        startTime:ev.startTime||ev.start, endTime:ev.endTime||ev.end,
-        contactName:ev.contactName||ev.contact?.name,
-        status:ev.appointmentStatus||ev.status, source:'ghl',
-        owner:inferValOwner(ev),
-        calendarId:GHL_CALENDAR_ID
-      }))
-    ];
-
+    const mapped = [...ghlEvents,...googleEvents];
     mapped.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
     res.json({
       calendarEvents:mapped,
-      calendarSource:'ghl',
+      calendarSource:'ghl+google',
       calendarId:GHL_CALENDAR_ID,
-      _debug:{ghlCount:ghlEvents.length, googleCount:0, googleNeedsAuth:false}
+      _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:googleRes.status==='rejected'}
     });
   }catch(e){
     console.error('calendar error:',e);
@@ -1242,8 +1274,8 @@ app.get('/api/feed',async(req,res)=>{
       (async()=>{
         let events=[];
         try{
-          const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&calendarId=${GHL_CALENDAR_ID}&startTime=${todayStart.getTime()}&endTime=${todayEnd.getTime()}`);
-          events.push(...(d.events||d.appointments||[]));
+          events.push(...await fetchGhlCalendarEvents(todayStart,todayEnd));
+          events.push(...await fetchGoogleCalendarEvents(todayStart,todayEnd,25).catch(()=>[]));
         }catch(e){}
         return events;
       })()
@@ -1320,8 +1352,13 @@ app.get('/api/feed',async(req,res)=>{
 app.get('/api/ghl/calendar/events',async(req,res)=>{
   try{
     const {calendarId,userId,groupId,startTime,endTime}=req.query;
+    if(!calendarId && !GHL_CALENDAR_IDS.length){
+      const s=startTime?new Date(Number(startTime)):new Date();
+      const e=endTime?new Date(Number(endTime)):(()=>{const d=new Date();d.setDate(d.getDate()+7);return d;})();
+      return res.json({events:await fetchGhlCalendarEvents(s,e)});
+    }
     let qs=`locationId=${GHL_LOC}`;
-    qs+=`&calendarId=${calendarId||GHL_CALENDAR_ID}`;
+    qs+=`&calendarId=${calendarId||GHL_CALENDAR_IDS[0]||GHL_CALENDAR_ID}`;
     if(userId)qs+=`&userId=${userId}`;
     if(groupId)qs+=`&groupId=${groupId}`;
     if(startTime)qs+=`&startTime=${startTime}`;
