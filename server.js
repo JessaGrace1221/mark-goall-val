@@ -246,11 +246,24 @@ const valDbReady = initValDb().catch(e=>console.error('VAL DB init error:',e.mes
 
 // ── HEALTH ───────────────────────────────────────────────
 function statusPayload(){
-  return {status:'VAL Proxy OK',app:'mark-goall-val',time:new Date().toISOString()};
+  return {
+    status:'VAL Proxy OK',
+    app:'mark-goall-val',
+    time:new Date().toISOString(),
+    config:{
+      ghlConfigured:!!(GHL_KEY&&GHL_LOC),
+      openAiConfigured:!!OPENAI_KEY,
+      databaseConfigured:!!process.env.DATABASE_URL,
+      googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
+      ghlCalendarMode:GHL_CALENDAR_IDS.length?'selected':'all',
+      ghlCalendarCount:GHL_CALENDAR_IDS.length
+    }
+  };
 }
 
 app.get('/',(req,res)=>res.json(statusPayload()));
 app.get('/health',(req,res)=>res.json(statusPayload()));
+app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 function guideHtml(markdown){
   const slug = text => String(text||'').toLowerCase().replace(/<[^>]+>/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   const referenceMd = String(markdown||'').slice(Math.max(0,String(markdown||'').indexOf('## 1. Core Concept')));
@@ -763,14 +776,14 @@ function firstEmailFrom(...values){
 function isLikelyPersonEmail(email){
   const local = String(email||'').split('@')[0].toLowerCase();
   if(!local) return false;
-  return !/^(info|hello|contact|support|admin|office|team|donate|donations|development|volunteer|volunteers|events|media|press|help|careers|jobs|webmaster|noreply|no-reply)$/.test(local);
+  return !/^(info|hello|contact|support|admin|office|team|media|press|help|careers|jobs|webmaster|noreply|no-reply)$/.test(local);
 }
 
 function classifyEmail(email){
   if(!email) return 'missing';
   const local=String(email).split('@')[0].toLowerCase();
   if(isLikelyPersonEmail(email)) return 'person';
-  if(/^(development|donations|partnerships|outreach|executivedirector|director|advancement)$/.test(local)) return 'high-value role';
+  if(/^(sales|partnerships|bizdev|businessdevelopment|hr|humanresources|benefits|operations|ops|owner|founder|ceo|president|director)$/.test(local)) return 'high-value role';
   return 'general';
 }
 
@@ -1416,14 +1429,14 @@ app.post('/api/val/leads/research',async(req,res)=>{
     const company=String(body.company||body.companyName||body.organization||body.organizationName||'').trim();
     const location=String(body.location||body.cityState||'').trim();
     const contactId=String(body.contactId||'').trim();
-    if(!company) return res.status(400).json({error:'Missing organization name'});
+    if(!company) return res.status(400).json({error:'Missing company name'});
     const user=[
-      'Research this potential charity/foundation partner for GOALL using the GOALL lead intelligence standard.',
-      'Organization name: '+company,
+      'Research this potential business lead for GOALL using the GOALL lead intelligence standard.',
+      'Company name: '+company,
       location?'City/state or market: '+location:'',
       body.website?'Known website: '+body.website:'',
       '',
-      'Follow the required search process. Evaluate fit as a GOALL charity/foundation partner, especially donor/supporter audience and fundraising activation potential. Return only the strict field outputs.'
+      'Follow the required search process. Evaluate fit as a GOALL Agency business lead, especially employee count, hiring/growth signals, operational complexity, and reachable decision-makers. Return only the strict field outputs.'
     ].filter(Boolean).join('\n');
     const content=await callOpenAIWebResearch({system:GOALL_LEADS_SYSTEM_PROMPT,user,maxTokens:2600,temperature:0.1});
     if(!String(content||'').trim()) throw new Error('Lead search returned no content. Check OPENAI_KEY, model web-search support, and the requested organization name.');
@@ -1447,29 +1460,29 @@ app.post('/api/val/leads/discover',async(req,res)=>{
   try{
     const body=req.body||{};
     const market=String(body.market||body.location||body.cityState||'').trim()||'United States';
-    const criteria=String(body.criteria||body.query||'nonprofits with at least 300 donors or a large supporter list').trim();
+    const criteria=String(body.criteria||body.query||'businesses with at least 300 employees or clear operational complexity').trim();
     const limit=leadLimitValue(body.limit);
     const system=[
       GOALL_LEADS_SYSTEM_PROMPT,
-      'Discovery mode: find multiple potential GOALL charity/foundation/nonprofit partners, not one named organization.',
-      'Prioritize organizations with visible evidence of a large reachable audience: donor base, member list, alumni network, volunteer base, event attendance, chapters, newsletter/community, strong social audience, or recurring fundraising campaigns.',
-      'A donor count is rarely public. If exact donor count is not verified, do not invent it. Use "300+ donor/supporter likelihood: strong / moderate / weak / unclear" based only on public signals.',
+      'Discovery mode: find multiple potential GOALL Agency business leads, not one named company.',
+      'Prioritize companies with visible evidence of employee size, hiring, expansion, multiple locations, operational complexity, or active sales/service teams.',
+      'If exact employee count is not verified, do not invent it. Use "300+ employee likelihood: strong / moderate / weak / unclear" based only on public signals.',
       'Return a concise numbered list. No preamble.'
     ].join('\n\n');
     const user=[
-      `Find ${limit} nonprofit, charity, or foundation prospects for GOALL.`,
+      `Find ${limit} business prospects for GOALL.`,
       `Market: ${market}`,
       `Criteria: ${criteria}`,
       '',
       'For each prospect return:',
       'Name:',
       'Website:',
-      'Cause:',
+      'Industry:',
       'Location:',
-      '300+ donor/supporter likelihood:',
+      '300+ employee likelihood:',
       'Evidence signals:',
       'Likely decision-maker title:',
-      'Why this fits GOALL:',
+      'Why this fits GOALL Agency:',
       'Next outreach angle:',
       'Confidence:'
     ].join('\n');
@@ -1508,8 +1521,8 @@ app.post('/api/val/leads/import-approved',async(req,res)=>{
     const discovered={
       market:String(body.market||'United States'),
       criteria:String(body.criteria||'Approved GOALL lead import'),
-      organizationType:String(body.organizationType||'nonprofits'),
-      donorMinimum:donorValue(body.donorMinimum)||300,
+      organizationType:String(body.organizationType||'businesses'),
+      employeeMinimum:donorValue(body.employeeMinimum)||300,
       tag:normalizeLeadTag(body.tag||body.organizationType),
       scraped:body.scraped||body.outscraper||{},
       leads:Array.isArray(body.leads)?body.leads:[]
@@ -1530,8 +1543,8 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
       ok:true,
       market:String(body.market||'United States'),
       criteria:String(body.criteria||'RocketReach enrichment'),
-      organizationType:String(body.organizationType||'nonprofits'),
-      donorMinimum:donorValue(body.donorMinimum)||300,
+      organizationType:String(body.organizationType||'businesses'),
+      employeeMinimum:donorValue(body.employeeMinimum)||300,
       tag:normalizeLeadTag(body.tag||body.organizationType),
       scraped:body.scraped||body.outscraper||{},
       rocketReachMode:'review',
@@ -1554,12 +1567,12 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
     if(!leads.length) return res.status(404).json({error:'No current GHL opportunities found to enrich.'});
     const system=[
       GOALL_LEADS_SYSTEM_PROMPT,
-      'Current-lead enrichment mode: verify existing GHL lead data for nonprofit partner outreach.',
+      'Current-lead enrichment mode: verify existing GHL lead data for business lead outreach.',
       'For each existing lead, verify or flag the best public phone, email/contact route, and actual likely decision-maker. Do not invent direct emails or phone numbers. If only a general contact channel is public, say that.',
       'Return a compact audit, grouped by lead. No preamble.'
     ].join('\n\n');
     const user=[
-      'Audit these current GOALL nonprofit leads.',
+      'Audit these current GOALL business leads.',
       'Goal: check whether phone number, email/contact route, and actual decision-maker look correct.',
       'Exclude internal test contacts when obvious. Flag unclear or weak data.',
       '',
@@ -2149,28 +2162,27 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
 }
 
 const GOALL_LEADS_SYSTEM_PROMPT = `
-You are Leads MCP GOALL, a focused lead generation and growth strategy specialist for GOALL.
+You are Leads MCP GOALL, a focused lead generation and growth strategy specialist for the GOALL Agency.
 
-GOALL is a platform where everyday purchases generate donations for causes people care about. The model is:
-- Enroll charities and foundations as partners
-- Market GOALL to each charity's donor list and supporter base
-- Offer products priced competitively with major retailers
-- Generate a 10% donation to the selected charity on purchases
-- Make giving happen through ordinary shopping behavior, without asking donors to spend more or write another check
+Help users identify target markets, define ideal customer profiles, build prospecting systems, create outreach strategies, qualify leads, improve conversion rates, and develop repeatable pipeline growth processes.
+
+Provide practical, results-oriented support for outbound campaigns, inbound lead capture, messaging, follow-up sequences, CRM organization, lead scoring, sales funnel optimization, and performance tracking.
+
+When advising users, prioritize clarity, efficiency, and measurable outcomes. Ask smart discovery questions when needed, recommend actionable next steps, and tailor strategies to the user's industry, offer, audience, and growth stage.
 
 Primary lead target:
-- Charities
-- Foundations
-- Nonprofit organizations
-- Cause-based organizations with real supporter, donor, member, volunteer, alumni, or community audiences
-
-Do not treat ordinary employers, vendors, retailers, local service businesses, or general companies as the primary target unless the user explicitly asks for that. GOALL should evaluate whether the organization is a good GOALL charity/foundation partner.
+- Employers
+- Businesses
+- Companies with employee bases
+- Organizations with operational complexity
+- Businesses showing hiring, growth, expansion, or activity signals
+- Decision-makers such as founders, owners, CEOs, operations leaders, HR leaders, benefits leaders, sales leaders, and partnership leaders
 
 CORE ROLE
-You are a nonprofit partner intelligence scraper and data structuring agent for GOALL.
+You are a lead intelligence scraper and data structuring agent for GOALL.
 
 Your job:
-- Search for charity, foundation, and nonprofit organization data across public sources
+- Search for company data across public sources
 - Extract only relevant, verifiable information
 - Normalize the data into structured CRM fields
 - Reject or flag weak, unclear, or low-confidence data
@@ -2178,68 +2190,69 @@ Your job:
 You are not allowed to guess, fill gaps with assumptions, add commentary or opinions, or output messy/unstructured text.
 If data cannot be verified, leave the field empty or mark it as "unclear".
 
+PRIMARY OBJECTIVE
+For each lead, collect and structure:
+1. Company identity and operational context
+2. Employee size indicators
+3. Signals of hiring, growth, or activity
+4. Public presence: website, LinkedIn, Google
+5. Indicators of operational complexity
+6. Best available decision-maker contact path
+
 SEARCH PROCESS - follow in order:
-1. Search organization name + city/state
+1. Search company name + city/state
 2. Identify official website
-3. Extract core nonprofit/charity/foundation data
-4. Search LinkedIn organization page when available
-5. Search decision-makers: executive director, CEO, founder, development director, advancement director, fundraising director, partnerships leader, donor relations leader, marketing/communications leader
-6. Check Google Business / Google Knowledge Panel when available
-7. Scan for news, campaigns, fundraising events, grants, expansions, annual reports, donation pages, volunteer programs, and supporter-base signals
+3. Extract core company data
+4. Search LinkedIn company page
+5. Search LinkedIn people / likely decision-makers
+6. Check Google Business
+7. Scan for news, hiring, activity, expansion, funding, operations, and growth signals
 8. Compile structured outputs
 
 Source priority:
 1. Official website
-2. Official donation, annual report, impact report, team, leadership, and contact pages
-3. LinkedIn organization page
-4. Google Business / Knowledge Panel
-5. News / press mentions
-6. Charity directories such as GuideStar, Charity Navigator, ProPublica Nonprofit Explorer, state nonprofit registries, and secondary directories
+2. LinkedIn company page
+3. Google Business listing
+4. News / press mentions
+5. Secondary directories
 
-Partner-fit signal logic:
-Prioritize verifiable signals that show the organization can activate shoppers or supporters:
-- Donor base or supporter community
-- Email list, membership base, alumni network, volunteer base, parent/community network, event attendance, or social audience
-- Active donation page
-- Fundraising campaigns or events
-- Corporate sponsorships, cause marketing, partner pages, or affiliate-style fundraising
-- Development, advancement, fundraising, partnerships, or marketing staff
-- Active social channels
-- Recency of activity
+Accuracy rules:
+- Only include information that is directly observed, clearly stated, or strongly supported by multiple signals.
+- Never invent employee counts, services, locations, contact info, decision-makers, or company descriptions.
+- If exact employee count is unavailable, estimate only from supported signals such as LinkedIn employee range, job postings, team pages, or public staff count.
+- Otherwise write "unclear".
 
-Size logic:
-Do not overfocus on employee count. For nonprofits, staff size may be unclear. Use exact staff/team size only if visible. Otherwise use "unclear". Stronger indicators are audience, donor activity, fundraising activity, event activity, chapter/network reach, and public engagement.
+Operational complexity signals:
+Look for signs such as multiple locations, field teams, dispatch, service crews, employee benefits needs, hiring activity, sales teams, customer support teams, logistics, franchises, branch locations, certifications, recruiting pages, or high-volume customer operations.
 
-Weak-fit signals:
-If the organization has no working website, no donation/supporter activity, no visible leadership/contact info, no signs of recent activity, unclear nonprofit status, or appears inactive/generic/fake, still collect data but reflect weak signals.
+Disqualifying or weak signals:
+If you detect solo operator, no real business presence, broken/missing website, no employee signals, generic/fake listing, or weak public footprint, still collect data but clearly reflect weak signals.
 
 OUTPUT FORMAT STRICT:
 Return exactly these field labels and nothing else:
 
 company_payload:
-Organization Name:
-Organization Type:
-Cause / Mission Area:
-Primary Program or Focus:
-Partner Fit (strong / moderate / weak / unclear):
+Company Name:
+Industry:
+Primary Service:
+Business Model (if clear):
 Location(s):
 Website Status (active / weak / missing):
 
 company_google_raw:
-Google Business / Knowledge Panel summary:
+Google Business summary:
 Reviews count:
 Rating:
 Description snippet:
 If none: No Google data found
 
 company_signals_raw:
-- Donation page:
-- Donor/supporter audience indicators:
-- Fundraising activity:
-- Events or campaigns:
-- Development/partnership staff:
-- Social/community activity:
+- Hiring activity:
+- Careers page:
+- Team size indicators:
+- Multiple locations:
 - Operational indicators:
+- Growth/activity signals:
 - Weak-fit concerns:
 
 company_news_raw:
@@ -2249,7 +2262,7 @@ linkedin_personal_url:
 [most likely decision-maker URL or blank]
 
 linkedin_company_url:
-[organization LinkedIn URL or fallback text]
+[company LinkedIn URL or fallback text]
 `.trim();
 
 function parseLeadFieldOutputs(text){
@@ -2301,15 +2314,13 @@ async function resolveLeadFieldIds(){
 
 function normalizeLeadTag(value){
   const raw=String(value||'').toLowerCase();
-  if(/\banimal|shelter|rescue|pet|humane\b/.test(raw)) return 'animal';
-  if(/\bchurch|faith|ministry|religious|synagogue|mosque\b/.test(raw)) return 'church';
-  if(/\bevent|festival|gala|race|marathon|walk|auction\b/.test(raw)) return 'events';
-  if(/\bfood|hunger|pantry|meal|feeding\b/.test(raw)) return 'food bank';
-  if(/\bfoundation|grant|fund\b/.test(raw)) return 'foundations';
-  if(/\bschool|education|pta|academy|university|college\b/.test(raw)) return 'schools';
-  if(/\byouth|children|kids|student|teen|boys|girls\b/.test(raw)) return 'youth';
-  if(/\bveteran|military|service member|armed forces\b/.test(raw)) return 'veterans';
-  return raw.trim() || 'foundations';
+  if(/\broof|hvac|plumb|electric|contractor|home service\b/.test(raw)) return 'home services';
+  if(/\bdental|clinic|medical|health|wellness\b/.test(raw)) return 'healthcare';
+  if(/\bmanufactur|industrial|warehouse|logistics\b/.test(raw)) return 'manufacturing';
+  if(/\brestaurant|hotel|hospitality|catering\b/.test(raw)) return 'hospitality';
+  if(/\bfranchise|multi.location|multi location|chain\b/.test(raw)) return 'multi-location';
+  if(/\bagenc|marketing|consulting|professional service\b/.test(raw)) return 'professional services';
+  return raw.trim() || 'business';
 }
 
 function leadNameFromOpportunity(o={}){
@@ -2384,28 +2395,28 @@ function leadCustomFieldsFromProspect(p){
     `Title: ${p.decisionMakerTitle||'unclear'}`,
     `Email source: ${p.emailSource||'unclear'} (${p.emailQuality||classifyEmail(p.email)})`,
     `RocketReach: ${p.rocketReachStatus||p.rocketReach?.error||p.rocketReach?.data?.rawPreview||'not available'}`,
-    `Donor estimate basis: ${p.donorEstimateBasis||'unclear'}`,
+    `Employee estimate basis: ${p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
     `Next outreach angle: ${p.nextOutreachAngle||'unclear'}`,
     `Confidence: ${p.confidence||'unclear'}`
   ].join('\n');
   return {
     company_payload:[
-      `Organization: ${name}`,
-      `Type: ${p.organizationType||'nonprofit / charity / foundation'}`,
-      `Cause: ${p.cause||p.missionArea||'unclear'}`,
+      `Company: ${name}`,
+      `Type: ${p.organizationType||p.industry||'business'}`,
+      `Industry: ${p.cause||p.industry||p.primaryService||'unclear'}`,
       `Fit: ${p.partnerFit||p.likelihood||'unclear'}`,
-      `Donors/supporters: ${donorCount||'unclear'}`,
+      `Employees: ${donorCount||'unclear'}`,
       `Location: ${p.location||'unclear'}`,
       `Website: ${p.website?'active':'unclear'}`
     ].join(' | '),
     google_raw:p.googleRaw||p.googleData||'No Google data found',
     company_signals:[
-      `Donation page: ${p.donationPage||'unclear'}`,
-      `Donor/supporter audience indicators: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
-      `Fundraising activity: ${p.fundraisingActivity||'unclear'}`,
-      `Events or campaigns: ${p.eventsOrCampaigns||'unclear'}`,
-      `Development/partnership staff: ${p.decisionMakerTitle||p.developmentStaff||'unclear'}`,
-      `Social/community activity: ${p.socialActivity||'unclear'}`,
+      `Hiring activity: ${p.hiringActivity||p.careersPage||p.donationPage||'unclear'}`,
+      `Employee size indicators: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
+      `Growth activity: ${p.growthActivity||p.fundraisingActivity||'unclear'}`,
+      `Operational activity: ${p.operationalActivity||p.eventsOrCampaigns||'unclear'}`,
+      `Decision-maker signals: ${p.decisionMakerTitle||p.developmentStaff||'unclear'}`,
+      `Public activity: ${p.socialActivity||'unclear'}`,
       `Operational indicators: ${p.operationalIndicators||'unclear'}`,
       `Weak-fit concerns: ${p.weakFitConcerns||'unclear'}`
     ].join('\n'),
@@ -2440,10 +2451,10 @@ async function getOpportunityTarget(){
   return {pipelineId:pipeline.id,stageId:stage.id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
 }
 
-function normalizeOutscraperPlace(row,organizationType,donorMinimum,market){
+function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
   const name=row.name||row.title||row.business_name||row.organizationName||'';
   const city=[row.city,row.state].filter(Boolean).join(', ') || row.full_address || row.address || market || '';
-  const donorSignals=[
+  const employeeSignals=[
     row.description,
     row.category,
     row.subtypes,
@@ -2464,9 +2475,10 @@ function normalizeOutscraperPlace(row,organizationType,donorMinimum,market){
     location:city,
     organizationType,
     partnerFit:'unclear',
-    approximateDonors:donorValue(row.approximateDonors)||donorMinimum||0,
-    donorEstimateBasis:donorSignals.join('; ') || 'Outscraper public listing signals',
-    evidenceSignals:donorSignals,
+    approximateDonors:donorValue(row.approximateDonors)||employeeMinimum||0,
+    donorEstimateBasis:employeeSignals.join('; ') || 'Outscraper public listing signals',
+    employeeEstimateBasis:employeeSignals.join('; ') || 'Outscraper public listing signals',
+    evidenceSignals:employeeSignals,
     decisionMakerName:'',
     decisionMakerTitle:'',
     email:firstEmailFrom(row.email,row.emails,row.email_1,row.email_2,row.email_3,row.contacts,row.owner,row.about,row.description,row),
@@ -2475,6 +2487,9 @@ function normalizeOutscraperPlace(row,organizationType,donorMinimum,market){
     linkedinCompanyUrl:row.linkedin||row.linkedin_url||'',
     donationPage:'',
     fundraisingActivity:'',
+    hiringActivity:'',
+    careersPage:'',
+    growthActivity:'',
     eventsOrCampaigns:'',
     socialActivity:row.facebook||row.instagram||row.twitter ? [row.facebook,row.instagram,row.twitter].filter(Boolean).join('; ') : '',
     operationalIndicators:row.category||row.type||'',
@@ -2483,22 +2498,22 @@ function normalizeOutscraperPlace(row,organizationType,donorMinimum,market){
     newsRaw:'No recent news found',
     hoursOfOperation:row.working_hours||row.hours||'',
     timeZone:row.timezone||'',
-    nextOutreachAngle:'Invite them to explore GOALL as a supporter-funded fundraising channel.',
+    nextOutreachAngle:'Invite them to explore whether GOALL Agency can support their growth, outreach, or pipeline goals.',
     confidence:name?'moderate':'weak'
   };
 }
 
-async function discoverOutscraperProspects({organizationType,donorMinimum,market,limit}){
+async function discoverOutscraperProspects({organizationType,employeeMinimum,market,limit}){
   if(!OUTSCRAPER_API_KEY) return {configured:false, leads:[], error:'OUTSCRAPER_API_KEY is not set'};
   const url=new URL(OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL);
-  url.searchParams.set('query',`${organizationType} nonprofits in ${market}`);
+  url.searchParams.set('query',`${organizationType} businesses in ${market}`);
   url.searchParams.set('limit',String(limit||12));
   url.searchParams.set('async','false');
   const response=await fetch(url.toString(),{headers:{'X-API-KEY':OUTSCRAPER_API_KEY}});
   const data=await readJsonResponse(response);
   if(!response.ok) return {configured:true, leads:[], error:data.errorMessage||data.message||`Outscraper ${response.status}`};
   const rows=(Array.isArray(data.data)?data.data:[data]).flat(4).filter(v=>v&&typeof v==='object');
-  const leads=rows.map(r=>normalizeOutscraperPlace(r,organizationType,donorMinimum,market))
+  const leads=rows.map(r=>normalizeOutscraperPlace(r,organizationType,employeeMinimum,market))
     .filter(p=>p.organizationName)
     .slice(0,limit||12);
   return {configured:true, leads, rawCount:rows.length};
@@ -2534,12 +2549,12 @@ function candidateContactUrls(website){
       new URL('/team',origin).href,
       new URL('/staff',origin).href,
       new URL('/leadership',origin).href,
-      new URL('/board',origin).href,
+      new URL('/careers',origin).href,
+      new URL('/jobs',origin).href,
+      new URL('/services',origin).href,
+      new URL('/locations',origin).href,
       new URL('/people',origin).href,
-      new URL('/who-we-are',origin).href,
-      new URL('/donate',origin).href,
-      new URL('/get-involved',origin).href,
-      new URL('/support-us',origin).href
+      new URL('/who-we-are',origin).href
     ])];
   }catch(_){
     return [];
@@ -2555,7 +2570,7 @@ function bestEmail(candidates){
 
 function extractLeadership(text){
   const clean=String(text||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
-  const titles='Executive Director|Chief Executive Officer|CEO|Founder|President|Development Director|Director of Development|Partnerships Director|Advancement Director|Board Chair';
+  const titles='Chief Executive Officer|CEO|Founder|Owner|President|Operations Manager|Director of Operations|Chief Operating Officer|COO|HR Director|Human Resources Director|Benefits Manager|Sales Director|VP Sales|Partnerships Director|General Manager';
   const titleFirst=new RegExp(`\\b(${titles})\\b\\s*[:\\-–]?\\s*([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})`,'i');
   const nameFirst=new RegExp(`\\b([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})\\s*[,\\-–|]+\\s*(${titles})\\b`,'i');
   let m=clean.match(titleFirst);
@@ -2602,13 +2617,13 @@ async function mapWithConcurrency(items,limit,fn){
 
 async function discoverHbsLeadProspects(body={}){
   const market=String(body.market||body.location||body.cityState||'').trim()||'United States';
-  const organizationType=String(body.organizationType||body.type||'nonprofits').trim();
-  const donorMinimum=donorValue(body.donorMinimum||body.minimumDonors||body.donors)||300;
+  const organizationType=String(body.organizationType||body.type||'businesses').trim();
+  const employeeMinimum=donorValue(body.employeeMinimum||body.minimumEmployees||body.employees)||300;
   const tag=normalizeLeadTag(body.tag||organizationType);
-  const criteria=String(body.criteria||body.query||`${organizationType} with at least ${donorMinimum} donors or supporters`).trim();
+  const criteria=String(body.criteria||body.query||`${organizationType} with at least ${employeeMinimum} employees`).trim();
   const limit=leadLimitValue(body.limit);
   const rocketReachMode=String(body.rocketReachMode||body.rocketreachMode||'').trim() || (limit<=25?'auto':'defer');
-  const scraped=await discoverOutscraperProspects({organizationType,donorMinimum,market,limit}).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+  const scraped=await discoverOutscraperProspects({organizationType,employeeMinimum,market,limit}).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
   if(!scraped.configured) throw new Error(scraped.error || 'Outscraper is not configured');
   let leads=scraped.leads||[];
   if(leads.length){
@@ -2618,40 +2633,40 @@ async function discoverHbsLeadProspects(body={}){
   if(!leads.length){
     const system=[
       GOALL_LEADS_SYSTEM_PROMPT,
-      'Discovery mode: find potential GOALL nonprofit partners and return machine-readable JSON only.',
-      'Find organizations with visible evidence of a large reachable audience. A donor count is rarely public, so approximate donors/supporters only from public signals such as annual report scale, event attendance, membership, chapters, social audience, volunteer base, donor language, or campaign size.',
-      'Do not invent exact private donor lists. approximateDonors must be a conservative integer estimate. If the evidence is weak, use 300 only when there is still clear evidence of a meaningful supporter base.',
+      'Discovery mode: find potential GOALL business leads and return machine-readable JSON only.',
+      'Find companies with visible evidence of employee size, hiring, growth, operational complexity, and reachable decision-makers.',
+      'Do not invent exact employee counts. approximateDonors is being used as the legacy numeric field for approximate employees and must be a conservative integer estimate from public signals.',
       'Return ONLY valid JSON. No markdown. No commentary.'
     ].join('\n\n');
     const user=[
-      `Find ${limit} nonprofit, charity, or foundation prospects for GOALL.`,
+      `Find ${limit} business prospects for GOALL.`,
       `Market: ${market}`,
       `Organization type: ${organizationType}`,
-      `Minimum donors/supporters: ${donorMinimum}`,
+      `Minimum employees: ${employeeMinimum}`,
       `Criteria: ${criteria}`,
       '',
       'Return JSON with this exact shape:',
-      '{"leads":[{"organizationName":"","website":"","cause":"","location":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","donationPage":"","fundraisingActivity":"","eventsOrCampaigns":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
+      '{"leads":[{"organizationName":"","website":"","industry":"","primaryService":"","location":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
     ].join('\n');
     raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
     leads=extractJsonArray(raw).slice(0,limit);
-    leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||donorMinimum},{rocketReachMode}));
+    leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||employeeMinimum},{rocketReachMode}));
   }
   if(!leads.length) throw new Error('No leads were found. Try a more specific organization type or market.');
-  return {ok:true,market,criteria,organizationType,donorMinimum,tag,leads,scraped,raw,rocketReachMode};
+  return {ok:true,market,criteria,organizationType,employeeMinimum,tag,leads,scraped,raw,rocketReachMode};
 }
 
 function leadPreviewText(discovered){
   const leads=discovered.leads||[];
   return [
     `Found and enriched ${leads.length} organization${leads.length===1?'':'s'}.`,
-    `Search: ${discovered.organizationType} | ${discovered.donorMinimum}+ donors/supporters | ${discovered.market}`,
+    `Search: ${discovered.organizationType} | ${discovered.employeeMinimum}+ employees | ${discovered.market}`,
     `Recommended tag: ${discovered.tag}`,
     discovered.rocketReachMode==='defer'?'RocketReach: deferred for this broad scrape. Use it after review on the leads that need person-level verification.':'',
     discovered.scraped?.error?`Outscraper note: ${discovered.scraped.error}`:'',
     '',
     leads.map((p,i)=>{
-      const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount)||discovered.donorMinimum;
+      const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount)||discovered.employeeMinimum;
       return [
         `${i+1}. ${p.organizationName||p.name||'Unnamed organization'}`,
         `   Location: ${p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear'}`,
@@ -2659,7 +2674,7 @@ function leadPreviewText(discovered){
         `   Phone: ${p.phone||'unclear'}`,
         `   Email: ${p.email||'missing - will not import'}${p.emailSource?' (from '+p.emailSource+')':''}${p.emailQuality?' ['+p.emailQuality+']':''}`,
         `   Decision maker: ${p.decisionMakerName||'unclear'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`,
-        `   Donor/supporter estimate: ${donorCount||'unclear'}`,
+        `   Employee estimate: ${donorCount||'unclear'}`,
         `   Evidence: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.slice(0,4).join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
         `   RocketReach: ${p.rocketReachStatus||'not available'}`
       ].join('\n');
@@ -2670,7 +2685,7 @@ function leadPreviewText(discovered){
 }
 
 async function importApprovedHbsLeads(discovered){
-  const {market,criteria,organizationType,donorMinimum,tag,scraped}=discovered;
+  const {market,criteria,organizationType,employeeMinimum,tag,scraped}=discovered;
   const leads=Array.isArray(discovered.leads)?discovered.leads:[];
   if(!leads.length) throw new Error('No importable leads returned. Try a more specific market or criteria.');
   const created=[];
@@ -2682,14 +2697,14 @@ async function importApprovedHbsLeads(discovered){
       continue;
     }
     try{
-      created.push(await createGhlLeadFromProspect({...lead,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||donorMinimum},{tag}));
+      created.push(await createGhlLeadFromProspect({...lead,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||employeeMinimum},{tag}));
     }catch(e){
       failed.push({name:lead.organizationName||lead.name||'Unknown lead',error:e.message});
     }
   }
   const summary=[
-    `Imported ${created.length} nonprofit lead${created.length===1?'':'s'} to GHL.`,
-    `Search: ${organizationType} | ${donorMinimum}+ donors/supporters | ${market}`,
+    `Imported ${created.length} business lead${created.length===1?'':'s'} to GHL.`,
+    `Search: ${organizationType} | ${employeeMinimum}+ employees | ${market}`,
     `Tag applied: ${tag}`,
     scraped?.error?`Outscraper note: ${scraped.error}`:'',
     skipped.length?`Skipped: ${skipped.length} missing email address${skipped.length===1?'':'es'}`:'',
@@ -2704,7 +2719,7 @@ async function importApprovedHbsLeads(discovered){
     summary:`Imported ${created.length} LimitLess Leads prospects for ${organizationType} in ${market}`,
     rawText:summary+'\n\nRaw leads:\n'+JSON.stringify(leads,null,2),
     importance:3,
-    metadata:{market,criteria,organizationType,donorMinimum,tag,outscraper:scraped,created,failed,skipped}
+    metadata:{market,criteria,organizationType,employeeMinimum,tag,outscraper:scraped,created,failed,skipped}
   }).catch(()=>{});
   return {ok:true,created,failed,skipped,content:summary};
 }
@@ -2754,7 +2769,7 @@ async function enrichProspect(p,opts={}){
 
 async function createGhlLeadFromProspect(p,opts={}){
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
-  const name=p.organizationName||p.name||'Unnamed nonprofit lead';
+  const name=p.organizationName||p.name||'Unnamed business lead';
   const tag=normalizeLeadTag(opts.tag||p.tag||p.organizationType||p.cause);
   const country=normalizeCountryCode(p.country);
   const contactPayload={
@@ -2839,7 +2854,7 @@ Mark Bierman / GOALL configuration: this VAL supports Mark Bierman, founder of t
 
 Contact notes are critical context. GHL creates notes after phone calls with transcript content. When GHL contact notes are provided in context, treat them as source material for caller history, objections, promises, sales status, risks, follow-up needs, and next actions.
 
-GOALL lead intelligence: when the user asks to research a lead, identify a target market, qualify an organization, structure prospect data, or prepare CRM fields, evaluate whether the organization has donor/supporter activation potential for GOALL. Use the GOALL standard: factual, restrained, source-prioritized, no guessing, and structured for GHL.
+GOALL Agency lead intelligence: when the user asks to research a lead, identify a target market, qualify a company, structure prospect data, or prepare CRM fields, evaluate whether the company is a strong business lead for GOALL based on employee count, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Use the GOALL standard: factual, restrained, source-prioritized, no guessing, and structured for GHL.
 
 Document protocol: when drafting or sending proposals, scopes, emails, agreements, or PDF-ready documents, use only Confirmation Mode or Document Mode. In Confirmation Mode, confirm the recipient email before drafting/sending. In Document Mode, output exactly three blocks: DRAFT or FINAL, recipient email only, full document content. The first line of the document content must be Proposal: {Topic}, Subject: {Email Subject}, or Scope: {Topic}. FINAL is only used after explicit approval and confirmed recipient email; FINAL document content ends with: To send this now, click the Send button in the top right of this chat.
 
@@ -2853,7 +2868,7 @@ Final governing principle: you are not here to maximize activity. You govern lev
 `.trim();
 
 function actionPrompt(action){
-  const prompts={daily_command:'Create a relationship-first daily command briefing for a founder/executive whose highest leverage is high-trust connection. Include today meetings, 15-minute prep needs, urgent promises, relationship radar, approvals waiting, one focus block, the single highest-leverage action, and one high-impact use of the time VAL is saving. Be assertive and practical.',what_now:'Choose exactly what the user should do next. Consider energy, urgency, calendar, overdue tasks, user memory, business leverage, and whether VAL has freed time that should be spent on a higher-value relationship, strategic move, recovery block, or creative work. Be decisive.',weekly_review:'Create a weekly review: wins, stuck loops, avoided work, relationship follow-ups, stop/start/continue, and top 3 priorities for next week.',relationship_briefing:'Create a relationship briefing for the person or meeting named by the user. Include context, last known interaction, tone, likely needs, open promises, opportunity angle, questions, and follow-up suggestions.',project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',task_intelligence:'Review the task list. Group by urgency/energy/project/contact, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first. Do not suggest deleting tasks without user approval.',followup_radar:'Rank the highest-priority relationships to nurture now. Focus on people where trust, revenue, referrals, partnership, or promised follow-up could be lost if ignored. For each person include why now, what was promised or implied, the smallest next action, and a ready-to-send message draft when appropriate.',relationship_radar:'Create a Relationship Radar view. Rank high-value contacts by urgency and opportunity. Use calendar, conversations, tasks, pipeline, memory, and open loops. For each person include relationship context, why they matter, what is at risk, next best action, and a ready-to-send message when appropriate.',pre_meeting_brief:'Prepare the next meeting as if it starts in 15 minutes. Identify all attendees, infer who matters most, summarize prior context, open promises, current opportunity, likely objective, relationship risks, suggested opening line, three questions, and the cleanest follow-up VAL should send afterward.',auto_followups:'Review recent meetings and conversations. Draft the follow-ups VAL should send now. For each draft include recipient, why it should go now, subject, message body, and whether it is safe to send automatically or should sit in the Approval Queue.',contact_command_center:'Create a contact command center for the relevant person or company. Group all tasks, notes, promises, meetings, opportunities, relationship context, and suggested next moves by contact. Make it easy to see what is waiting on them and what is waiting on the user.',integrity_tracker:'Audit open promises and commitments. List what the user said they would do, who it is for, source/context, due timing if known, risk if dropped, and the next closure action. Do not suggest deleting tasks. The user must close loops manually.',daily_rhythm:'Run the daily executive rhythm: morning briefing, midday check-in, end-of-day wrap, and tomorrow prep. Keep it relationship-first. Surface dynamic prompts based on meetings, overdue tasks, approvals, stale relationships, pipeline urgency, and high-impact use of saved time.',saved_time_leverage:'Suggest the highest-impact things the user could do with the time, energy, and cognitive load VAL is saving. Focus on moves that create revenue, deepen high-value relationships, strengthen authority, protect recovery, improve strategic thinking, or create long-term leverage. Give 3 to 5 options, explain why each matters, and recommend one to do now.',onboarding_profile:'Run the Tell Me About Yourself onboarding. Ask one deep question at a time to understand identity, business model, high-value relationships, communication style, decision patterns, energy patterns, personality profile, boundaries, approval preferences, and documents to upload. Be warm, direct, and psychologically insightful.',executive_review:'Run an executive review in this exact order. First: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. For each one, include person, why now, ready-to-send draft, and smallest approval action. Second: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Third: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',lead_intelligence:'Use the GOALL lead intelligence standard for GOALL charity/foundation partner research. Qualify the organization by mission fit, donor/supporter audience, fundraising activity, public presence, decision-maker clarity, and activation potential. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.'};
+  const prompts={daily_command:'Create a relationship-first daily command briefing for a founder/executive whose highest leverage is high-trust connection. Include today meetings, 15-minute prep needs, urgent promises, relationship radar, approvals waiting, one focus block, the single highest-leverage action, and one high-impact use of the time VAL is saving. Be assertive and practical.',what_now:'Choose exactly what the user should do next. Consider energy, urgency, calendar, overdue tasks, user memory, business leverage, and whether VAL has freed time that should be spent on a higher-value relationship, strategic move, recovery block, or creative work. Be decisive.',weekly_review:'Create a weekly review: wins, stuck loops, avoided work, relationship follow-ups, stop/start/continue, and top 3 priorities for next week.',relationship_briefing:'Create a relationship briefing for the person or meeting named by the user. Include context, last known interaction, tone, likely needs, open promises, opportunity angle, questions, and follow-up suggestions.',project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',task_intelligence:'Review the task list. Group by urgency/energy/project/contact, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first. Do not suggest deleting tasks without user approval.',followup_radar:'Rank the highest-priority relationships to nurture now. Focus on people where trust, revenue, referrals, partnership, or promised follow-up could be lost if ignored. For each person include why now, what was promised or implied, the smallest next action, and a ready-to-send message draft when appropriate.',relationship_radar:'Create a Relationship Radar view. Rank high-value contacts by urgency and opportunity. Use calendar, conversations, tasks, pipeline, memory, and open loops. For each person include relationship context, why they matter, what is at risk, next best action, and a ready-to-send message when appropriate.',pre_meeting_brief:'Prepare the next meeting as if it starts in 15 minutes. Identify all attendees, infer who matters most, summarize prior context, open promises, current opportunity, likely objective, relationship risks, suggested opening line, three questions, and the cleanest follow-up VAL should send afterward.',auto_followups:'Review recent meetings and conversations. Draft the follow-ups VAL should send now. For each draft include recipient, why it should go now, subject, message body, and whether it is safe to send automatically or should sit in the Approval Queue.',contact_command_center:'Create a contact command center for the relevant person or company. Group all tasks, notes, promises, meetings, opportunities, relationship context, and suggested next moves by contact. Make it easy to see what is waiting on them and what is waiting on the user.',integrity_tracker:'Audit open promises and commitments. List what the user said they would do, who it is for, source/context, due timing if known, risk if dropped, and the next closure action. Do not suggest deleting tasks. The user must close loops manually.',daily_rhythm:'Run the daily executive rhythm: morning briefing, midday check-in, end-of-day wrap, and tomorrow prep. Keep it relationship-first. Surface dynamic prompts based on meetings, overdue tasks, approvals, stale relationships, pipeline urgency, and high-impact use of saved time.',saved_time_leverage:'Suggest the highest-impact things the user could do with the time, energy, and cognitive load VAL is saving. Focus on moves that create revenue, deepen high-value relationships, strengthen authority, protect recovery, improve strategic thinking, or create long-term leverage. Give 3 to 5 options, explain why each matters, and recommend one to do now.',onboarding_profile:'Run the Tell Me About Yourself onboarding. Ask one deep question at a time to understand identity, business model, high-value relationships, communication style, decision patterns, energy patterns, personality profile, boundaries, approval preferences, and documents to upload. Be warm, direct, and psychologically insightful.',executive_review:'Run an executive review in this exact order. First: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. For each one, include person, why now, ready-to-send draft, and smallest approval action. Second: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Third: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',lead_intelligence:'Use the GOALL Agency lead intelligence standard for business lead research. Qualify the company by employee base, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.'};
   return prompts[action]||prompts.what_now;
 }
 

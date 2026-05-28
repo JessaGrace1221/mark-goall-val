@@ -834,6 +834,10 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0118.75 20.25H5.25a1.5 1.5 0 01-1.5-1.5v-12a1.5 1.5 0 011.5-1.5z"/></svg>
       Calendar
     </button>
+    <button class="tbtn tbtn-action" onclick="connectGoogleCalendar()" title="Connect Mark's Google Calendar">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M4.5 8.25h15M6 5.25h12A1.5 1.5 0 0119.5 6.75v11.5A1.5 1.5 0 0118 19.75H6a1.5 1.5 0 01-1.5-1.5V6.75A1.5 1.5 0 016 5.25z"/></svg>
+      Google
+    </button>
     <button class="tbtn tbtn-action" onclick="startLeadResearch()" title="Research and structure a lead for GHL">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.63 8.41m5.96 5.96a14.98 14.98 0 01-5.84 2.58m-.12-8.54A6 6 0 002.25 14.25h4.8m2.58-5.84A14.98 14.98 0 002.25 2.25 14.98 14.98 0 0014.37 8.41"/></svg>
       Lead Scrape
@@ -2052,6 +2056,11 @@ function refreshGhlCalendar(){
   loadDashboard();
 }
 
+function connectGoogleCalendar(){
+  window.open(PROXY+'/auth/google','_blank','noopener');
+  addSys('Opening Google Calendar connection. After Mark approves access, return here and refresh the dashboard.');
+}
+
 function openCalendarEvent(ev){
   openDetailWithTitle(ev.title);
   var c=document.getElementById('chatScroll');
@@ -2377,7 +2386,7 @@ function createContactFromMessage(msg){
 }
 
 function extractRequestedLeadLimit(text){
-  var m=String(text||'').match(/\b(\d{1,3})\b\s*(?:veterans?|organizations?|orgs?|leads?|prospects?|nonprofits?|non-profits?|charit(?:y|ies)|foundations?)\b/i)
+  var m=String(text||'').match(/\b(\d{1,3})\b\s*(?:businesses?|companies?|employers?|orgs?|leads?|prospects?|clinics?|contractors?|manufacturers?|franchises?|agencies?)\b/i)
     || String(text||'').match(/\b(?:find|search|scrape|source|discover|list)\s+(\d{1,3})\b/i);
   var n=m?parseInt(m[1],10):0;
   if(!n||n<1)return '';
@@ -2386,13 +2395,14 @@ function extractRequestedLeadLimit(text){
 
 function extractRequestedOrganizationType(text){
   var raw=String(text||'').toLowerCase();
-  if(/\bveterans?\b/.test(raw)) return 'veterans organizations';
-  if(/\banimal|shelter|rescue|humane\b/.test(raw)) return 'animal shelters';
-  if(/\bchurch|faith|ministry\b/.test(raw)) return 'churches';
-  if(/\bfood bank|food pantry|hunger\b/.test(raw)) return 'food banks';
-  if(/\bfoundation|grant\b/.test(raw)) return 'foundations';
-  if(/\bschool|education|pta\b/.test(raw)) return 'schools';
-  if(/\byouth|children|kids|students?\b/.test(raw)) return 'youth organizations';
+  if(/\broof|hvac|plumb|electric|contractor|home service\b/.test(raw)) return 'home services companies';
+  if(/\bclinic|health|medical|dental|doctor|wellness\b/.test(raw)) return 'healthcare clinics';
+  if(/\bmanufactur|industrial|warehouse|logistics\b/.test(raw)) return 'manufacturing and logistics companies';
+  if(/\brestaurant|hospitality|hotel|catering\b/.test(raw)) return 'hospitality businesses';
+  if(/\bfranchise|multi.location|multi location|chain\b/.test(raw)) return 'multi-location businesses';
+  if(/\bagenc|marketing|consulting|professional service\b/.test(raw)) return 'professional service firms';
+  if(/\bgym|fitness|studio\b/.test(raw)) return 'fitness businesses';
+  if(/\bconstruction|builder|trade\b/.test(raw)) return 'construction companies';
   return '';
 }
 
@@ -2400,32 +2410,32 @@ function startLeadResearch(seedText){
   leadResearchState={
     step:'type',
     organizationType:extractRequestedOrganizationType(seedText),
-    donorMinimum:'',
+    employeeMinimum:'',
     location:'',
     limit:extractRequestedLeadLimit(seedText)
   };
   openDetailWithTitle('Lead Scrape');
   var inp=document.getElementById('msgInput');
   if(leadResearchState.organizationType){
-    leadResearchState.step='donors';
-    addMsg('Lead Scrape\n\nGot it: '+leadResearchState.organizationType+(leadResearchState.limit?' | '+leadResearchState.limit+' organizations':'')+'.\n\nHow many donors or supporters should they have at minimum?\n\nIf you are not sure, use 300.',false);
+    leadResearchState.step='employees';
+    addMsg('Lead Scrape\n\nGot it: '+leadResearchState.organizationType+(leadResearchState.limit?' | '+leadResearchState.limit+' businesses':'')+'.\n\nHow many employees should they have at minimum?\n\nIf you are not sure, use 300.',false);
     inp.placeholder='Example: 300';
   }else{
-    addMsg('Lead Scrape\n\nWhat kind of organizations should I look for?\n\nYou can use one of these: animal, church, events, food bank, foundations, schools, youth, veterans.',false);
-    inp.placeholder='Example: veterans organizations, animal shelters, churches...';
+    addMsg('Lead Scrape\n\nWhat kind of businesses should I look for?\n\nExamples: home services, healthcare clinics, roofing companies, manufacturers, restaurants, franchises, agencies, gyms, dental offices, or any niche Mark wants.',false);
+    inp.placeholder='Example: roofing companies, dental offices, manufacturers...';
   }
   inp.focus();
 }
 
 function isLeadDiscoveryRequest(text){
   return /\b(find|search|source|discover|list|scrape|research)\b/i.test(text)
-    && /\b(leads?|prospects?|nonprofits?|non-profits?|charit(y|ies)|foundations?|church(es)?|schools?|food banks?|animal shelters?|youth organizations?)\b/i.test(text);
+    && /\b(leads?|prospects?|businesses?|companies?|employers?|clinics?|contractors?|manufacturers?|franchises?|agencies?)\b/i.test(text);
 }
 
 function isLeadImportRequest(text){
   return /\b(add|create|import|save|put|send)\b/i.test(text)
     && /\b(ghl|crm|contacts?|opportunit(y|ies)|pipeline)\b/i.test(text)
-    && /\b(leads?|prospects?|nonprofits?|non-profits?|charit(y|ies)|foundations?|organizations?)\b/i.test(text);
+    && /\b(leads?|prospects?|businesses?|companies?|employers?|clinics?|contractors?|manufacturers?|franchises?|agencies?)\b/i.test(text);
 }
 
 function isCurrentLeadEnrichmentRequest(text){
@@ -2436,7 +2446,7 @@ function isLeadScrapeWorkflowRequest(text){
   return /\b(lead scrape|scrape leads|lead intelligence|limitless leads|goall lead)\b/i.test(text)
     || isLeadImportRequest(text)
     || (/\b(enrich|verify|research|scrape|find|search|source|discover|add|create|import|save)\b/i.test(text)
-      && /\b(leads?|prospects?|nonprofits?|non-profits?|charit(y|ies)|foundations?|organizations?)\b/i.test(text));
+      && /\b(leads?|prospects?|businesses?|companies?|employers?|clinics?|contractors?|manufacturers?|franchises?|agencies?)\b/i.test(text));
 }
 
 function runLeadDiscovery(query,market,showUser){
@@ -2501,7 +2511,7 @@ function enrichPendingLeadsWithRocketReach(){
   }
   openDetailWithTitle('RocketReach Enrichment');
   addMsg('Enrich with RocketReach',true);
-  addMsg('I am running RocketReach only where there is enough person-level data, one lookup at a time, so we do not waste calls on vague organization-only searches.',false);
+  addMsg('I am running RocketReach only where there is enough person-level data, one lookup at a time, so we do not waste calls on vague company-only searches.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/rocketreach-enrich',{
     method:'POST',
@@ -2574,15 +2584,15 @@ function handleLeadResearchInput(text){
   addMsg(text,true);
   if(leadResearchState.step==='type'){
     leadResearchState.organizationType=text;
-    leadResearchState.step='donors';
-    addMsg('How many donors or supporters should they have at minimum?\n\nIf you are not sure, use 300.',false);
+    leadResearchState.step='employees';
+    addMsg('How many employees should they have at minimum?\n\nIf you are not sure, use 300.',false);
     document.getElementById('msgInput').placeholder='Example: 300';
     return;
   }
-  if(leadResearchState.step==='donors'){
-    leadResearchState.donorMinimum=text.replace(/[^0-9]/g,'')||'300';
+  if(leadResearchState.step==='employees'){
+    leadResearchState.employeeMinimum=text.replace(/[^0-9]/g,'')||'300';
     leadResearchState.step=leadResearchState.limit?'location':'count';
-    addMsg(leadResearchState.limit?'What location should I search?':'How many organizations should I find?\n\nUse 12 for a small test, or up to 100 for a larger scrape.',false);
+    addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 100 for a larger scrape.',false);
     document.getElementById('msgInput').placeholder=leadResearchState.limit?'Example: Texas, Dallas TX, United States...':'Example: 25, 50, 100';
     return;
   }
@@ -2597,10 +2607,10 @@ function handleLeadResearchInput(text){
     leadResearchState.location=/^(unclear|skip)$/i.test(text)?'United States':text;
     var payload={
       organizationType:leadResearchState.organizationType,
-      donorMinimum:leadResearchState.donorMinimum,
+      employeeMinimum:leadResearchState.employeeMinimum,
       market:leadResearchState.location,
       tag:leadResearchState.organizationType,
-      criteria:leadResearchState.organizationType+' with at least '+leadResearchState.donorMinimum+' donors or supporters',
+      criteria:leadResearchState.organizationType+' with at least '+leadResearchState.employeeMinimum+' employees',
       limit:parseInt(leadResearchState.limit,10)||12
     };
     leadResearchState=null;
@@ -2610,7 +2620,7 @@ function handleLeadResearchInput(text){
   }
   if(leadResearchState.step==='discovery_market'){
     var market=/^(unclear|skip)$/i.test(text)?'United States':text;
-    var q=leadResearchState.query||'Find nonprofits with strong donor or supporter lists';
+    var q=leadResearchState.query||'Find businesses with strong employee lists';
     var shouldImport=!!leadResearchState.importToGhl;
     leadResearchState=null;
     document.getElementById('msgInput').placeholder='Message VAL...';
