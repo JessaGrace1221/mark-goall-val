@@ -3798,26 +3798,71 @@ function askComms(){
   startUnreadTriage('My communications queue is clear — no unread conversations. Who should I proactively reach out to today?');
 }
 
+var pipelineTriageQueue=[];
+var pipelineTriageIndex=0;
+function pipelineDisplayName(o){return (o&&(o.contactName||o.name))||'Pipeline opportunity';}
+function pipelineOpportunityPrompt(o){
+  if(!o)return '';
+  return [
+    'Name: '+pipelineDisplayName(o),
+    o.owner?'GHL owner: '+o.owner:'',
+    o.stage?'Stage: '+o.stage:'',
+    o.value?'Value: $'+o.value:'',
+    o.daysInStage?'Days in stage: '+o.daysInStage:'',
+    o.stalled?'Status: stalled':'',
+    o.contactEmail?'Email: '+o.contactEmail:'',
+    o.contactPhone?'Phone: '+o.contactPhone:'',
+    o.notes&&o.notes.length?'GHL notes/call transcript overview: '+o.notes.join(' | '):''
+  ].filter(Boolean).join('\n');
+}
+function addPipelineControls(){
+  var c=document.getElementById('chatScroll');if(!c)return;
+  var d=document.createElement('div');d.className='cmsg assistant';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Pipeline actions</strong></p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+    +'<button class="chip" onclick="pipelineReviewCurrent()">Review this one</button>'
+    +'<button class="chip" onclick="pipelineDraftFollowup()">Draft follow-up</button>'
+    +'<button class="chip" onclick="pipelineCreateTask()">Create next task</button>'
+    +'<button class="chip" onclick="pipelineNext()">Next opportunity</button>'
+    +'</div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+}
+function presentPipelineItem(){
+  if(!pipelineTriageQueue.length){addMsg('No active pipeline deals are showing right now.',false);return;}
+  if(pipelineTriageIndex>=pipelineTriageQueue.length){
+    addMsg('Pipeline review complete. I went through '+pipelineTriageQueue.length+' active opportunities one at a time. Ask me to summarize patterns, draft follow-ups, or map the next three moves.',false);
+    return;
+  }
+  var o=pipelineTriageQueue[pipelineTriageIndex];
+  addMsg('Pipeline review '+(pipelineTriageIndex+1)+' of '+pipelineTriageQueue.length+'\n\n'+pipelineOpportunityPrompt(o)+'\n\nSuggested next move: review this opportunity, draft a follow-up, create a next task, or move to the next one.',false);
+  addPipelineControls();
+}
+function pipelineCurrent(){return pipelineTriageQueue[pipelineTriageIndex];}
+function pipelineReviewCurrent(){
+  var o=pipelineCurrent();if(!o)return;
+  ask('Review this one pipeline opportunity only. Give me a concise overview, what the GHL notes/call transcripts reveal, the risk, the best next action, and one suggested message or task.\n\n'+pipelineOpportunityPrompt(o));
+}
+function pipelineDraftFollowup(){
+  var o=pipelineCurrent();if(!o)return;
+  ask('Draft a follow-up for this one pipeline opportunity only. Use the notes and stage. Keep it natural and specific. If sending is risky, put it in the approval queue.\n\n'+pipelineOpportunityPrompt(o));
+}
+function pipelineCreateTask(){
+  var o=pipelineCurrent();if(!o)return;
+  ask('Create one clean next-action task in VAL for this pipeline opportunity. Do not create duplicates. Include the contact name and why this task matters.\n\n'+pipelineOpportunityPrompt(o));
+}
+function pipelineNext(){pipelineTriageIndex++;presentPipelineItem();}
 function askPipeline(){
   fetch(HOOK_PIPELINE).then(r=>r.json()).then(function(d){
-    var opps=d.opportunities||[];
+    var opps=(d.opportunities||[]).slice().sort(function(a,b){return (b.stalled?1:0)-(a.stalled?1:0)||(b.daysInStage||0)-(a.daysInStage||0);});
     if(!opps.length){
       var debug=d._debug&&d._debug.error?'\n\nPipeline connection detail: '+d._debug.error:'';
       ask("I am not seeing active pipeline deals in Mark's GHL data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
       return;
     }
-    var detail=opps.map(function(o){
-      var line='- '+o.contactName+(o.owner?' | GHL owner: '+o.owner:'')+' | Stage: '+o.stage+(o.value?' | Value: $'+o.value:'')+(o.daysInStage?' | '+o.daysInStage+' days in stage':'')+(o.stalled?' ⚠ STALLED':'');
-      if(o.contactEmail) line+='\n  Email: '+o.contactEmail;
-      if(o.contactPhone) line+='\n  Phone: '+o.contactPhone;
-      if(o.notes&&o.notes.length) line+='\n  GHL notes overview: '+o.notes.join(' / ');
-      return line;
-    }).join('\n');
-    var stalled=opps.filter(function(o){return o.stalled;});
-    ask('I am '+valActor+'. Here are the '+opps.length+' active pipeline deal'+(opps.length>1?'s':'')+' right now'+(stalled.length?' ('+stalled.length+' stalled)':'')+':'
-      +'\n\n'+detail
-      +'\n\nGroup leads by owner when ownership is available. For each person: what stage are they in, what do all available GHL notes and call transcripts tell us, and what is the best next action to move them forward?');
-  }).catch(function(){ask('Show my active pipeline deals, what stage each person is in, and what action I should take next.');});
+    pipelineTriageQueue=opps;
+    pipelineTriageIndex=0;
+    addMsg('I found '+opps.length+' active pipeline deal'+(opps.length===1?'':'s')+'. I will review them one at a time so this stays usable.',false);
+    presentPipelineItem();
+  }).catch(function(){ask('Show my active pipeline deals one at a time. For each one, tell me the stage, what the notes say, and the best next action.');});
 }
 
 function askFollowups(){
