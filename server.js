@@ -2,6 +2,9 @@ const express = require('express');
 const cors    = require('cors');
 const fs      = require('fs');
 const path    = require('path');
+const crypto  = require('crypto');
+const bcrypt  = require('bcryptjs');
+const {AsyncLocalStorage} = require('async_hooks');
 const multer  = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
@@ -9,10 +12,22 @@ const app     = express();
 
 app.use(cors());
 app.use(express.json({limit:'10mb'}));
+app.set('trust proxy',1);
 const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:25*1024*1024}});
 
-const GHL_KEY = process.env.GHL_KEY;
-const GHL_LOC = process.env.GHL_LOC;
+const CLIENT_CONFIG = {
+  clientName: process.env.VAL_CLIENT_NAME || 'VAL User',
+  clientSlug: process.env.VAL_CLIENT_SLUG || 'val-core',
+  brandName: process.env.VAL_CLIENT_BRAND_NAME || process.env.VAL_CLIENT_NAME || 'VAL',
+  logoUrl: process.env.VAL_CLIENT_LOGO_URL || process.env.VAL_LOGO_URL || '',
+  publicBaseUrl: process.env.VAL_PUBLIC_BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : ''),
+  timezone: process.env.VAL_DEFAULT_TIMEZONE || 'America/New_York',
+  supportEmail: process.env.VAL_SUPPORT_EMAIL || process.env.SUPPORT_EMAIL || ''
+};
+const DEMO_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_DEMO_MODE || ''));
+const VAL_SIGNUP_URL = process.env.VAL_SIGNUP_URL || 'https://graceintelligence.com/val';
+const GHL_KEY = process.env.GHL_KEY || process.env.GHL_API_KEY;
+const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
@@ -29,6 +44,7 @@ const GHL_OPPORTUNITY_PIPELINE_NAME = process.env.GHL_OPPORTUNITY_PIPELINE_NAME 
 const GHL_OPPORTUNITY_STAGE_NAME = process.env.GHL_OPPORTUNITY_STAGE_NAME || 'New Lead';
 const GOALL_LEAD_SEARCH_MAX = Number(process.env.GOALL_LEAD_SEARCH_MAX) || 100;
 let rocketReachLimitedUntil = 0;
+const requestContext = new AsyncLocalStorage();
 const GHL_LEAD_FIELD_IDS = {
   company_payload: process.env.GHL_FIELD_COMPANY_PAYLOAD || '',
   google_raw: process.env.GHL_FIELD_GOOGLE_RAW || process.env.GHL_FIELD_COMPANY_GOOGLE_RAW || '',
@@ -58,7 +74,9 @@ const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
-const VAL_USER_ID = process.env.VAL_USER_ID || 'mark-goall';
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_COOKIE = 'val_session';
+const VAL_USER_ID = process.env.VAL_USER_ID || CLIENT_CONFIG.clientSlug || 'default';
 const MEMORY_CHUNK_SIZE = Number(process.env.MEMORY_CHUNK_SIZE) || 1800;
 const MEMORY_CHUNK_OVERLAP = Number(process.env.MEMORY_CHUNK_OVERLAP) || 250;
 let pgPool = null;
@@ -89,6 +107,116 @@ function inferValOwner(obj={}){
   return raw ? raw.trim() : (ids.length ? 'Assigned user' : '');
 }
 
+const demoSessions = new Map();
+function demoIso(dayOffset=0,hour=9,minute=0){
+  const d=new Date();
+  d.setHours(hour,minute,0,0);
+  d.setDate(d.getDate()+dayOffset);
+  return d.toISOString();
+}
+function cloneDemo(value){ return JSON.parse(JSON.stringify(value)); }
+function demoTemplate(){
+  const tasks=[
+    {id:'demo-task-1',title:'Send revised scope to Elena',contactName:'Elena Brooks',dueDate:demoIso(0,16,0),notes:'Promise from yesterday’s investor prep call. Include timeline and pilot pricing.',details:[{text:'Created from transcript: Investor Prep Call',ts:demoIso(-1,11,20)}],completed:false,createdAt:demoIso(-1,11,30)},
+    {id:'demo-task-2',title:'Ask Marcus for procurement owner',contactName:'Marcus Chen',dueDate:demoIso(1,10,0),notes:'Needed before the Tuesday enterprise demo. VAL flagged this as the fastest way to shorten the sales cycle.',details:[{text:'Relationship Review flagged missing decision-maker.',ts:demoIso(0,8,15)}],completed:false,createdAt:demoIso(0,8,15)},
+    {id:'demo-task-3',title:'Review HealthBridge renewal risk',contactName:'Priya Raman',dueDate:demoIso(0,12,30),notes:'Renewal is strong, but implementation notes mention sponsor fatigue.',details:[{text:'Created from GHL notes and call transcript.',ts:demoIso(-2,15,10)}],completed:false,createdAt:demoIso(-2,15,10)},
+    {id:'demo-task-4',title:'Prepare board update bullets',contactName:'Board',dueDate:demoIso(2,9,0),notes:'Use pipeline movement, relationship radar, and saved-time outcomes.',details:[],completed:false,createdAt:demoIso(-1,9,0)},
+    {id:'demo-task-5',title:'Confirm intro path for Northstar',contactName:'Jordan Lee',dueDate:null,notes:'Jordan offered a warm path to Northstar. Needs a concise ask.',details:[],completed:false,createdAt:demoIso(-3,14,20)}
+  ];
+  const calendarEvents=[
+    {id:'demo-cal-1',title:'Investor Prep With Elena',summary:'Investor Prep With Elena',startTime:demoIso(0,9,30),endTime:demoIso(0,10,15),source:'google',calendarName:'Google Calendar',attendees:[{name:'Elena Brooks',email:'elena@northstarcapital.com'},{name:'Avery Stone',email:'avery@demo.val'}],description:'Review traction, proposal terms, and investor follow-up.'},
+    {id:'demo-cal-2',title:'Enterprise Demo With Marcus',summary:'Enterprise Demo With Marcus',startTime:demoIso(0,14,0),endTime:demoIso(0,15,0),source:'ghl',calendarName:'Sales Calendar',attendees:[{name:'Marcus Chen',email:'marcus@atlasops.com'},{name:'Nina Patel',email:'nina@atlasops.com'}],description:'Atlas Operations wants a workflow demo and buying-process discussion.'},
+    {id:'demo-cal-3',title:'HealthBridge Renewal Review',summary:'HealthBridge Renewal Review',startTime:demoIso(1,11,0),endTime:demoIso(1,11,45),source:'google',calendarName:'Google Calendar',attendees:[{name:'Priya Raman',email:'priya@healthbridge.org'}],description:'Renewal health, implementation load, and expansion potential.'},
+    {id:'demo-cal-4',title:'Retro Partnership Notes',summary:'Retro Partnership Notes',startTime:demoIso(-1,16,30),endTime:demoIso(-1,17,0),source:'val',calendarName:'VAL Retroactive Meetings',attendees:[{name:'Jordan Lee',email:'jordan@fieldstone.co'}],metadata:{retroactive:true,transcriptId:'demo-tr-1'}}
+  ];
+  const opportunities=[
+    {id:'demo-opp-1',name:'Atlas Operations Pilot',status:'open',stage:'Proposal Review',value:48000,contactName:'Marcus Chen',contactId:'demo-contact-1',contactEmail:'marcus@atlasops.com',contactPhone:'555-0147',owner:'Avery Stone',updatedAt:demoIso(-3,12,0),daysInStage:9,stalled:false,notes:['Marcus liked the automation demo but needs procurement owner confirmed.','Nina asked about onboarding load and executive reporting.','Next best move: send a 3-point pilot memo and ask who signs vendor approval.']},
+    {id:'demo-opp-2',name:'Northstar Capital Advisory',status:'open',stage:'Warm Intro',value:85000,contactName:'Elena Brooks',contactId:'demo-contact-2',contactEmail:'elena@northstarcapital.com',contactPhone:'555-0188',owner:'Avery Stone',updatedAt:demoIso(-1,15,0),daysInStage:2,stalled:false,notes:['Elena requested a tighter scope and proof of executive adoption.','She mentioned two portfolio founders who may need VAL.']},
+    {id:'demo-opp-3',name:'HealthBridge Expansion',status:'open',stage:'Renewal Risk',value:32000,contactName:'Priya Raman',contactId:'demo-contact-3',contactEmail:'priya@healthbridge.org',contactPhone:'555-0191',owner:'Avery Stone',updatedAt:demoIso(-20,10,0),daysInStage:20,stalled:true,notes:['Implementation team feels stretched. Sponsor still values the outcome.','Do not push expansion until support load is acknowledged.']},
+    {id:'demo-opp-4',name:'Fieldstone Partner Channel',status:'open',stage:'Discovery',value:120000,contactName:'Jordan Lee',contactId:'demo-contact-4',contactEmail:'jordan@fieldstone.co',contactPhone:'555-0128',owner:'Avery Stone',updatedAt:demoIso(-8,9,0),daysInStage:8,stalled:false,notes:['Jordan can introduce VAL to three operating partners. Needs a crisp referral ask.']}
+  ];
+  const conversations=[
+    {id:'demo-conv-1',contactName:'Marcus Chen',contactId:'demo-contact-1',unread:3,unreadCount:3,lastMessage:'Can you send the pilot memo before our 2 PM call?',lastMessageBody:'Can you send the pilot memo before our 2 PM call?',type:'sms',source:'ghl'},
+    {id:'demo-conv-2',contactName:'Elena Brooks',contactId:'demo-contact-2',unread:1,unreadCount:1,lastMessage:'The scope looks close. Can you make the first 30 days clearer?',lastMessageBody:'The scope looks close. Can you make the first 30 days clearer?',type:'email',source:'ghl'},
+    {id:'demo-conv-3',contactName:'Jordan Lee',contactId:'demo-contact-4',unread:2,unreadCount:2,lastMessage:'Happy to intro you, just send me the tight version.',lastMessageBody:'Happy to intro you, just send me the tight version.',type:'email',source:'ghl'}
+  ];
+  const messages={
+    'demo-conv-1':[
+      {id:'m1',direction:'inbound',from:'Marcus Chen',body:'Can you send the pilot memo before our 2 PM call?',dateAdded:demoIso(0,8,42),type:'sms'},
+      {id:'m2',direction:'inbound',from:'Marcus Chen',body:'Main question from my side is who owns procurement and how heavy onboarding gets.',dateAdded:demoIso(0,8,44),type:'sms'}
+    ],
+    'demo-conv-2':[
+      {id:'m3',direction:'inbound',from:'Elena Brooks',body:'The scope looks close. Can you make the first 30 days clearer?',dateAdded:demoIso(0,7,58),type:'email'}
+    ],
+    'demo-conv-3':[
+      {id:'m4',direction:'inbound',from:'Jordan Lee',body:'Happy to intro you, just send me the tight version.',dateAdded:demoIso(-1,17,12),type:'email'},
+      {id:'m5',direction:'inbound',from:'Jordan Lee',body:'The ask should be one paragraph max.',dateAdded:demoIso(-1,17,13),type:'email'}
+    ]
+  };
+  const drafts=[
+    {id:'demo-draft-1',userId:'demo-user',tenantId:'demo-val',draftType:'follow_up',contactId:'demo-contact-2',provider:'internal',subject:'Revised VAL scope',body:'Elena,\n\nI tightened the first 30 days into three phases: context capture, operating rhythm, and executive visibility.\n\nThe main outcome is simple: fewer dropped promises, cleaner follow-through, and a leadership layer that keeps momentum visible.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(0,8,25),updatedAt:demoIso(0,8,25)},
+    {id:'demo-draft-2',userId:'demo-user',tenantId:'demo-val',draftType:'email_reply',contactId:'demo-contact-1',provider:'internal',subject:'Pilot memo for today',body:'Marcus,\n\nHere is the short version for today: VAL can start with the two highest-friction workflows, show measurable follow-up capture, and keep onboarding light enough that your team does not need another system to manage.\n\nAvery',status:'draft',sourceContext:{source:'demo'},createdAt:demoIso(0,8,40),updatedAt:demoIso(0,8,40)}
+  ];
+  const emails=[
+    {provider:'gmail',messageId:'demo-email-1',threadId:'demo-thread-1',subject:'Pilot memo before 2 PM',from:{name:'Marcus Chen',email:'marcus@atlasops.com'},snippet:'Can you send the pilot memo before our 2 PM call?',bodyPreview:'Can you send the pilot memo before our 2 PM call? Procurement and onboarding are the main questions.',classification:'needs_reply',confidence:'high',reason:'Time-sensitive meeting prep and a direct request.',recommendedAction:'Draft reply',matchedContact:{name:'Marcus Chen'}},
+    {provider:'gmail',messageId:'demo-email-2',threadId:'demo-thread-2',subject:'Scope clarification',from:{name:'Elena Brooks',email:'elena@northstarcapital.com'},snippet:'Can you make the first 30 days clearer?',bodyPreview:'The scope looks close. Can you make the first 30 days clearer?',classification:'needs_reply',confidence:'high',reason:'Active opportunity, asks for revision.',recommendedAction:'Draft reply',matchedContact:{name:'Elena Brooks'}},
+    {provider:'outlook',messageId:'demo-email-3',threadId:'demo-thread-3',subject:'Intro language',from:{name:'Jordan Lee',email:'jordan@fieldstone.co'},snippet:'Happy to intro you, just send me the tight version.',bodyPreview:'Happy to intro you, just send me the tight version. The ask should be one paragraph max.',classification:'needs_attention',confidence:'high',reason:'Warm intro opportunity that could go stale.',recommendedAction:'Create outreach draft',matchedContact:{name:'Jordan Lee'}},
+    {provider:'gmail',messageId:'demo-email-4',threadId:'demo-thread-4',subject:'Following up on renewal',from:{name:'Priya Raman',email:'priya@healthbridge.org'},snippet:'Let’s revisit after the internal support conversation.',bodyPreview:'Let’s revisit after the internal support conversation.',classification:'waiting_on_response',confidence:'medium',reason:'Renewal risk and delayed internal conversation.',recommendedAction:'Track follow-up',matchedContact:{name:'Priya Raman'}}
+  ];
+  const transcripts=[
+    {id:'demo-tr-1',type:'processed_transcript',title:'Retro Partnership Notes',rawText:'Jordan offered to introduce Avery to three operating partners if Avery sends a concise one-paragraph referral ask. Jordan emphasized that the ask should not sound like a pitch deck. Action item: send tight intro language.',metadata:{source:'demo'},createdAt:demoIso(-1,17,0)}
+  ];
+  const relationships=[
+    {name:'Marcus Chen',email:'marcus@atlasops.com',score:92,priority:'high',recommendedAction:'Send pilot memo before the 2 PM demo and ask who owns procurement.',why:'High-value active opportunity, time-sensitive meeting, direct request sitting unread.',lastInteraction:demoIso(0,8,44),openLoops:['Pilot memo','Procurement owner','Onboarding concern'],evidence:[{type:'email',summary:'Asked for pilot memo before 2 PM.'},{type:'opportunity',summary:'Atlas Operations Pilot in Proposal Review.'}],draftOutreach:{subject:'Pilot memo for today',body:'Marcus, here is the concise pilot path for today...'}},
+    {name:'Elena Brooks',email:'elena@northstarcapital.com',score:88,priority:'high',recommendedAction:'Send the revised first-30-days scope.',why:'Investor-adjacent relationship with two possible portfolio referrals.',lastInteraction:demoIso(0,7,58),openLoops:['Revised scope','Portfolio founder referrals'],evidence:[{type:'meeting',summary:'Investor prep today.'},{type:'draft',summary:'Draft waiting in approval queue.'}]},
+    {name:'Priya Raman',email:'priya@healthbridge.org',score:74,priority:'medium',recommendedAction:'Acknowledge implementation fatigue before discussing expansion.',why:'Renewal value is real, but sponsor fatigue is showing in notes.',lastInteraction:demoIso(-2,15,10),openLoops:['Renewal risk','Support load'],evidence:[{type:'note',summary:'Implementation team feels stretched.'}]},
+    {name:'Jordan Lee',email:'jordan@fieldstone.co',score:81,priority:'high',recommendedAction:'Send one-paragraph referral ask today.',why:'Warm intro offer is fresh and easy to lose if delayed.',lastInteraction:demoIso(-1,17,13),openLoops:['Intro language'],evidence:[{type:'transcript',summary:'Jordan offered three operating partner introductions.'}]}
+  ];
+  return {tasks,calendarEvents,opportunities,conversations,messages,drafts,emails,transcripts,relationships,createdAt:new Date().toISOString()};
+}
+function demoSessionId(req,res){
+  const existing=parseCookies(req).val_demo_session;
+  const id=existing || crypto.randomBytes(12).toString('hex');
+  if(!existing) res.cookie('val_demo_session',id,{httpOnly:true,sameSite:'lax',secure:false,maxAge:60*60*1000});
+  return id;
+}
+function demoState(req,res){
+  const id=demoSessionId(req,res);
+  if(!demoSessions.has(id)) demoSessions.set(id,cloneDemo(demoTemplate()));
+  return demoSessions.get(id);
+}
+function resetDemoState(req,res){
+  const id=demoSessionId(req,res);
+  const state=cloneDemo(demoTemplate());
+  demoSessions.set(id,state);
+  return state;
+}
+function demoUser(){
+  return {id:'demo-user',email:'demo@graceintelligence.com',name:'Demo User',role:'demo'};
+}
+function withDemoCta(text){
+  const copy=String(text||'');
+  return copy.includes(VAL_SIGNUP_URL) ? copy : `${copy}\n\nReady to make this yours? Get your VAL now: ${VAL_SIGNUP_URL}`;
+}
+function demoLeads(body={}){
+  const type=String(body.organizationType||body.criteria||'growth companies').replace(/\s+/g,' ').trim();
+  const market=String(body.market||body.location||'United States').trim();
+  const limit=Math.min(Math.max(Number(body.limit)||6,1),12);
+  return [
+    {organizationName:'Beacon Field Services',website:'https://example.com/beacon',industry:'Field Operations',primaryService:'Multi-site service operations',location:market,organizationType:type,partnerFit:'Strong',approximateDonors:640,donorEstimateBasis:'Public team pages, hiring posts, multi-location signals',evidenceSignals:['Active hiring','Multiple locations','Visible operations team'],decisionMakerName:'Dana Holt',decisionMakerTitle:'COO',email:'dana.holt@example.com',phone:'555-0201',linkedinPersonalUrl:'https://linkedin.com/in/demo-dana-holt',linkedinCompanyUrl:'https://linkedin.com/company/demo-beacon',hiringActivity:'Yes, operations and customer success roles',careersPage:'Yes',growthActivity:'Expansion into two new markets',operationalActivity:'Dispatch, service teams, account management',operationalIndicators:'Multi-location, recurring client operations',googleRaw:'4.6 rating, 128 reviews, active listing',newsRaw:'Recent market expansion announcement',nextOutreachAngle:'Operational visibility and follow-through at scale',confidence:'high',rocketReachStatus:'verified demo email'},
+    {organizationName:'Atlas People Systems',website:'https://example.com/atlas-people',industry:'Workforce Services',primaryService:'HR and operations support',location:market,organizationType:type,partnerFit:'Strong',approximateDonors:420,donorEstimateBasis:'Hiring volume, leadership page, service footprint',evidenceSignals:['Leadership team visible','Hiring posts','Enterprise service model'],decisionMakerName:'Marcus Chen',decisionMakerTitle:'VP Operations',email:'marcus.chen@example.com',phone:'555-0202',linkedinPersonalUrl:'https://linkedin.com/in/demo-marcus-chen',linkedinCompanyUrl:'https://linkedin.com/company/demo-atlas-people',hiringActivity:'Yes',careersPage:'Yes',growthActivity:'New enterprise accounts',operationalActivity:'Client delivery pods and support teams',operationalIndicators:'CRM-heavy, recurring delivery, cross-functional follow-up',googleRaw:'Active website and company listing',newsRaw:'No recent news found',nextOutreachAngle:'Reduce dropped follow-up across account teams',confidence:'high',rocketReachStatus:'verified demo email'},
+    {organizationName:'Northline Benefits Group',website:'https://example.com/northline',industry:'Benefits Advisory',primaryService:'Employer benefits and advisory services',location:market,organizationType:type,partnerFit:'Moderate',approximateDonors:310,donorEstimateBasis:'Team page and LinkedIn size indicators',evidenceSignals:['Professional services team','Multiple advisors','Client onboarding complexity'],decisionMakerName:'Renee Wallace',decisionMakerTitle:'Founder',email:'renee.wallace@example.com',phone:'555-0203',linkedinPersonalUrl:'https://linkedin.com/in/demo-renee-wallace',linkedinCompanyUrl:'https://linkedin.com/company/demo-northline',hiringActivity:'Unclear',careersPage:'No',growthActivity:'Client growth signals on website',operationalActivity:'Advisor follow-up and renewal cycles',operationalIndicators:'Relationship-heavy, renewal-sensitive',googleRaw:'Business listing found',newsRaw:'No recent news found',nextOutreachAngle:'Protect renewal conversations and owner promises',confidence:'medium',rocketReachStatus:'verified demo email'}
+  ].slice(0,limit).map((lead,i)=>({...lead,organizationName:i>2?`${lead.organizationName} ${i+1}`:lead.organizationName}));
+}
+function demoLeadDiscovery(body={}){
+  const market=String(body.market||body.location||'United States');
+  const organizationType=String(body.organizationType||'growth companies');
+  const employeeMinimum=donorValue(body.employeeMinimum)||300;
+  const tag=normalizeLeadTag(body.tag||organizationType);
+  const leads=demoLeads(body);
+  return {ok:true,market,criteria:String(body.criteria||`${organizationType} with at least ${employeeMinimum} employees`),organizationType,employeeMinimum,tag,scraped:{configured:true,rawCount:leads.length,demo:true},rocketReachMode:'review',leads};
+}
+
 if(process.env.DATABASE_URL){
   try{
     const {Pool} = require('pg');
@@ -101,15 +229,37 @@ if(process.env.DATABASE_URL){
   }
 }
 
-function gh(){
-  return {'Authorization':`Bearer ${GHL_KEY}`,'Version':'2021-07-28','Content-Type':'application/json'};
+async function gh(){
+  const key = await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
+  return {'Authorization':`Bearer ${key||''}`,'Version':'2021-07-28','Content-Type':'application/json'};
+}
+async function prepareGhlRequest(path,body){
+  const loc=await resolveGhlLocationId();
+  let nextPath=String(path||'');
+  if(loc){
+    const enc=encodeURIComponent(loc);
+    nextPath=nextPath
+      .replace(/locationId=(&|$)/g,`locationId=${enc}$1`)
+      .replace(/location_id=(&|$)/g,`location_id=${enc}$1`)
+      .replace(/\/location\/(?=\/|$)/g,`/location/${enc}`)
+      .replace(/\/locations\/(?=\/|$)/g,`/locations/${enc}/`);
+  }
+  let nextBody=body;
+  if(loc&&body&&typeof body==='object'&&!Array.isArray(body)){
+    nextBody={...body};
+    if('locationId' in nextBody&&!nextBody.locationId) nextBody.locationId=loc;
+    if('location_id' in nextBody&&!nextBody.location_id) nextBody.location_id=loc;
+  }
+  return {path:nextPath,body:nextBody};
 }
 async function ghl(method,path,body){
-  const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
+  const prepared=await prepareGhlRequest(path,body);
+  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
   return r.json();
 }
 async function ghlStrict(method,path,body){
-  const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
+  const prepared=await prepareGhlRequest(path,body);
+  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
   const data=await readJsonResponse(r);
   if(!r.ok){
     const detail=data.message||data.error||data.errorMessage||data.raw||JSON.stringify(data).slice(0,500);
@@ -124,7 +274,8 @@ async function readJsonResponse(response){
 }
 
 async function ghlTry(method,path,body){
-  const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
+  const prepared=await prepareGhlRequest(path,body);
+  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
   const data=await readJsonResponse(r);
   return {ok:r.ok,status:r.status,path,data};
 }
@@ -138,11 +289,371 @@ function writeJson(file,value){
   catch(e){ console.error('writeJson error:',e.message); }
 }
 function valStore(){
-  return readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{}});
+  return readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
 function uuid(prefix){
   return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+}
+function parseCookies(req){
+  return String(req.headers.cookie||'').split(';').reduce((acc,part)=>{
+    const i=part.indexOf('=');
+    if(i>0) acc[decodeURIComponent(part.slice(0,i).trim())]=decodeURIComponent(part.slice(i+1).trim());
+    return acc;
+  },{});
+}
+function signValue(value){
+  return crypto.createHmac('sha256',SESSION_SECRET).update(value).digest('hex');
+}
+function signedSessionValue(sessionId){
+  return `${sessionId}.${signValue(sessionId)}`;
+}
+function verifySignedSession(value){
+  const [sessionId,sig]=String(value||'').split('.');
+  if(!sessionId||!sig) return '';
+  const expected=signValue(sessionId);
+  try{
+    return crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)) ? sessionId : '';
+  }catch(e){return '';}
+}
+function setSessionCookie(res,sessionId){
+  const secure=process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
+  res.setHeader('Set-Cookie',`${SESSION_COOKIE}=${encodeURIComponent(signedSessionValue(sessionId))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60*60*24*14}${secure?'; Secure':''}`);
+}
+function clearSessionCookie(res){
+  res.setHeader('Set-Cookie',`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+async function hashPassword(password){
+  return `bcrypt:${await bcrypt.hash(String(password||''),12)}`;
+}
+function hashLegacyPassword(password,salt=crypto.randomBytes(16).toString('hex')){
+  const hash=crypto.scryptSync(String(password||''),salt,64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+async function verifyPassword(password,stored){
+  if(String(stored||'').startsWith('bcrypt:')) return bcrypt.compare(String(password||''),String(stored).slice(7));
+  const [kind,salt,hash]=String(stored||'').split(':');
+  if(kind!=='scrypt'||!salt||!hash) return false;
+  const candidate=hashLegacyPassword(password,salt).split(':')[2];
+  try{return crypto.timingSafeEqual(Buffer.from(candidate,'hex'),Buffer.from(hash,'hex'));}
+  catch(e){return false;}
+}
+function passwordSetupToken(){
+  return crypto.randomBytes(32).toString('base64url');
+}
+function hashPasswordSetupToken(token){
+  return crypto.createHash('sha256').update(String(token||'')).digest('hex');
+}
+function passwordSetupUrl(token){
+  const base=CLIENT_CONFIG.publicBaseUrl ? CLIENT_CONFIG.publicBaseUrl.replace(/\/$/,'') : '';
+  return `${base}/set-password?token=${encodeURIComponent(token)}`;
+}
+function publicUser(user){
+  if(!user) return null;
+  return {id:user.id,email:user.email,name:user.name,role:user.role||'owner'};
+}
+async function seedAdminUser(){
+  const email=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
+  const password=String(process.env.ADMIN_PASSWORD||'');
+  if(!email||!password) return;
+  const name=process.env.ADMIN_NAME || CLIENT_CONFIG.clientName || 'VAL Admin';
+  const role=process.env.ADMIN_ROLE || 'owner';
+  if(pgPool){
+    const exists=await dbQuery('select id from val_users where lower(email)=lower($1) limit 1',[email]);
+    if(exists&&exists.rows&&exists.rows.length) return;
+    await dbQuery('insert into val_users (id,client_slug,tenant_id,name,email,password_hash,password_set_at,role) values ($1,$2,$3,$4,$5,$6,now(),$7)',[uuid('usr'),CLIENT_CONFIG.clientSlug,CLIENT_CONFIG.clientSlug,name,email,await hashPassword(password),role]);
+    console.log('Seeded VAL admin user:',email);
+    return;
+  }
+  const store=valStore();
+  store.users=store.users||[];
+  if(store.users.some(u=>String(u.email||'').toLowerCase()===email)) return;
+  store.users.push({id:uuid('usr'),clientSlug:CLIENT_CONFIG.clientSlug,tenantId:CLIENT_CONFIG.clientSlug,name,email,passwordHash:await hashPassword(password),passwordSetAt:new Date().toISOString(),role,createdAt:new Date().toISOString()});
+  saveValStore(store);
+}
+async function findUserByEmail(email){
+  const normalized=String(email||'').trim().toLowerCase();
+  if(!normalized) return null;
+  if(pgPool){
+    const r=await dbQuery('select * from val_users where lower(email)=lower($1) limit 1',[normalized]);
+    const row=r&&r.rows&&r.rows[0];
+    return row?{id:row.id,email:row.email,name:row.name,role:row.role,passwordHash:row.password_hash,passwordSetAt:row.password_set_at}:null;
+  }
+  const user=(valStore().users||[]).find(u=>String(u.email||'').toLowerCase()===normalized);
+  return user?{id:user.id,email:user.email,name:user.name,role:user.role,passwordHash:user.passwordHash,passwordSetAt:user.passwordSetAt}:null;
+}
+async function storePasswordSetupToken(userId,tokenHash,expiresAt){
+  if(pgPool){
+    await dbQuery('update val_users set password_reset_token_hash=$1,password_reset_expires_at=$2,updated_at=now() where id=$3',[tokenHash,expiresAt,userId]);
+    return;
+  }
+  const store=valStore();
+  const user=(store.users||[]).find(u=>u.id===userId);
+  if(user){
+    user.passwordResetTokenHash=tokenHash;
+    user.passwordResetExpiresAt=expiresAt;
+    user.updatedAt=new Date().toISOString();
+    saveValStore(store);
+  }
+}
+async function findUserByPasswordSetupToken(token){
+  const tokenHash=hashPasswordSetupToken(token);
+  if(pgPool){
+    const r=await dbQuery('select * from val_users where password_reset_token_hash=$1 and password_reset_expires_at>now() limit 1',[tokenHash]);
+    const row=r&&r.rows&&r.rows[0];
+    return row?{id:row.id,email:row.email,name:row.name,role:row.role,passwordHash:row.password_hash,passwordSetAt:row.password_set_at}:null;
+  }
+  const user=(valStore().users||[]).find(u=>u.passwordResetTokenHash===tokenHash&&new Date(u.passwordResetExpiresAt||0).getTime()>Date.now());
+  return user?{id:user.id,email:user.email,name:user.name,role:user.role,passwordHash:user.passwordHash,passwordSetAt:user.passwordSetAt}:null;
+}
+async function setUserPassword(userId,passwordHash){
+  if(pgPool){
+    await dbQuery('update val_users set password_hash=$1,password_set_at=now(),password_reset_token_hash=null,password_reset_expires_at=null,updated_at=now() where id=$2',[passwordHash,userId]);
+    return;
+  }
+  const store=valStore();
+  const user=(store.users||[]).find(u=>u.id===userId);
+  if(user){
+    user.passwordHash=passwordHash;
+    user.passwordSetAt=new Date().toISOString();
+    user.passwordResetTokenHash=null;
+    user.passwordResetExpiresAt=null;
+    user.updatedAt=new Date().toISOString();
+    saveValStore(store);
+  }
+}
+function currentValUser(){
+  return requestContext.getStore()?.user || null;
+}
+function currentUserId(){
+  return currentValUser()?.id || VAL_USER_ID;
+}
+function tenantId(){
+  return CLIENT_CONFIG.clientSlug || 'default';
+}
+function transcriptWebhookToken(){
+  return process.env.TRANSCRIPT_WEBHOOK_TOKEN || crypto.createHmac('sha256',SESSION_SECRET).update(`transcript:${tenantId()}`).digest('hex').slice(0,48);
+}
+function isValidTranscriptWebhookReq(req){
+  const token=String(req.query.token||req.headers['x-val-transcript-token']||'');
+  const expected=transcriptWebhookToken();
+  if(!token||!expected)return false;
+  try{return crypto.timingSafeEqual(Buffer.from(token),Buffer.from(expected));}
+  catch(e){return false;}
+}
+function requestBaseUrl(req){
+  return (CLIENT_CONFIG.publicBaseUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/,'');
+}
+function transcriptWebhookInfo(req){
+  const base=requestBaseUrl(req);
+  const token=transcriptWebhookToken();
+  return {
+    ok:true,
+    clientName:CLIENT_CONFIG.clientName,
+    clientSlug:CLIENT_CONFIG.clientSlug,
+    method:'POST',
+    url:`${base}/api/val/transcripts?token=${encodeURIComponent(token)}`,
+    headerName:'X-VAL-Transcript-Token',
+    headerToken:token,
+    contentType:'application/json',
+    processDefault:true,
+    samplePayload:{
+      title:'Meeting with Contact Name',
+      transcript:'Full transcript text here...',
+      source:'transcription_app',
+      timestamp:new Date().toISOString(),
+      process:true,
+      metadata:{eventTitle:'Calendar event title',contactEmail:'contact@example.com'}
+    }
+  };
+}
+function encryptionKeyBuffer(){
+  const raw=String(process.env.ENCRYPTION_KEY||'').trim();
+  if(!raw) return null;
+  if(/^[a-f0-9]{64}$/i.test(raw)) return Buffer.from(raw,'hex');
+  try{
+    const b=Buffer.from(raw,'base64');
+    if(b.length===32) return b;
+  }catch(e){}
+  return crypto.createHash('sha256').update(raw).digest();
+}
+function encryptSecret(value){
+  const key=encryptionKeyBuffer();
+  if(!key) throw new Error('ENCRYPTION_KEY is required to save credentials');
+  const iv=crypto.randomBytes(12);
+  const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
+  const encrypted=Buffer.concat([cipher.update(String(value||''),'utf8'),cipher.final()]);
+  return ['v1',iv.toString('base64'),cipher.getAuthTag().toString('base64'),encrypted.toString('base64')].join(':');
+}
+function decryptSecret(value){
+  const key=encryptionKeyBuffer();
+  if(!key) throw new Error('ENCRYPTION_KEY is required to read saved credentials');
+  const [version,ivRaw,tagRaw,dataRaw]=String(value||'').split(':');
+  if(version!=='v1'||!ivRaw||!tagRaw||!dataRaw) return '';
+  const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(ivRaw,'base64'));
+  decipher.setAuthTag(Buffer.from(tagRaw,'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(dataRaw,'base64')),decipher.final()]).toString('utf8');
+}
+function maskSecret(value){
+  const v=String(value||'');
+  if(!v) return '';
+  if(v.length<=8) return '••••';
+  return `${v.slice(0,Math.min(4,v.length-4))}...${v.slice(-4)}`;
+}
+function normalizeCredentialRow(row){
+  if(!row) return null;
+  const meta=row.metadata_json||row.metadataJson||{};
+  let masked='';
+  try{ masked=maskSecret(decryptSecret(row.encrypted_value||row.encryptedValue)); }
+  catch(e){ masked=row.encrypted_value||row.encryptedValue?'saved':''; }
+  return {
+    id:row.id,
+    userId:row.user_id||row.userId||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    provider:row.provider,
+    credentialType:row.credential_type||row.credentialType,
+    maskedValue:masked,
+    metadata:meta,
+    status:row.status||'Not tested',
+    lastTestedAt:row.last_tested_at||row.lastTestedAt||null,
+    createdAt:row.created_at||row.createdAt||null,
+    updatedAt:row.updated_at||row.updatedAt||null
+  };
+}
+async function saveIntegrationCredential({userId,provider,credentialType,value,metadata={},status='Not tested'}){
+  const id=uuid('cred');
+  const encrypted=encryptSecret(value);
+  const now=new Date().toISOString();
+  if(pgPool){
+    const r=await dbQuery(`
+      insert into user_integration_credentials
+        (id,user_id,tenant_id,provider,credential_type,encrypted_value,metadata_json,status,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,now(),now())
+      on conflict (tenant_id,user_id,provider,credential_type)
+      do update set encrypted_value=excluded.encrypted_value,metadata_json=excluded.metadata_json,status=excluded.status,updated_at=now()
+      returning *
+    `,[id,userId,tenantId(),provider,credentialType,encrypted,metadata,status]);
+    return normalizeCredentialRow(r.rows[0]);
+  }
+  const store=valStore();
+  store.integrationCredentials=store.integrationCredentials||[];
+  let row=store.integrationCredentials.find(c=>c.tenantId===tenantId()&&c.userId===userId&&c.provider===provider&&c.credentialType===credentialType);
+  if(!row){
+    row={id,userId,tenantId:tenantId(),provider,credentialType,createdAt:now};
+    store.integrationCredentials.push(row);
+  }
+  row.encryptedValue=encrypted;
+  row.metadataJson=metadata;
+  row.status=status;
+  row.updatedAt=now;
+  saveValStore(store);
+  return normalizeCredentialRow(row);
+}
+async function listIntegrationCredentials(userId){
+  if(pgPool){
+    const r=await dbQuery(`
+      select * from user_integration_credentials
+      where tenant_id=$1 and (user_id=$2 or user_id is null)
+      order by provider, credential_type
+    `,[tenantId(),userId]);
+    return (r.rows||[]).map(normalizeCredentialRow);
+  }
+  return (valStore().integrationCredentials||[])
+    .filter(c=>c.tenantId===tenantId()&&(c.userId===userId||!c.userId))
+    .map(normalizeCredentialRow);
+}
+async function deleteIntegrationCredential(id,userId){
+  if(pgPool){
+    await dbQuery('delete from user_integration_credentials where id=$1 and tenant_id=$2 and (user_id=$3 or user_id is null)',[id,tenantId(),userId]);
+    return;
+  }
+  const store=valStore();
+  store.integrationCredentials=(store.integrationCredentials||[]).filter(c=>!(c.id===id&&c.tenantId===tenantId()&&(c.userId===userId||!c.userId)));
+  saveValStore(store);
+}
+async function getIntegrationCredential(provider,credentialType,userId=currentValUser()?.id){
+  if(!userId) return null;
+  if(pgPool){
+    const r=await dbQuery(`
+      select * from user_integration_credentials
+      where tenant_id=$1 and provider=$2 and credential_type=$3 and (user_id=$4 or user_id is null)
+      order by case when user_id=$4 then 0 else 1 end, updated_at desc
+      limit 1
+    `,[tenantId(),provider,credentialType,userId]);
+    return r.rows?.[0]||null;
+  }
+  return (valStore().integrationCredentials||[])
+    .filter(c=>c.tenantId===tenantId()&&c.provider===provider&&c.credentialType===credentialType&&(c.userId===userId||!c.userId))
+    .sort((a,b)=>(a.userId===userId?-1:1))
+    [0] || null;
+}
+async function resolveIntegrationSecret(provider,credentialType,fallback=''){
+  const row=await getIntegrationCredential(provider,credentialType);
+  if(row?.encrypted_value||row?.encryptedValue){
+    try{return decryptSecret(row.encrypted_value||row.encryptedValue);}
+    catch(e){
+      console.error(`Credential read failed for ${provider}/${credentialType}:`,e.message);
+    }
+  }
+  return fallback || '';
+}
+async function resolveOpenAIKey(){ return resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
+async function resolveOpenAIModel(){
+  return resolveIntegrationSecret('openai','preferred_model',OPENAI_CHAT_MODEL);
+}
+async function resolveGhlLocationId(){
+  return resolveIntegrationSecret('ghl','location_id',GHL_LOC);
+}
+async function markCredentialStatus(provider,status){
+  const user=currentValUser();
+  if(!user) return;
+  if(pgPool){
+    await dbQuery('update user_integration_credentials set status=$1,last_tested_at=now(),updated_at=now() where tenant_id=$2 and user_id=$3 and provider=$4',[status,tenantId(),user.id,provider]);
+    return;
+  }
+  const store=valStore();
+  (store.integrationCredentials||[]).forEach(c=>{
+    if(c.tenantId===tenantId()&&c.userId===user.id&&c.provider===provider){
+      c.status=status;c.lastTestedAt=new Date().toISOString();c.updatedAt=new Date().toISOString();
+    }
+  });
+  saveValStore(store);
+}
+async function createSession(userId){
+  const id=uuid('sess');
+  const expires=new Date(Date.now()+14*24*60*60*1000).toISOString();
+  if(pgPool){
+    await dbQuery('insert into val_sessions (id,user_id,client_slug,expires_at) values ($1,$2,$3,$4)',[id,userId,CLIENT_CONFIG.clientSlug,expires]);
+  }else{
+    const store=valStore();
+    store.sessions=store.sessions||[];
+    store.sessions.push({id,userId,clientSlug:CLIENT_CONFIG.clientSlug,expiresAt:expires});
+    saveValStore(store);
+  }
+  return id;
+}
+async function getSessionUser(req){
+  const signed=parseCookies(req)[SESSION_COOKIE];
+  const sessionId=verifySignedSession(signed);
+  if(!sessionId) return null;
+  if(pgPool){
+    const r=await dbQuery(`select u.id,u.email,u.name,u.role from val_sessions s join val_users u on u.id=s.user_id where s.id=$1 and s.expires_at>now() limit 1`,[sessionId]);
+    return r&&r.rows&&r.rows[0]?publicUser(r.rows[0]):null;
+  }
+  const store=valStore();
+  const session=(store.sessions||[]).find(s=>s.id===sessionId&&new Date(s.expiresAt).getTime()>Date.now());
+  if(!session) return null;
+  return publicUser((store.users||[]).find(u=>u.id===session.userId));
+}
+async function destroySession(req){
+  const sessionId=verifySignedSession(parseCookies(req)[SESSION_COOKIE]);
+  if(!sessionId) return;
+  if(pgPool) await dbQuery('delete from val_sessions where id=$1',[sessionId]);
+  else{
+    const store=valStore();
+    store.sessions=(store.sessions||[]).filter(s=>s.id!==sessionId);
+    saveValStore(store);
+  }
 }
 function memoryChunks(text){
   const clean = String(text||'').replace(/\r\n/g,'\n').trim();
@@ -241,36 +752,635 @@ async function initValDb(){
       tokens jsonb not null,
       updated_at timestamptz not null default now()
     );
+    create table if not exists drafts (
+      id text primary key,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      draft_type text not null default 'follow_up',
+      contact_id text,
+      provider text not null default 'internal',
+      subject text,
+      body text not null default '',
+      status text not null default 'draft',
+      source_context_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists meeting_transcript_links (
+      id text primary key,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      meeting_source text,
+      meeting_event_id text,
+      transcript_id text,
+      confidence numeric,
+      matched_reason text,
+      created_at timestamptz not null default now(),
+      unique (user_id,tenant_id,meeting_source,meeting_event_id,transcript_id)
+    );
+    create table if not exists val_calendar_events (
+      id text primary key,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      source text not null default 'val',
+      title text not null,
+      start_time timestamptz,
+      end_time timestamptz,
+      attendees jsonb not null default '[]',
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists val_users (
+      id text primary key,
+      client_slug text not null default 'default',
+      tenant_id text not null default 'default',
+      name text,
+      email text not null unique,
+      password_hash text,
+      password_set_at timestamptz,
+      password_reset_token_hash text,
+      password_reset_expires_at timestamptz,
+      role text not null default 'owner',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists val_sessions (
+      id text primary key,
+      user_id text references val_users(id) on delete cascade,
+      client_slug text not null default 'default',
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists user_integration_credentials (
+      id text primary key,
+      user_id text references val_users(id) on delete cascade,
+      tenant_id text not null default 'default',
+      provider text not null,
+      credential_type text not null,
+      encrypted_value text not null,
+      metadata_json jsonb not null default '{}',
+      status text not null default 'Not tested',
+      last_tested_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,provider,credential_type)
+    );
+    create table if not exists email_rules (
+      id text primary key,
+      user_id text,
+      tenant_id text not null default 'default',
+      provider text not null default 'any',
+      rule_name text not null,
+      rule_type text not null,
+      conditions_json jsonb not null default '{}',
+      actions_json jsonb not null default '{}',
+      approval_mode text not null default 'review_only',
+      confidence_threshold text not null default 'medium',
+      is_active boolean not null default true,
+      created_from text,
+      created_from_message_id text,
+      created_from_thread_id text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      last_used_at timestamptz,
+      usage_count integer not null default 0
+    );
+    create table if not exists email_action_log (
+      id text primary key,
+      user_id text,
+      tenant_id text not null default 'default',
+      provider text not null,
+      message_id text,
+      thread_id text,
+      action_type text not null,
+      action_status text not null default 'suggested',
+      acted_by text not null default 'val',
+      rule_id text,
+      details_json jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
     create index if not exists val_memory_user_created_idx on val_memory_items(user_id,created_at desc);
+    create index if not exists val_sessions_user_expires_idx on val_sessions(user_id,expires_at);
+    create index if not exists user_integration_credentials_lookup_idx on user_integration_credentials(tenant_id,user_id,provider,credential_type);
+    create index if not exists email_rules_lookup_idx on email_rules(tenant_id,user_id,is_active,rule_type);
+    create index if not exists email_action_log_lookup_idx on email_action_log(tenant_id,user_id,action_type,created_at desc);
+    create index if not exists drafts_lookup_idx on drafts(tenant_id,user_id,status,created_at desc);
+    create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
+    create index if not exists val_calendar_events_lookup_idx on val_calendar_events(tenant_id,user_id,start_time desc);
   `);
+  for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
+    await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
+    await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
+  }
+  await dbQuery('alter table val_users alter column password_hash drop not null');
+  await dbQuery('alter table val_users add column if not exists password_set_at timestamptz');
+  await dbQuery('alter table val_users add column if not exists password_reset_token_hash text');
+  await dbQuery('alter table val_users add column if not exists password_reset_expires_at timestamptz');
+  await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
-const valDbReady = initValDb().catch(e=>console.error('VAL DB init error:',e.message));
+const valDbReady = initValDb().then(()=>seedAdminUser()).catch(e=>console.error('VAL DB init error:',e.message));
+
+function loginHtml(){
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${CLIENT_CONFIG.brandName} Login</title><style>
+  :root{color-scheme:dark;--navy:#14243a;--ink:#07111d;--cream:#f4efe5;--gold:#c9a45d}
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,var(--navy),var(--ink));color:var(--cream);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+  .card{width:min(420px,100%);border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.055);border-radius:14px;padding:30px;box-shadow:0 24px 80px rgba(0,0,0,.28)}
+  .brand{font-family:Georgia,serif;font-size:34px;letter-spacing:.08em;margin:0 0 6px}.sub{color:rgba(244,239,229,.68);line-height:1.5;margin:0 0 24px}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);margin:16px 0 8px}
+  input{width:100%;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:var(--cream);border-radius:10px;padding:13px 14px;font-size:15px;outline:none}
+  button{width:100%;margin-top:22px;border:1px solid rgba(201,164,93,.55);background:rgba(201,164,93,.18);color:var(--cream);border-radius:10px;padding:13px 14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+  .linkbtn{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.06);margin-top:12px;color:rgba(244,239,229,.84)}
+  .err{min-height:22px;color:#ffb4a8;margin-top:14px;font-size:14px;line-height:1.45}.msg{color:rgba(244,239,229,.78);font-size:14px;line-height:1.5;margin-top:14px}.setup{display:none;margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12)}.setup a{color:var(--gold);word-break:break-all}
+  </style></head><body><main class="card"><form id="loginForm"><h1 class="brand">${CLIENT_CONFIG.brandName}</h1><p class="sub">Sign in to your private VAL dashboard.</p><label>Email</label><input id="email" type="email" autocomplete="email" required><label>Password</label><input id="password" type="password" autocomplete="current-password" required><button type="submit">Enter VAL</button><button class="linkbtn" type="button" id="showSetup">First time here? Set your password.</button><div class="err" id="err"></div></form><section class="setup" id="setupBox"><p class="msg">Enter your email and VAL will create a secure setup link. For testing, the link appears here.</p><label>Account Email</label><input id="setupEmail" type="email" autocomplete="email"><button type="button" id="requestSetup">Create Setup Link</button><div class="msg" id="setupMsg"></div></section></main><script>
+  const setupBox=document.getElementById('setupBox');
+  const setupMsg=document.getElementById('setupMsg');
+  function showSetupBox(){setupEmail.value=email.value||setupEmail.value;setupBox.style.display='block';}
+  async function requestSetupLink(){
+    setupMsg.textContent='Creating setup link...';
+    const r=await fetch('/api/auth/request-password-setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:setupEmail.value||email.value})});
+    const d=await r.json().catch(()=>({}));
+    setupMsg.innerHTML=(d.message||'If that email exists, a setup link has been created.')+(d.setupUrl?'<br><br><a href="'+d.setupUrl+'">'+d.setupUrl+'</a>':'');
+  }
+  document.getElementById('showSetup').addEventListener('click',showSetupBox);
+  document.getElementById('requestSetup').addEventListener('click',requestSetupLink);
+  document.getElementById('loginForm').addEventListener('submit',async function(e){
+    e.preventDefault();document.getElementById('err').textContent='';
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){location.href='/dashboard';return;}
+    if(d.requiresPasswordSetup){document.getElementById('err').textContent=d.message||'Password setup required';showSetupBox();return;}
+    document.getElementById('err').textContent=d.error||'Login failed';
+  });
+  </script></body></html>`;
+}
+function setPasswordHtml(){
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Set Password</title><style>
+  :root{color-scheme:dark;--navy:#14243a;--ink:#07111d;--cream:#f4efe5;--gold:#c9a45d}
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,var(--navy),var(--ink));color:var(--cream);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+  .card{width:min(420px,100%);border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.055);border-radius:14px;padding:30px;box-shadow:0 24px 80px rgba(0,0,0,.28)}
+  h1{font-family:Georgia,serif;font-size:34px;letter-spacing:.04em;margin:0 0 8px}.sub{color:rgba(244,239,229,.68);line-height:1.5;margin:0 0 24px}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);margin:16px 0 8px}
+  input{width:100%;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:var(--cream);border-radius:10px;padding:13px 14px;font-size:15px;outline:none}
+  button{width:100%;margin-top:22px;border:1px solid rgba(201,164,93,.55);background:rgba(201,164,93,.18);color:var(--cream);border-radius:10px;padding:13px 14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+  .err{min-height:22px;color:#ffb4a8;margin-top:14px;font-size:14px}.msg{color:rgba(244,239,229,.78);font-size:14px;line-height:1.5;margin-top:14px}
+  </style></head><body><form class="card" id="setPasswordForm"><h1>Set Your Password</h1><p class="sub">Choose a password for your private VAL dashboard. Minimum 10 characters.</p><label>New Password</label><input id="password" type="password" autocomplete="new-password" minlength="10" required><label>Confirm Password</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="10" required><button type="submit">Save Password</button><div class="err" id="err"></div><div class="msg" id="msg"></div></form><script>
+  const token=new URLSearchParams(location.search).get('token')||'';
+  document.getElementById('setPasswordForm').addEventListener('submit',async function(e){
+    e.preventDefault();err.textContent='';msg.textContent='';
+    if(password.value.length<10){err.textContent='Password must be at least 10 characters.';return;}
+    if(password.value!==confirmPassword.value){err.textContent='Passwords do not match.';return;}
+    const r=await fetch('/api/auth/set-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:password.value})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){msg.textContent='Password saved. Opening VAL...';location.href='/dashboard';return;}
+    err.textContent=d.error||'This setup link is invalid or expired.';
+  });
+  </script></body></html>`;
+}
+function isPublicPath(req){
+  const p=req.path;
+  if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
+  return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/auth/callback'||p==='/favicon.ico';
+}
+async function requireAuth(req,res,next){
+  if(isPublicPath(req)) return next();
+  if(DEMO_MODE){
+    const user=demoUser();
+    const state=demoState(req,res);
+    req.valUser=user;
+    return requestContext.run({user,demo:true,demoState:state},()=>next());
+  }
+  await valDbReady;
+  const user=await getSessionUser(req);
+  if(user){req.valUser=user;return requestContext.run({user},()=>next());}
+  if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
+  return res.redirect('/login');
+}
 
 // ── HEALTH ───────────────────────────────────────────────
 function statusPayload(){
   return {
     status:'VAL Proxy OK',
-    app:'mark-goall-val',
+    app:CLIENT_CONFIG.clientSlug,
     time:new Date().toISOString(),
+    client:CLIENT_CONFIG,
     config:{
       ghlConfigured:!!(GHL_KEY&&GHL_LOC),
-      ghlMissing:['GHL_KEY','GHL_LOC'].filter(k=>!process.env[k]),
+      ghlMissing:[GHL_KEY?'':'GHL_KEY/GHL_API_KEY',GHL_LOC?'':'GHL_LOC/GHL_LOCATION_ID'].filter(Boolean),
       openAiConfigured:!!OPENAI_KEY,
       databaseConfigured:!!process.env.DATABASE_URL,
       googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
       ghlCalendarMode:GHL_CALENDAR_IDS.length?'selected':'all',
-      ghlCalendarCount:GHL_CALENDAR_IDS.length
+      ghlCalendarCount:GHL_CALENDAR_IDS.length,
+      demoMode:DEMO_MODE
     }
   };
 }
 
-app.get('/',(req,res)=>res.json(statusPayload()));
+app.get('/',async(req,res)=>{
+  if(DEMO_MODE) return res.redirect('/guide');
+  await valDbReady;
+  const user=await getSessionUser(req);
+  if(!user) return res.type('html').send(loginHtml());
+  return res.sendFile(path.join(__dirname,'dashboard.html'));
+});
+app.get('/api/health',(req,res)=>res.json(statusPayload()));
 app.get('/health',(req,res)=>res.json(statusPayload()));
+app.get('/login',async(req,res)=>{
+  if(DEMO_MODE) return res.redirect('/guide');
+  await valDbReady;
+  const user=await getSessionUser(req);
+  if(user) return res.redirect('/dashboard');
+  res.type('html').send(loginHtml());
+});
+app.get('/set-password',(req,res)=>{
+  res.type('html').send(setPasswordHtml());
+});
+app.post('/api/auth/login',async(req,res)=>{
+  await valDbReady;
+  const user=await findUserByEmail(req.body.email);
+  if(!user) return res.status(401).json({ok:false,error:'Invalid email or password'});
+  if(!user.passwordHash) return res.status(403).json({ok:false,requiresPasswordSetup:true,message:'Password setup required'});
+  if(!(await verifyPassword(req.body.password,user.passwordHash))) return res.status(401).json({ok:false,error:'Invalid email or password'});
+  const sessionId=await createSession(user.id);
+  setSessionCookie(res,sessionId);
+  res.json({ok:true,user:publicUser(user)});
+});
+app.post('/api/auth/request-password-setup',async(req,res)=>{
+  await valDbReady;
+  const email=String(req.body.email||'').trim().toLowerCase();
+  const generic={ok:true,message:'If that email exists, a setup link has been created.'};
+  const user=await findUserByEmail(email);
+  if(!user){
+    if(email) console.log('Password setup requested for unknown email:',email);
+    return res.json(generic);
+  }
+  const token=passwordSetupToken();
+  const expiresAt=new Date(Date.now()+60*60*1000).toISOString();
+  await storePasswordSetupToken(user.id,hashPasswordSetupToken(token),expiresAt);
+  res.json({...generic,setupUrl:passwordSetupUrl(token),expiresAt});
+});
+app.post('/api/auth/set-password',async(req,res)=>{
+  await valDbReady;
+  const token=String(req.body.token||'');
+  const password=String(req.body.password||'');
+  if(!token) return res.status(400).json({ok:false,error:'Invalid or expired setup link'});
+  if(password.length<10) return res.status(400).json({ok:false,error:'Password must be at least 10 characters'});
+  const user=await findUserByPasswordSetupToken(token);
+  if(!user) return res.status(400).json({ok:false,error:'Invalid or expired setup link'});
+  await setUserPassword(user.id,await hashPassword(password));
+  const sessionId=await createSession(user.id);
+  setSessionCookie(res,sessionId);
+  res.json({ok:true,user:publicUser(user)});
+});
+app.post('/api/auth/logout',async(req,res)=>{
+  await destroySession(req);
+  clearSessionCookie(res);
+  res.json({ok:true});
+});
+app.get('/api/auth/me',async(req,res)=>{
+  if(DEMO_MODE) return res.json({ok:true,user:demoUser(),demo:true});
+  await valDbReady;
+  const user=await getSessionUser(req);
+  res.status(user?200:401).json(user?{ok:true,user}:{ok:false,error:'Authentication required'});
+});
+app.use(requireAuth);
+app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL}));
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
+app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
+app.get('/api/val/transcripts/webhook',(req,res)=>res.json(transcriptWebhookInfo(req)));
+app.get('/api/integrations/credentials',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      return res.json({ok:true,credentials:[
+        {id:'demo-openai',provider:'openai',credentialType:'api_key',maskedValue:'sk-...demo',status:'Connected',lastTestedAt:new Date().toISOString()},
+        {id:'demo-ghl',provider:'ghl',credentialType:'api_key',maskedValue:'ghl-...demo',status:'Connected',lastTestedAt:new Date().toISOString()},
+        {id:'demo-outs',provider:'outscraper',credentialType:'api_key',maskedValue:'out-...demo',status:'Connected',lastTestedAt:new Date().toISOString()},
+        {id:'demo-rr',provider:'rocketreach',credentialType:'api_key',maskedValue:'rr-...demo',status:'Connected',lastTestedAt:new Date().toISOString()}
+      ],oauth:{google:true,microsoft:true},demo:true});
+    }
+    const credentials=await listIntegrationCredentials(req.valUser.id);
+    const oauth={
+      google:!!(await loadOAuthTokens('google')),
+      microsoft:!!(await loadOAuthTokens('microsoft'))
+    };
+    res.json({ok:true,credentials,oauth});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/integrations/credentials',async(req,res)=>{
+  try{
+    const provider=String(req.body.provider||'').trim().toLowerCase();
+    const allowed=new Set(['openai','ghl','outscraper','rocketreach','google_oauth','microsoft_oauth']);
+    if(!allowed.has(provider)) return res.status(400).json({ok:false,error:'Unsupported provider'});
+    if(DEMO_MODE) return res.json({ok:true,demo:true,credentials:[{id:`demo-${provider}`,provider,credentialType:'api_key',maskedValue:'...demo',status:'Connected',lastTestedAt:new Date().toISOString()}]});
+    const fields=req.body.fields||{};
+    const saved=[];
+    async function save(type,value,metadata){
+      if(String(value||'').trim()){
+        saved.push(await saveIntegrationCredential({
+          userId:req.valUser.id,
+          provider,
+          credentialType:type,
+          value:String(value).trim(),
+          metadata:metadata||{},
+          status:'Not tested'
+        }));
+      }
+    }
+    if(provider==='openai'){
+      await save('api_key',fields.apiKey||fields.key);
+      await save('preferred_model',fields.preferredModel||fields.model);
+    }else if(provider==='ghl'){
+      await save('api_key',fields.apiKey||fields.accessToken||fields.key);
+      await save('location_id',fields.locationId);
+      await save('mcp_url',fields.mcpUrl);
+    }else if(provider==='outscraper'){
+      await save('api_key',fields.apiKey||fields.key);
+    }else if(provider==='rocketreach'){
+      await save('api_key',fields.apiKey||fields.key);
+    }else{
+      return res.status(400).json({ok:false,error:'Use OAuth connect buttons for Google or Microsoft'});
+    }
+    res.json({ok:true,credentials:saved});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.delete('/api/integrations/credentials/:id',async(req,res)=>{
+  try{
+    if(DEMO_MODE) return res.json({ok:true,demo:true,message:'Demo credential reset.'});
+    await deleteIntegrationCredential(req.params.id,req.valUser.id);
+    res.json({ok:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/integrations/test/:provider',async(req,res)=>{
+  const provider=String(req.params.provider||'').toLowerCase();
+  try{
+    if(DEMO_MODE) return res.json({ok:true,status:'Connected',message:`${provider} is connected in demo mode.`,demo:true});
+    let ok=false, message='Not tested';
+    if(provider==='openai'){
+      const key=await resolveOpenAIKey();
+      if(!key) throw new Error('OpenAI API key is missing');
+      const r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${key}`}});
+      ok=r.ok; message=ok?'Connected':`Failed (${r.status})`;
+    }else if(provider==='ghl'){
+      const loc=await resolveGhlLocationId();
+      const key=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
+      if(!key||!loc) throw new Error('GHL API key and Location ID are required');
+      const r=await fetch(`${BASE}/locations/${encodeURIComponent(loc)}`,{headers:{Authorization:`Bearer ${key}`,Version:'2021-07-28','Content-Type':'application/json'}});
+      ok=r.ok; message=ok?'Connected':`Failed (${r.status})`;
+    }else if(provider==='outscraper'){
+      const key=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+      ok=!!key; message=ok?'Connected': 'Outscraper API key is missing';
+    }else if(provider==='rocketreach'){
+      const key=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
+      ok=!!key; message=ok?'Connected': 'RocketReach API key is missing';
+    }else if(provider==='google_oauth'){
+      ok=!!(await loadOAuthTokens('google')); message=ok?'Connected':'Not connected';
+    }else if(provider==='microsoft_oauth'){
+      ok=!!(await loadOAuthTokens('microsoft')); message=ok?'Connected':'Not connected';
+    }else{
+      return res.status(400).json({ok:false,error:'Unsupported provider'});
+    }
+    await markCredentialStatus(provider,ok?'Connected':'Failed');
+    res.status(ok?200:400).json({ok,status:ok?'Connected':'Failed',message});
+  }catch(e){
+    await markCredentialStatus(provider,'Failed').catch(()=>{});
+    res.status(500).json({ok:false,status:'Failed',error:e.message});
+  }
+});
+app.delete('/api/integrations/oauth/:provider',async(req,res)=>{
+  try{
+    const provider=String(req.params.provider||'').toLowerCase();
+    if(!['google','microsoft'].includes(provider)) return res.status(400).json({ok:false,error:'Unsupported OAuth provider'});
+    if(pgPool) await dbQuery('delete from val_oauth_tokens where provider=$1',[provider]);
+    else{
+      const store=valStore();
+      store.oauthTokens=store.oauthTokens||{};
+      delete store.oauthTokens[provider];
+      saveValStore(store);
+    }
+    if(provider==='google') googleTokens={};
+    res.json({ok:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/gmail/debug',async(req,res)=>{
+  try{
+    await ensureGoogleTokensLoaded();
+    const errors=[];
+    const scopes=googleScopeList();
+    const missingScopes=missingGoogleScopes(REQUIRED_GMAIL_SCOPES);
+    const token=await getGoogleToken();
+    if(!token) errors.push(lastGoogleAuthError||'Google token missing');
+    let profileEmail='', recentMessagesCount=0, unreadMessagesCount=0, sampleSubjects=[];
+    if(token&&!missingScopes.includes('https://www.googleapis.com/auth/gmail.readonly')){
+      const profileRes=await fetch('https://www.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:`Bearer ${token}`}});
+      const profile=await readJsonResponse(profileRes);
+      if(profileRes.ok) profileEmail=profile.emailAddress||'';
+      else errors.push(profile.error?.message||`Gmail profile failed (${profileRes.status})`);
+      const [recent,unread]=await Promise.all([
+        fetchGmailMessages({query:'newer_than:7d',maxResults:10}),
+        fetchGmailMessages({query:'is:unread',maxResults:10})
+      ]);
+      recentMessagesCount=(recent.emails||[]).length;
+      unreadMessagesCount=(unread.emails||[]).length;
+      sampleSubjects=(recent.emails||[]).slice(0,5).map(e=>e.subject||'(No subject)');
+      if(recent.error) errors.push(recent.error);
+      if(unread.error) errors.push(unread.error);
+    }
+    res.json({ok:!errors.length,profileEmail,scopes,missingScopes,recentMessagesCount,unreadMessagesCount,sampleSubjects,errors});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/integrations/health',async(req,res)=>{
+  try{
+    const errors=[];
+    await ensureGoogleTokensLoaded();
+    const scopes=googleScopeList();
+    const missingScopes=missingGoogleScopes();
+    const hasRefreshToken=!!googleTokens.refresh_token;
+    const token=await getGoogleToken();
+    const refreshTest=token?'passed':'failed';
+    if(!token) errors.push(lastGoogleAuthError||'Google auth required');
+    const now=new Date();
+    const past=new Date(now);past.setDate(past.getDate()-7);
+    const future=new Date(now);future.setDate(future.getDate()+7);
+    const [pastCal,nextCal,recentGmail,unreadGmail,transcripts]=await Promise.all([
+      fetchGoogleCalendarEvents(past,now,100).catch(e=>{errors.push('Calendar past 7 days: '+e.message);return [];}),
+      fetchGoogleCalendarEvents(now,future,100).catch(e=>{errors.push('Calendar next 7 days: '+e.message);return [];}),
+      fetchGmailMessages({query:'newer_than:7d',maxResults:100}).catch(e=>({emails:[],error:e.message})),
+      fetchGmailMessages({query:'is:unread',maxResults:100}).catch(e=>({emails:[],error:e.message})),
+      recentTranscripts(7).catch(e=>{errors.push('Transcripts: '+e.message);return [];})
+    ]);
+    if(recentGmail.error) errors.push('Gmail recent: '+recentGmail.error);
+    if(unreadGmail.error) errors.push('Gmail unread: '+unreadGmail.error);
+    const matched=await countTranscriptMeetingLinks(7).catch(e=>{errors.push('Transcript links: '+e.message);return 0;});
+    res.json({
+      ok:!errors.length,
+      google:{
+        connected:!!token,
+        hasRefreshToken,
+        scopes,
+        missingScopes,
+        tokenExpiresAt:googleTokenExpiresAt(),
+        refreshTest,
+        calendar:{enabled:!!token,past7DaysCount:pastCal.length,next7DaysCount:nextCal.length},
+        gmail:{enabled:!!token&&!missingScopes.includes('https://www.googleapis.com/auth/gmail.readonly'),unreadCount:(unreadGmail.emails||[]).length,recent7DaysCount:(recentGmail.emails||[]).length}
+      },
+      transcripts:{last7DaysCount:transcripts.length,matchedToMeetingsCount:matched},
+      actions:{canCreateTasks:true,canCreateDrafts:true},
+      errors
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message,errors:[e.message]});
+  }
+});
+app.get('/api/email/intelligence',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const s=demoState(req,res), emails=s.emails||[];
+      const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
+      return res.json({ok:true,needsAttention:emails.filter(e=>e.classification==='needs_attention'),needsReply:emails.filter(e=>e.classification==='needs_reply'),lowPriority:[],waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),draftSuggestions:emails.filter(e=>['needs_reply','appointment_recap_needed'].includes(e.classification)),providers:{gmail:{status:'connected',needsAuth:false,missingScopes:[],error:''},outlook:{status:'connected',needsAuth:false,error:''}},errors:[],emails,summary:{total:emails.length,buckets,draftsPrepared:2,waitingOnResponse:1,forwardingSuggestions:0,ignoredLowPriority:0,ruleSuggestions:2,savedRules:1},rules:[{id:'demo-rule-1',ruleName:'Draft replies for investor requests',ruleType:'draft_reply',isActive:true}]});
+    }
+    const rules=await listEmailRules(req.valUser.id);
+    const limit=Number(req.query.limit)||20;
+    const [gmail,outlook]=await Promise.all([
+      fetchUnifiedGmailEmails(limit).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+    ]);
+    const emails=[...(gmail.emails||[]),...(outlook.emails||[])].map(email=>{
+      const c=classifyEmail(email,rules);
+      return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
+    });
+    await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
+    const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
+    const draftsPrepared=emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed').length;
+    const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
+    const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
+    const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)).length;
+    res.json({
+      ok:true,
+      needsAttention:emails.filter(e=>e.classification==='needs_attention'),
+      needsReply:emails.filter(e=>e.classification==='needs_reply'),
+      lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)),
+      waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
+      draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
+      providers:{gmail:{status:gmail.needsAuth?'reconnect_required':'connected',needsAuth:!!gmail.needsAuth,missingScopes:gmail.missingScopes||[],error:gmail.error||''},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      errors:[gmail.error,outlook.error].filter(Boolean),
+      emails,
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
+      rules
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/email/rules',async(req,res)=>{
+  try{res.json({ok:true,rules:await listEmailRules(req.valUser.id)});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/email/rules',async(req,res)=>{
+  try{
+    const rule=await saveEmailRule(req.valUser.id,req.body||{});
+    await logEmailAction(req.valUser.id,{provider:rule.provider,actionType:'rule_created',actionStatus:'created',actedBy:'user',ruleId:rule.id,details:rule});
+    res.json({ok:true,rule});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/email/rules/:id',async(req,res)=>{
+  try{
+    const rules=await listEmailRules(req.valUser.id);
+    const existing=rules.find(r=>r.id===req.params.id);
+    if(!existing)return res.status(404).json({ok:false,error:'Rule not found'});
+    const rule=await saveEmailRule(req.valUser.id,{...existing,...req.body,id:req.params.id});
+    res.json({ok:true,rule});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/email/actions',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const action=String(body.actionType||body.action||'').trim();
+    const email=body.email||{};
+    const sensitive=/legal|hr|medical|financial|contract|complaint|confidential/i.test([email.subject,email.bodyPreview,email.bodyText].join(' '));
+    const external=['send','forward','delete','archive','marked_read'].includes(action);
+    const status=(external||sensitive)?'needs_approval':'prepared';
+    const result={ok:true,status,requiresApproval:status==='needs_approval'};
+    if(action==='drafted_reply'||action==='draft_reply'){
+      result.draft={subject:'Re: '+(email.subject||''),body:`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review and personalize before sending.]\n\nBest,`};
+      result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from}});
+    }else if(action==='forwarded'||action==='forward'){
+      result.forwardDraft={to:body.forwardTo||'',subject:'Fwd: '+(email.subject||''),body:`VAL summary:\n${email.reason||'This may need review.'}\n\nOriginal email below.\n\nFrom: ${email.from?.email||''}\nSubject: ${email.subject||''}\n\n${email.bodyPreview||email.snippet||''}`};
+      result.internalDraft=await saveInternalDraft({draftType:'email_forward',provider:'internal',subject:result.forwardDraft.subject,body:result.forwardDraft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,forwardTo:result.forwardDraft.to}});
+    }else if(action==='followup_tracked'||action==='track_response'){
+      result.followup={title:'Follow up on '+(email.subject||'email'),dueInBusinessDays:3};
+      const due=new Date();due.setDate(due.getDate()+3);
+      result.task={id:uuid('task'),title:result.followup.title,contactName:email.from?.name||email.from?.email||'',dueDate:due.toISOString(),notes:'Created from Email Intelligence waiting-on-response tracking.',details:[{text:'Source email: '+(email.subject||''),ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      await saveTask(result.task);
+    }else if(action==='task_created'||action==='add_task'){
+      result.task={id:uuid('task'),title:'Review email: '+(email.subject||'(No subject)'),contactName:email.from?.name||email.from?.email||'',dueDate:null,notes:[email.reason||'',email.recommendedAction||'',email.bodyPreview||email.snippet||''].filter(Boolean).join('\n'),details:[{text:'Created from Email Intelligence',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      await saveTask(result.task);
+    }
+    await logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:action||'suggested',actionStatus:status,actedBy:'user',ruleId:email.matchedRuleId||'',details:{email,body,result}});
+    res.json(result);
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/email/automation-rule',async(req,res)=>{
+  try{
+    const email=req.body.email||{};
+    const mode=req.body.mode||'auto_next_time';
+    const action=req.body.action||email.recommendedAction||'label';
+    const fromEmail=email.from?.email||'';
+    const domain=fromEmail.split('@')[1]||'';
+    let ruleType='label',conditions={},actions={action:'label',label:email.classification||'review'};
+    if(mode==='ignore_sender'||mode==='ignore_domain'){
+      ruleType=mode;conditions=mode==='ignore_domain'?{from_domain:domain}:{from_email:fromEmail};actions={action:'label',label:'low_priority'};
+    }else if(/forward/i.test(action)){
+      ruleType='forward_sender';conditions={from_email:fromEmail};actions={action:'forward',forward_to:req.body.forwardTo||'',include_summary:true,cc_user:false};
+    }else if(/reply|draft/i.test(action)){
+      ruleType='draft_reply';conditions={from_email:fromEmail};actions={action:'draft_reply'};
+    }else if(/track/i.test(action)){
+      ruleType='track_sent_followup';conditions={from_email:fromEmail||'',subject_contains:(email.subject||'').slice(0,80)};actions={action:'track_response',business_days:3};
+    }
+    if(!conditions.from_email&&!conditions.from_domain&&!conditions.subject_contains)return res.status(400).json({ok:false,error:'Rule trigger is too broad. Confirmation needs a specific sender, domain, or subject pattern.'});
+    const rule=await saveEmailRule(req.valUser.id,{provider:email.provider||'any',ruleName:req.body.ruleName||`Auto ${ruleType} for ${conditions.from_email||conditions.from_domain||conditions.subject_contains}`,ruleType,conditions,actions,approvalMode:req.body.approvalMode||'always_auto',confidenceThreshold:'high',createdFrom:'user_confirmation',createdFromMessageId:email.messageId||'',createdFromThreadId:email.threadId||''});
+    await logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'rule_created',actionStatus:'created',actedBy:'user',ruleId:rule.id,details:{rule}});
+    res.json({ok:true,rule});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/email/rule-suggestions/analyze',async(req,res)=>{
+  try{
+    const actions=req.body.recentEmailActions||await recentEmailActions(req.valUser.id,200);
+    const existing=req.body.existingRules||await listEmailRules(req.valUser.id);
+    const suggestions=[];
+    const forwardCounts={};
+    const ignoreCounts={};
+    actions.forEach(a=>{
+      const d=a.details_json||a.details||{};
+      const from=d.email?.from?.email||d.from_email||'';
+      const forwardTo=d.body?.forwardTo||d.forward_to||'';
+      if(from&&forwardTo)forwardCounts[from+'>'+forwardTo]=(forwardCounts[from+'>'+forwardTo]||0)+1;
+      if(from&&['ignored','low_priority'].includes(d.classification||d.email?.classification))ignoreCounts[from]=(ignoreCounts[from]||0)+1;
+    });
+    Object.entries(forwardCounts).filter(([,n])=>n>=2).slice(0,5).forEach(([key,n])=>{
+      const [from,to]=key.split('>');
+      suggestions.push({suggestedRuleType:'forward_sender',plainEnglish:`I noticed you often forward emails from ${from} to ${to}.`,conditions:{from_email:from},actions:{action:'forward',forward_to:to,include_summary:true,cc_user:false},confidence:n>=3?'high':'medium',evidence:[`${n} similar forwarding actions`],confirmationQuestion:`Should VAL automatically forward future emails from ${from} to ${to}?`});
+    });
+    Object.entries(ignoreCounts).filter(([,n])=>n>=2).slice(0,5).forEach(([from,n])=>{
+      suggestions.push({suggestedRuleType:'ignore_sender',plainEnglish:`You repeatedly ignore or downgrade emails from ${from}.`,conditions:{from_email:from},actions:{action:'label',label:'low_priority'},confidence:n>=3?'high':'medium',evidence:[`${n} ignored or low priority actions`],confirmationQuestion:`Should VAL move future emails from ${from} into low priority automatically?`});
+    });
+    res.json({ok:true,suggestions,existingRules:existing.length});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 function guideHtml(markdown){
   const slug = text => String(text||'').toLowerCase().replace(/<[^>]+>/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   const referenceMd = String(markdown||'').slice(Math.max(0,String(markdown||'').indexOf('## 1. Core Concept')));
@@ -297,15 +1407,22 @@ function guideHtml(markdown){
 <title>VAL Guide</title><style>
 :root{--bg:#111827;--panel:#182336;--panel2:#1f2d43;--text:#f8f5ee;--muted:#b8c0cc;--gold:#d7b56d;--line:rgba(255,255,255,.1)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#1f2d43 0,#111827 48%);color:var(--text);font-family:Inter,Arial,sans-serif;line-height:1.55}a{color:inherit}.top{position:sticky;top:0;z-index:10;background:rgba(17,24,39,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:14px 22px}.top a{color:var(--gold);text-decoration:none;font-size:12px;text-transform:uppercase;letter-spacing:.12em}.wrap{max-width:1120px;margin:0 auto;padding:54px 22px 90px}.hero{min-height:340px;display:grid;align-items:end;padding:42px 0 36px;border-bottom:1px solid var(--line)}.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:700}.hero h1{font-family:Georgia,serif;font-size:clamp(48px,9vw,112px);line-height:.9;margin:12px 0}.hero p{font-size:20px;color:var(--muted);max-width:620px;margin:0 0 24px}.actions{display:flex;gap:12px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 18px;border-radius:7px;border:1px solid var(--gold);background:rgba(215,181,109,.12);color:var(--gold);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;text-decoration:none}.btn.secondary{border-color:var(--line);color:var(--text);background:rgba(255,255,255,.04)}section{margin-top:42px}.section-head{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:16px}.section-head h2{font-family:Georgia,serif;font-size:30px;margin:0}.section-head p{margin:0;color:var(--muted);max-width:520px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{display:flex;flex-direction:column;gap:12px;min-height:210px;padding:20px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));text-decoration:none;transition:.18s ease}.card:hover{transform:translateY(-2px);border-color:rgba(215,181,109,.45);background:rgba(215,181,109,.08)}.icon{width:34px;height:34px;border:1px solid rgba(215,181,109,.35);border-radius:9px;display:grid;place-items:center;color:var(--gold)}.icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.card h3{font-family:Georgia,serif;font-size:23px;margin:0}.card p{color:var(--muted);margin:0}.status{margin-top:auto;color:var(--gold);font-size:12px;text-transform:uppercase;letter-spacing:.1em}.modes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.mode{padding:18px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.04)}.mode h3{margin:0 0 10px;font-size:15px;color:var(--gold);text-transform:uppercase;letter-spacing:.1em}.mode a{display:block;color:var(--text);text-decoration:none;padding:8px 0;border-top:1px solid rgba(255,255,255,.07)}.journey{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.step{padding:18px;border-left:2px solid var(--gold);background:rgba(255,255,255,.04);border-radius:8px}.step span{color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.14em}.step h3{margin:8px 0 8px}.activity{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.activity div{padding:16px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.035);color:var(--muted)}details{border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);padding:0;margin-top:12px}summary{cursor:pointer;padding:18px 20px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.1em}.reference{padding:0 22px 24px;color:#e7dcc5}.reference h1,.reference h2,.reference h3{font-family:Georgia,serif;color:var(--gold)}.reference h2{border-top:1px solid var(--line);padding-top:22px}.reference code{background:rgba(255,255,255,.08);padding:2px 5px;border-radius:5px}.reference li{margin:4px 0 4px 22px}@media(max-width:850px){.grid,.modes,.journey,.activity{grid-template-columns:1fr}.hero{min-height:280px}.card{min-height:170px}}
+.dash-float{position:fixed;right:18px;bottom:18px;z-index:20;box-shadow:0 18px 50px rgba(0,0,0,.32)}
+.demo-banner{border:1px solid rgba(215,181,109,.35);background:rgba(215,181,109,.08);border-radius:12px;padding:14px 16px;margin-bottom:18px;color:var(--muted);display:${DEMO_MODE?'flex':'none'};gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.demo-banner strong{color:var(--text)}
 </style></head><body><div class="top"><a href="/dashboard">Back to VAL</a></div><main class="wrap">
-<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard">Open Today</a><a class="btn secondary" href="/dashboard">Run Radar</a></div></div></section>
+<a class="btn dash-float" href="/dashboard">Back To Dashboard</a>
+<div class="demo-banner"><div><strong>Demo Mode</strong><br>Explore VAL with sample meetings, emails, tasks, relationships, drafts, transcripts, and pipeline data. Reset any time.</div><div class="actions"><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a><button class="btn secondary" onclick="resetDemo()">Reset Demo</button></div></div>
+<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard">Open Demo</a><a class="btn secondary" href="/dashboard">Run Relationship Review</a><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a></div></div></section>
 <section><div class="section-head"><div><h2>Your Priorities</h2><p>Start with the moves that create clarity fastest.</p></div></div><div class="grid">
 <a class="card" href="/dashboard"><span class="icon">${icon.calendar}</span><h3>Prepare For Today</h3><p>Know who matters before your next conversation.</p><div class="status" id="meetingStatus">Loading meetings</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.radar}</span><h3>Relationship Radar</h3><p>See who needs follow-up before momentum dies.</p><div class="status" id="radarStatus">Checking signals</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.radar}</span><h3>Relationship Review</h3><p>See who matters most, which relationships are cooling, and where hidden opportunity exists.</p><div class="status" id="radarStatus">Checking signals</div></a>
 <a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Approval Queue</h3><p>Review drafts, promises, and pending actions.</p><div class="status" id="queueStatus">Loading drafts</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, and safe draft opportunities.</p><div class="status">Review inbox signals</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Register Your Keys</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
 </div></section>
-<section><div class="section-head"><div><h2>Your First 3 Minutes</h2><p>A short path that helps VAL understand you and start creating momentum.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Run Radar</h3><p>Find the people and promises most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard">Run Relationship Radar</a></div></div></section>
-<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard">Meeting Prep</a><a href="/dashboard">Daily Rhythm</a><a href="/dashboard">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard">Relationship Radar</a><a href="/dashboard">Follow-Ups</a><a href="/dashboard">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard">Approval Queue</a><a href="/dashboard">Drafts</a><a href="/dashboard">Tasks By Relationship</a></div><div class="mode"><h3>Think Better</h3><a href="/dashboard">Voice Mode</a><a href="/dashboard">Executive Reflection</a><a href="/dashboard">Use Saved Time</a></div></div></section>
+<section><div class="section-head"><div><h2>Your First 3 Minutes</h2><p>A short path that helps VAL understand you and start creating momentum.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard">Run Relationship Review</a></div></div></section>
+<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard">Meeting Prep</a><a href="/dashboard">Daily Rhythm</a><a href="/dashboard">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard">Relationship Review</a><a href="/dashboard">Follow-Ups</a><a href="/dashboard">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard">Approval Queue</a><a href="/dashboard">Drafts</a><a href="/dashboard">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard">Email Intelligence</a><a href="/dashboard">Integration Status</a><a href="/dashboard">Register Your Keys</a></div></div></section>
 <section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div></div></section>
 <section><div class="section-head"><div><h2>Learn VAL</h2><p>The full reference is here when you want depth. You do not need to study it first.</p></div></div><details><summary>See Full Reference</summary><div class="reference"><p>${referenceHtml}</p></div></details></section>
 </main><script>
@@ -326,6 +1443,7 @@ function set(id,text){const el=document.getElementById(id);if(el)el.textContent=
   set('activityTasks',overdue.length?overdue.length+' overdue tasks':open.length+' open tasks');
   set('activityFollowups',unread?unread+' unread conversations':'No unread conversations');
 })();
+async function resetDemo(){await fetch('/api/demo/reset',{method:'POST'});location.href='/guide';}
 </script></body></html>`;
 }
 app.get('/guide',(req,res)=>{
@@ -336,7 +1454,7 @@ app.get('/guide',(req,res)=>{
   });
 });
 app.use(express.static(__dirname));
-app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-mark-goall.html')));
+app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
@@ -344,7 +1462,16 @@ app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-mark-goall
 
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI         = process.env.REDIRECT_URI || `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/auth/callback`;
+const REDIRECT_URI         = process.env.GOOGLE_REDIRECT_URI || process.env.REDIRECT_URI || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.compose'
+];
+const REQUIRED_GMAIL_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.compose'
+];
 let googleTokens = {}; // hot cache; durable copy lives in Postgres or GOOGLE_REFRESH_TOKEN
 let googleTokensLoaded = false;
 let lastGoogleAuthError = null;
@@ -358,17 +1485,18 @@ if(process.env.GOOGLE_REFRESH_TOKEN){
 
 async function saveOAuthTokens(provider,tokens){
   if(!tokens||!Object.keys(tokens).length) return;
+  const scopedTokens={...tokens,user_id:currentUserId(),tenant_id:tenantId(),client_slug:CLIENT_CONFIG.clientSlug};
   if(pgPool){
     await valDbReady;
     await dbQuery(`
       insert into val_oauth_tokens (provider,user_id,tokens,updated_at)
       values ($1,$2,$3,now())
       on conflict (provider) do update set tokens=excluded.tokens, updated_at=now()
-    `,[provider,VAL_USER_ID,JSON.stringify(tokens)]);
+    `,[provider,currentUserId(),JSON.stringify(scopedTokens)]);
   }else{
     const store=valStore();
     store.oauthTokens=store.oauthTokens||{};
-    store.oauthTokens[provider]=tokens;
+    store.oauthTokens[provider]=scopedTokens;
     saveValStore(store);
   }
 }
@@ -376,7 +1504,7 @@ async function saveOAuthTokens(provider,tokens){
 async function loadOAuthTokens(provider){
   await valDbReady;
   if(pgPool){
-    const r=await dbQuery('select tokens from val_oauth_tokens where provider=$1',[provider]);
+    const r=await dbQuery('select tokens from val_oauth_tokens where provider=$1 and (user_id=$2 or user_id=$3) order by case when user_id=$2 then 0 else 1 end limit 1',[provider,currentUserId(),VAL_USER_ID]);
     return r.rows[0]?.tokens || null;
   }
   return (valStore().oauthTokens||{})[provider] || null;
@@ -392,16 +1520,29 @@ async function ensureGoogleTokensLoaded(){
   googleTokensLoaded = true;
 }
 
+function googleScopeList(tokens=googleTokens){
+  return String(tokens?.scope||'').split(/\s+/).map(s=>s.trim()).filter(Boolean);
+}
+function missingGoogleScopes(required=REQUIRED_GMAIL_SCOPES,tokens=googleTokens){
+  const scopes=new Set(googleScopeList(tokens));
+  return required.filter(scope=>!scopes.has(scope));
+}
+function googleTokenExpiresAt(tokens=googleTokens){
+  if(!tokens?.issued_at||!tokens?.expires_in) return '';
+  return new Date(Number(tokens.issued_at)+Number(tokens.expires_in)*1000).toISOString();
+}
+
 // Step 1 — redirect user to Google consent screen
 // ── IMAGE ANALYSIS (GPT-4o) ─────────────────────────────
 app.post('/api/analyze-image',async(req,res)=>{
   try{
     const {base64,mediaType,prompt}=req.body;
     if(!base64||!mediaType) return res.status(400).json({error:'Missing base64 or mediaType'});
-    if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    const openAiKey=await resolveOpenAIKey();
+    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
     const r=await fetch('https://api.openai.com/v1/chat/completions',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify({
         model:'gpt-4o',
         max_tokens:1000,
@@ -428,10 +1569,11 @@ app.post('/api/generate-image',async(req,res)=>{
   try{
     const {prompt,size,quality}=req.body;
     if(!prompt) return res.status(400).json({error:'Missing prompt'});
-    if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    const openAiKey=await resolveOpenAIKey();
+    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
     const r=await fetch('https://api.openai.com/v1/images/generations',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify({
         model:'dall-e-3',
         prompt,
@@ -453,10 +1595,7 @@ app.post('/api/generate-image',async(req,res)=>{
 });
 
 app.get('/auth/google', (req, res) => {
-  const scopes = [
-    'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/gmail.readonly'
-  ].join(' ');
+  const scopes = GOOGLE_SCOPES.join(' ');
   const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent`;
   res.redirect(url);
 });
@@ -489,10 +1628,6 @@ app.get('/auth/callback', async (req, res) => {
     lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token);
-    // Log refresh token so it can be saved as GOOGLE_REFRESH_TOKEN env var in Railway
-    if(googleTokens.refresh_token){
-      console.log('SAVE THIS AS GOOGLE_REFRESH_TOKEN ENV VAR:', googleTokens.refresh_token);
-    }
     res.send(`<h2 style="font-family:sans-serif;padding:2rem">✅ Google Calendar & Gmail connected to VAL!<br><br>You can close this tab.</h2>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
@@ -532,6 +1667,10 @@ async function getGoogleToken() {
   // Check if expired (with 60s buffer)
   const expiresAt = (googleTokens.issued_at||0) + (googleTokens.expires_in||3600)*1000 - 60000;
   if(Date.now() < expiresAt) return googleTokens.access_token;
+  if(!googleTokens.refresh_token){
+    lastGoogleAuthError='Google refresh token missing. Reconnect required.';
+    return null;
+  }
   // Refresh
   try {
     const r = await fetch('https://oauth2.googleapis.com/token', {
@@ -545,7 +1684,12 @@ async function getGoogleToken() {
       })
     });
     const fresh = await r.json();
-    if(fresh.error){ lastGoogleAuthError = fresh.error_description || fresh.error; console.error('Token refresh failed:', fresh.error, fresh.error_description); return null; }
+    if(fresh.error){
+      lastGoogleAuthError = fresh.error_description || fresh.error;
+      console.error('Google token refresh failed:', fresh.error);
+      if(fresh.error==='invalid_grant') googleTokens.access_token='';
+      return null;
+    }
     googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
     googleTokensLoaded = true;
     lastGoogleAuthError = null;
@@ -561,9 +1705,13 @@ async function getGoogleToken() {
 // Auth status check
 app.get('/auth/status', async (req, res) => {
   const token = await getGoogleToken();
+  await ensureGoogleTokensLoaded();
   res.json({
     connected: !!token,
     hasRefreshToken: !!googleTokens.refresh_token,
+    scopes: googleScopeList(),
+    missingScopes: missingGoogleScopes(),
+    tokenExpiresAt: googleTokenExpiresAt(),
     needsAuth: !token,
     error: token ? null : lastGoogleAuthError
   });
@@ -693,6 +1841,209 @@ app.get('/api/google/gmail', async (req, res) => {
   }
 });
 
+function parseEmailAddress(raw){
+  const text=String(raw||'').trim();
+  const match=text.match(/^(.*?)\s*<([^>]+)>$/);
+  const email=(match?match[2]:text).replace(/"/g,'').trim().toLowerCase();
+  const name=(match?match[1]:text.replace(email,'')).replace(/"/g,'').trim();
+  return {name:name||email.split('@')[0]||'',email};
+}
+function decodeBase64Url(value){
+  if(!value)return '';
+  try{return Buffer.from(String(value).replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');}
+  catch(e){return '';}
+}
+function extractGmailBody(payload){
+  if(!payload)return '';
+  if(payload.body?.data)return decodeBase64Url(payload.body.data);
+  const parts=payload.parts||[];
+  const plain=parts.find(p=>p.mimeType==='text/plain')||parts.find(p=>p.body?.data);
+  if(plain?.body?.data)return decodeBase64Url(plain.body.data);
+  for(const part of parts){
+    const nested=extractGmailBody(part);
+    if(nested)return nested;
+  }
+  return '';
+}
+function normalizeGmailMessage(md){
+  const headers=md.payload?.headers||[];
+  const header=name=>headers.find(h=>String(h.name||'').toLowerCase()===name.toLowerCase())?.value||'';
+  const from=parseEmailAddress(header('From'));
+  const bodyText=extractGmailBody(md.payload)||md.snippet||'';
+  const to=String(header('To')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
+  const cc=String(header('Cc')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
+  const attachments=JSON.stringify(md.payload||{}).includes('"filename"');
+  return {
+    provider:'gmail',
+    messageId:md.id||'',
+    threadId:md.threadId||'',
+    subject:header('Subject')||'(No subject)',
+    from,
+    to,
+    cc,
+    receivedAt:header('Date') ? new Date(header('Date')).toISOString() : '',
+    snippet:md.snippet||'',
+    bodyPreview:String(bodyText||'').slice(0,700),
+    bodyText:String(bodyText||''),
+    hasAttachments:attachments,
+    webLink:`https://mail.google.com/mail/u/0/#inbox/${md.threadId||md.id}`,
+    classification:'',
+    recommendedAction:'',
+    matchedContact:{},
+    matchedRuleId:'',
+    requiresApproval:true,
+    confidence:'medium'
+  };
+}
+function classifyEmail(email,rules=[]){
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.from?.email].join(' ').toLowerCase();
+  const domain=(email.from?.email||'').split('@')[1]||'';
+  const activeRules=rules.filter(r=>r.is_active!==false&&r.isActive!==false);
+  for(const rule of activeRules){
+    const conditions=rule.conditions||rule.conditions_json||rule.conditionsJson||{};
+    if((conditions.from_email&&conditions.from_email===email.from?.email) || (conditions.from_domain&&conditions.from_domain===domain)){
+      const type=rule.ruleType||rule.rule_type;
+      const actions=rule.actions||rule.actions_json||rule.actionsJson||{};
+      return {
+        classification:type==='ignore_sender'||type==='ignore_domain'?'ignored':type==='forward_sender'||type==='forward_category'?'forward_to_team':type==='vip_priority'?'needs_attention':'needs_attention',
+        reason:`Matched saved rule: ${rule.rule_name||rule.ruleName||type}`,
+        recommendedAction:actions.action==='forward'?`Forward to ${actions.forward_to}`:actions.action||type,
+        confidence:'high',
+        matchedRuleId:rule.id,
+        requiresApproval:(rule.approvalMode||rule.approval_mode)!=='always_auto'
+      };
+    }
+  }
+  if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
+    return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
+  }
+  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination)\b/.test(text)){
+    return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
+  }
+  if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting)\b/.test(text)){
+    return {classification:'needs_reply',reason:'Asks for a response or decision.',recommendedAction:'Draft a reply for approval.',confidence:'high',requiresApproval:true};
+  }
+  if(/\b(proposal|pricing|contract|intro|introduction|following up|checking in)\b/.test(text)){
+    return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
+  }
+  return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
+}
+async function listEmailRules(userId){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from email_rules where tenant_id=$1 and (user_id=$2 or user_id is null) order by created_at desc',[tenantId(),userId]);
+    return (r.rows||[]).map(row=>({
+      id:row.id,userId:row.user_id,tenantId:row.tenant_id,provider:row.provider,ruleName:row.rule_name,ruleType:row.rule_type,
+      conditions:row.conditions_json||{},actions:row.actions_json||{},approvalMode:row.approval_mode,confidenceThreshold:row.confidence_threshold,
+      isActive:row.is_active,createdFrom:row.created_from,createdFromMessageId:row.created_from_message_id,createdFromThreadId:row.created_from_thread_id,
+      createdAt:row.created_at,updatedAt:row.updated_at,lastUsedAt:row.last_used_at,usageCount:row.usage_count
+    }));
+  }
+  return (valStore().emailRules||[]).filter(r=>r.tenantId===tenantId()&&(r.userId===userId||!r.userId));
+}
+async function saveEmailRule(userId,rule){
+  const id=rule.id||uuid('erule');
+  const now=new Date().toISOString();
+  const record={
+    id,userId,tenantId:tenantId(),provider:rule.provider||'any',ruleName:rule.ruleName||rule.rule_name||'Email rule',
+    ruleType:rule.ruleType||rule.rule_type||'label',conditions:rule.conditions||rule.conditions_json||{},
+    actions:rule.actions||rule.actions_json||{},approvalMode:rule.approvalMode||rule.approval_mode||'review_only',
+    confidenceThreshold:rule.confidenceThreshold||rule.confidence_threshold||'medium',isActive:rule.isActive!==false,
+    createdFrom:rule.createdFrom||rule.created_from||'user_confirmation',createdFromMessageId:rule.createdFromMessageId||rule.created_from_message_id||'',
+    createdFromThreadId:rule.createdFromThreadId||rule.created_from_thread_id||'',createdAt:rule.createdAt||now,updatedAt:now,lastUsedAt:rule.lastUsedAt||null,usageCount:rule.usageCount||0
+  };
+  if(pgPool){
+    const r=await dbQuery(`
+      insert into email_rules (id,user_id,tenant_id,provider,rule_name,rule_type,conditions_json,actions_json,approval_mode,confidence_threshold,is_active,created_from,created_from_message_id,created_from_thread_id,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),now())
+      on conflict (id) do update set rule_name=excluded.rule_name,conditions_json=excluded.conditions_json,actions_json=excluded.actions_json,approval_mode=excluded.approval_mode,confidence_threshold=excluded.confidence_threshold,is_active=excluded.is_active,updated_at=now()
+      returning *
+    `,[id,userId,tenantId(),record.provider,record.ruleName,record.ruleType,record.conditions,record.actions,record.approvalMode,record.confidenceThreshold,record.isActive,record.createdFrom,record.createdFromMessageId,record.createdFromThreadId]);
+    return (await listEmailRules(userId)).find(x=>x.id===r.rows[0].id);
+  }
+  const store=valStore();
+  store.emailRules=store.emailRules||[];
+  const idx=store.emailRules.findIndex(r=>r.id===id);
+  if(idx>=0)store.emailRules[idx]={...store.emailRules[idx],...record};
+  else store.emailRules.push(record);
+  saveValStore(store);
+  return record;
+}
+async function logEmailAction(userId,entry){
+  const record={id:uuid('elog'),userId,tenantId:tenantId(),provider:entry.provider||'',messageId:entry.messageId||'',threadId:entry.threadId||'',actionType:entry.actionType||entry.action_type||'classified',actionStatus:entry.actionStatus||entry.action_status||'suggested',actedBy:entry.actedBy||entry.acted_by||'val',ruleId:entry.ruleId||entry.rule_id||'',details:entry.details||entry.details_json||{},createdAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery('insert into email_action_log (id,user_id,tenant_id,provider,message_id,thread_id,action_type,action_status,acted_by,rule_id,details_json) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[record.id,userId,tenantId(),record.provider,record.messageId,record.threadId,record.actionType,record.actionStatus,record.actedBy,record.ruleId,record.details]);
+  }else{
+    const store=valStore();store.emailActionLog=store.emailActionLog||[];store.emailActionLog.push(record);saveValStore(store);
+  }
+  return record;
+}
+async function recentEmailActions(userId,limit=200){
+  if(pgPool){
+    const r=await dbQuery('select * from email_action_log where tenant_id=$1 and user_id=$2 order by created_at desc limit $3',[tenantId(),userId,limit]);
+    return r.rows||[];
+  }
+  return (valStore().emailActionLog||[]).filter(a=>a.tenantId===tenantId()&&a.userId===userId).slice(-limit).reverse();
+}
+async function fetchGmailMessages({query='newer_than:7d',maxResults=20}={}){
+  await ensureGoogleTokensLoaded();
+  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
+  if(missing.length) return {emails:[],needsAuth:true,missingScopes:missing,error:'Reconnect required for Gmail'};
+  const token=await getGoogleToken();
+  if(!token)return {emails:[],needsAuth:true,missingScopes:missingGoogleScopes(),error:lastGoogleAuthError||'Google auth required',provider:'gmail'};
+  const limit=Math.min(Number(maxResults)||20,100);
+  const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${encodeURIComponent(limit)}`;
+  const r=await fetch(searchUrl,{headers:{Authorization:`Bearer ${token}`}});
+  const d=await readJsonResponse(r);
+  if(!r.ok) return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Gmail ${r.status}`,provider:'gmail',missingScopes:missingGoogleScopes()};
+  const messages=d.messages||[];
+  const details=await mapWithConcurrency(messages.slice(0,limit),5,async m=>{
+    const mr=await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,{headers:{Authorization:`Bearer ${token}`}});
+    const md=await readJsonResponse(mr);
+    return normalizeGmailMessage(md);
+  });
+  return {emails:details,needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes()};
+}
+async function fetchUnifiedGmailEmails(limit=20){
+  return fetchGmailMessages({query:'newer_than:14d',maxResults:limit});
+}
+function normalizeOutlookMessage(m){
+  const from=m.from?.emailAddress||{};
+  const to=(m.toRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
+  const cc=(m.ccRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
+  const bodyText=String(m.bodyPreview||m.body?.content||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  return {
+    provider:'outlook',
+    messageId:m.id||'',
+    threadId:m.conversationId||m.id||'',
+    subject:m.subject||'(No subject)',
+    from:{name:from.name||'',email:String(from.address||'').toLowerCase()},
+    to,cc,
+    receivedAt:m.receivedDateTime||m.sentDateTime||'',
+    snippet:m.bodyPreview||'',
+    bodyPreview:bodyText.slice(0,700),
+    bodyText,
+    hasAttachments:!!m.hasAttachments,
+    webLink:m.webLink||'',
+    classification:'',
+    recommendedAction:'',
+    matchedContact:{},
+    matchedRuleId:'',
+    requiresApproval:true,
+    confidence:'medium'
+  };
+}
+async function fetchUnifiedOutlookEmails(limit=20){
+  const saved=await loadOAuthTokens('microsoft');
+  const token=saved?.access_token;
+  if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
+  const url=`https://graph.microsoft.com/v1.0/me/messages?$top=${encodeURIComponent(limit)}&$orderby=receivedDateTime desc&$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead`;
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  const d=await readJsonResponse(r);
+  if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
+  return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
+}
+
 function normalizeAttendee(attendee){
   if(!attendee) return null;
   if(typeof attendee === 'string'){
@@ -731,6 +2082,248 @@ function inferAttendeesFromEvent(event){
     title.split(/\s[-|/:]\s|\swith\s/i).map(s=>s.trim()).filter(s=>/^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$/.test(s)).forEach(name=>push({name}));
   }
   return people.slice(0,8);
+}
+function gmailMeetingQuery(event){
+  const attendees=inferAttendeesFromEvent(event);
+  const emails=attendees.map(a=>a.email).filter(Boolean).slice(0,8);
+  const names=attendees.map(a=>a.name).filter(Boolean).slice(0,6);
+  const titleWords=String(event.title||event.summary||'').split(/\s+/).filter(w=>w.length>3&&!/meeting|call|zoom|google|with/i.test(w)).slice(0,6);
+  const parts=[
+    ...emails.map(e=>`from:${e} OR to:${e}`),
+    ...names.map(n=>`"${n.replace(/"/g,'')}"`),
+    ...titleWords.map(w=>`"${w.replace(/"/g,'')}"`)
+  ].filter(Boolean);
+  return parts.length ? `newer_than:60d (${parts.join(' OR ')})` : 'newer_than:14d';
+}
+async function matchingTranscriptContext(event,limit=5){
+  const linked=await linkedTranscriptsForEvent(event,limit).catch(()=>[]);
+  if(linked.length>=limit) return linked.slice(0,limit);
+  const transcripts=await recentTranscripts(90);
+  const linkedIds=new Set(linked.map(t=>t.id));
+  const fuzzy=transcripts.map(t=>({...t,match:scoreTranscriptMeetingMatch(t,event)}))
+    .filter(t=>!linkedIds.has(t.id))
+    .filter(t=>t.match.confidence>=0.2)
+    .sort((a,b)=>b.match.confidence-a.match.confidence)
+    .slice(0,Math.max(0,limit-linked.length))
+    .map(t=>({id:t.id,title:t.title,type:t.type,createdAt:t.createdAt,confidence:t.match.confidence,reason:t.match.reason,summary:String(t.rawText||'').slice(0,900)}));
+  return [...linked,...fuzzy].slice(0,limit);
+}
+async function matchingTaskContext(event,limit=10){
+  const tasks=await loadTasks();
+  const attendees=inferAttendeesFromEvent(event);
+  const hay=[event.title,event.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' ').toLowerCase();
+  return tasks.filter(t=>{
+    const text=[t.title,t.contactName,t.notes].join(' ').toLowerCase();
+    return !t.completed && hay && text && (hay.includes(String(t.contactName||'').toLowerCase()) || attendees.some(a=>(a.email&&text.includes(a.email.toLowerCase()))||(a.name&&text.includes(a.name.toLowerCase()))) || text.includes(String(event.title||event.summary||'').toLowerCase().slice(0,40)));
+  }).slice(0,limit);
+}
+function personKey(name,email){
+  const e=String(email||'').trim().toLowerCase();
+  if(e) return 'email:'+e;
+  return 'name:'+String(name||'Unknown').trim().toLowerCase().replace(/\s+/g,' ');
+}
+function cleanPersonName(value,email=''){
+  const text=String(value||'').replace(/<.*?>/g,'').replace(/["']/g,'').trim();
+  if(text&&text.includes('@')) return email ? email.split('@')[0] : text.split('@')[0];
+  return text || (email ? email.split('@')[0] : 'Unknown');
+}
+function relationshipEvidence(type,summary,date='',confidence='medium',sourceId=''){
+  return {type,summary:String(summary||'').slice(0,260),date:date||'',confidence,sourceId};
+}
+function interactionDate(value){
+  const d=new Date(value||0);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+function daysSince(value){
+  const t=interactionDate(value);
+  if(!t) return null;
+  return Math.floor((Date.now()-t)/(24*60*60*1000));
+}
+function splitPeopleFromText(text){
+  const raw=String(text||'');
+  const emails=(raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[]).slice(0,8).map(email=>({name:'',email:email.toLowerCase(),confidence:'high'}));
+  const names=[...raw.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g)].map(m=>m[1])
+    .filter(v=>!/Google Calendar|Zoom Meeting|VAL|GHL|CRM|Make|OpenAI|Railway|Postgres|United States|New Lead|Relationship Review|Executive Review/.test(v))
+    .slice(0,8).map(name=>({name,email:'',confidence:'low'}));
+  const seen=new Set();
+  return emails.concat(names).filter(p=>{const k=personKey(p.name,p.email);if(seen.has(k))return false;seen.add(k);return true;});
+}
+async function recentMemoryItems(days=30,limit=120){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState || {};
+    const transcriptItems=(state.transcripts||[]).map(t=>({id:t.id,kind:t.type||'transcript',summary:t.title||'Transcript',rawText:t.rawText||'',metadata:t.metadata||{},createdAt:t.createdAt||''}));
+    const memoryItems=state.memoryItems||[];
+    return cloneDemo(memoryItems.concat(transcriptItems).slice(0,limit));
+  }
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at >= $2 order by created_at desc limit $3',[VAL_USER_ID,since,limit]);
+    return r.rows.map(row=>({id:row.id,kind:row.kind,summary:row.summary||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?row.created_at.toISOString():''}));
+  }
+  return (valStore().memoryItems||[]).filter(m=>new Date(m.createdAt||0)>=new Date(since)).slice(0,limit);
+}
+function relationshipScore(contact){
+  const ev=contact.evidence||[];
+  const hasPipeline=ev.some(e=>e.type==='opportunity');
+  const hasMeeting=ev.some(e=>e.type==='meeting');
+  const hasEmail=ev.some(e=>e.type==='email');
+  const hasNote=ev.some(e=>e.type==='note');
+  const hasTranscript=ev.some(e=>e.type==='transcript');
+  const openLoops=(contact.openLoops||[]).length;
+  const tags=(contact.tags||[]).map(t=>String(t).toLowerCase());
+  const vip=contact.manualVip||tags.some(t=>/vip|client|partner|investor|mentor|referral|decision|prospect/.test(t));
+  const strategic=Math.min(25,(vip?14:0)+(hasPipeline?8:0)+(contact.company?2:0)+(contact.superConnector?5:0)+(openLoops?3:0));
+  const opportunity=Math.min(20,(hasPipeline?12:0)+(ev.some(e=>/proposal|pricing|contract|partnership|referral|intro|revenue|buying/i.test(e.summary))?6:0)+(contact.superConnector?3:0));
+  const activity=Math.min(15,(hasMeeting?4:0)+(hasEmail?4:0)+(hasNote?3:0)+(hasTranscript?3:0)+Math.min(ev.length,5));
+  const since=daysSince(contact.lastInteractionAt);
+  const drift=Math.min(15,((since!==null&&since>=14)?7:0)+((since!==null&&since>=30)?4:0)+(openLoops?4:0)+(ev.some(e=>/stalled|overdue|pending|waiting/i.test(e.summary))?4:0));
+  const loops=Math.min(15,openLoops*4+(ev.some(e=>/follow up|send|review|schedule|introduce|proposal|pending|waiting/i.test(e.summary))?5:0));
+  const reciprocity=Math.min(10,(ev.some(e=>/referral|introduced|introduction|connected/i.test(e.summary))?5:0)+(contact.superConnector?5:0));
+  return {
+    total:Math.min(100,Math.round(strategic+opportunity+activity+drift+loops+reciprocity)),
+    strategicImportance:strategic,opportunityPotential:opportunity,relationshipActivity:activity,driftRisk:drift,openLoopsCommitments:loops,reciprocityBalance:reciprocity
+  };
+}
+function recommendedRelationshipAction(contact){
+  if((contact.openLoops||[]).length) return `Close the open loop: ${contact.openLoops[0]}`;
+  if(contact.lastInteractionDays!==null&&contact.lastInteractionDays>=14) return `Send a specific reconnect note referencing ${contact.lastEvidenceSummary||'the last known conversation'}.`;
+  if(contact.superConnector) return 'Ask what they are seeing in the market and whether there is someone useful you can support or introduce.';
+  if(contact.scoreBreakdown?.opportunityPotential>=10) return 'Move the opportunity forward with one concrete next step.';
+  return 'Send a short, specific value-add check-in.';
+}
+function draftRelationshipOutreach(contact){
+  const name=(contact.name||'there').split(/\s+/)[0];
+  const evidence=contact.lastEvidenceSummary||'our last conversation';
+  const ask=(contact.openLoops||[])[0]||contact.recommendedAction||'keep momentum moving';
+  return {
+    type:'email',
+    subject:`Quick follow-up${contact.company?' re: '+contact.company:''}`,
+    body:`Hi ${name},\n\nI was thinking about ${evidence}. I wanted to follow up while it is still fresh.\n\n${ask}\n\nWould it be useful to compare notes for a few minutes this week?`
+  };
+}
+function relationshipProfile(contact){
+  return {
+    name:contact.name,company:contact.company||'',email:contact.email||'',score:contact.score,scoreBreakdown:contact.scoreBreakdown,
+    relationshipSummary:contact.reason,recentTopics:contact.topics||[],openLoops:contact.openLoops||[],
+    lastMeaningfulInteraction:contact.lastInteractionAt||'',strategicValue:contact.strategicValue||'Evidence-based relationship priority.',
+    opportunitySignals:contact.opportunitySignals||[],riskSignals:contact.riskSignals||[],suggestedNextAction:contact.recommendedAction,
+    suggestedOutreach:contact.draftOutreach,relatedContacts:contact.relatedContacts||[],tags:contact.tags||[]
+  };
+}
+async function buildRelationshipReview({windowDays=7}={}){
+  const now=new Date();
+  const past=new Date(now);past.setDate(past.getDate()-Math.max(Number(windowDays)||7,7));
+  const widerPast=new Date(now);widerPast.setDate(widerPast.getDate()-45);
+  const future=new Date(now);future.setDate(future.getDate()+14);
+  const people=new Map();
+  const errors=[];
+  function touch({name='',email='',company='',tags=[]}){
+    const key=personKey(name,email);
+    if(!people.has(key)) people.set(key,{key,name:cleanPersonName(name,email),email:String(email||'').toLowerCase(),company:company||'',tags:[],evidence:[],openLoops:[],opportunitySignals:[],riskSignals:[],topics:[],relatedContacts:[]});
+    const p=people.get(key);
+    if(name&&(!p.name||p.name==='Unknown')) p.name=cleanPersonName(name,email);
+    if(email&&!p.email) p.email=String(email).toLowerCase();
+    if(company&&!p.company) p.company=company;
+    p.tags=Array.from(new Set((p.tags||[]).concat(tags||[]).filter(Boolean)));
+    return p;
+  }
+  function addEvidence(person,evidence){
+    if(!person||!evidence.summary)return;
+    person.evidence.push(evidence);
+    if(evidence.date&&interactionDate(evidence.date)>interactionDate(person.lastInteractionAt)) {
+      person.lastInteractionAt=evidence.date;
+      person.lastEvidenceSummary=evidence.summary;
+    }
+    if(/follow up|send|review|schedule|introduce|proposal|pending|waiting|owed|promised/i.test(evidence.summary)){
+      person.openLoops=Array.from(new Set((person.openLoops||[]).concat(evidence.summary.slice(0,180)))).slice(0,8);
+    }
+    if(/proposal|pricing|contract|partnership|referral|intro|revenue|opportunity|pipeline/i.test(evidence.summary)) person.opportunitySignals.push(evidence.summary.slice(0,180));
+    if(/stalled|overdue|waiting|no response|missed|forgotten|cooling/i.test(evidence.summary)) person.riskSignals.push(evidence.summary.slice(0,180));
+    const topic=String(evidence.summary||'').split(/[.!?]/)[0].slice(0,90);
+    if(topic) person.topics=Array.from(new Set((person.topics||[]).concat(topic))).slice(0,8);
+  }
+  const [gmail,outlook,tasks,transcripts,memory,ghlEvents,googleEvents,pipeline]=await Promise.all([
+    fetchGmailMessages({query:'newer_than:45d',maxResults:60}).catch(e=>{errors.push('Gmail: '+e.message);return {emails:[],error:e.message};}),
+    fetchUnifiedOutlookEmails(60).catch(e=>{errors.push('Outlook: '+e.message);return {emails:[],error:e.message};}),
+    loadTasks().catch(e=>{errors.push('Tasks: '+e.message);return [];}),
+    recentTranscripts(45).catch(e=>{errors.push('Transcripts: '+e.message);return [];}),
+    recentMemoryItems(45,120).catch(e=>{errors.push('Memory: '+e.message);return [];}),
+    fetchGhlCalendarEvents(widerPast,future).catch(e=>{errors.push('GHL calendar: '+e.message);return [];}),
+    fetchGoogleCalendarEvents(widerPast,future,150).catch(e=>{errors.push('Google calendar: '+e.message);return [];}),
+    fetchGhlOpportunities({status:'open',limit:100}).catch(e=>{errors.push('Pipeline: '+e.message);return {data:{opportunities:[]}};})
+  ]);
+  for(const email of (gmail.emails||[]).concat(outlook.emails||[])){
+    const sender=touch({name:email.from?.name,email:email.from?.email});
+    addEvidence(sender,relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt,'high',email.messageId));
+  }
+  for(const ev of ghlEvents.concat(googleEvents)){
+    inferAttendeesFromEvent(ev).forEach(a=>{
+      const p=touch({name:a.name,email:a.email});
+      addEvidence(p,relationshipEvidence('meeting',`${ev.title||ev.summary||'Meeting'}${ev.startTime?' on '+new Date(ev.startTime).toLocaleDateString('en-US'):''}`,ev.startTime,'high',ev.id));
+    });
+  }
+  for(const task of tasks.filter(t=>!t.completed)){
+    const p=touch({name:task.contactName||''});
+    if(p.name==='Unknown') continue;
+    addEvidence(p,relationshipEvidence('task',task.title+(task.notes?': '+task.notes:''),task.createdAt||task.dueDate,'high',task.id));
+  }
+  for(const tr of transcripts){
+    splitPeopleFromText([tr.title,tr.rawText].join(' ')).forEach(person=>{
+      const p=touch(person);
+      addEvidence(p,relationshipEvidence('transcript',`${tr.title||'Transcript'}: ${String(tr.rawText||'').slice(0,220)}`,tr.createdAt,person.confidence,tr.id));
+    });
+  }
+  for(const mem of memory){
+    splitPeopleFromText([mem.summary,mem.rawText].join(' ')).forEach(person=>{
+      const p=touch(person);
+      addEvidence(p,relationshipEvidence('memory',`${mem.summary||mem.kind}: ${String(mem.rawText||'').slice(0,220)}`,mem.createdAt,person.confidence,mem.id));
+    });
+  }
+  for(const o of (pipeline.data?.opportunities||[])){
+    const c=o.contact||{};
+    const p=touch({name:c.name||o.contactName||o.name,email:c.email||o.contactEmail,company:o.name});
+    addEvidence(p,relationshipEvidence('opportunity',`${o.name||'Open opportunity'}${o.monetaryValue?' worth $'+o.monetaryValue:''}${o.status?' is '+o.status:''}`,o.updatedAt||o.lastStatusChangeAt,'high',o.id));
+  }
+  for(const p of people.values()){
+    const introCount=p.evidence.filter(e=>/intro|introduction|connect|referral|referred/i.test(e.summary)).length;
+    p.superConnector=introCount>=2;
+    if(p.superConnector) p.tags.push('Super Connector');
+    p.lastInteractionDays=daysSince(p.lastInteractionAt);
+    p.scoreBreakdown=relationshipScore(p);
+    p.score=p.scoreBreakdown.total;
+    p.reason=[p.score>=70?'High priority relationship':'Relationship worth tracking',p.lastEvidenceSummary||'Evidence found across connected systems'].join(': ');
+    p.recommendedAction=recommendedRelationshipAction(p);
+    p.draftOutreach=draftRelationshipOutreach(p);
+    p.profile=relationshipProfile(p);
+  }
+  const contacts=Array.from(people.values()).filter(p=>p.name&&p.name!=='Unknown'&&p.evidence.length).sort((a,b)=>b.score-a.score).slice(0,80);
+  const topRelationshipPriorities=contacts.slice(0,10);
+  const highestLeverageRelationships=contacts.filter(c=>c.scoreBreakdown.strategicImportance>=10||c.superConnector||c.scoreBreakdown.opportunityPotential>=10).slice(0,8);
+  const coolingRelationships=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14&&c.score>=35).sort((a,b)=>b.score-a.score).slice(0,8);
+  const momentumRelationships=contacts.filter(c=>c.evidence.filter(e=>interactionDate(e.date)>=past.getTime()).length>=2||c.scoreBreakdown.opportunityPotential>=10).slice(0,8);
+  const peopleNotContactedRecently=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14).slice(0,10);
+  const forgottenCommitments=contacts.flatMap(c=>(c.openLoops||[]).map(loop=>({contact:c.name,score:c.score,commitment:loop,sourceEvidence:c.evidence.find(e=>e.summary.includes(loop.slice(0,30)))||c.evidence[0],recommendedAction:`Close the loop with ${c.name}.`}))).slice(0,12);
+  const hiddenOpportunities=contacts.filter(c=>(c.opportunitySignals||[]).length||c.superConnector).slice(0,10).map(c=>({contact:c.name,score:c.score,opportunity:(c.opportunitySignals||[])[0]||(c.superConnector?'Super Connector relationship may reveal introductions or market intelligence.':''),evidence:c.evidence.slice(0,2),recommendedAction:c.recommendedAction}));
+  const connectors=contacts.filter(c=>c.superConnector);
+  const opportunityPeople=contacts.filter(c=>c.scoreBreakdown.opportunityPotential>=8&&!c.superConnector);
+  const suggestedIntroductions=connectors.slice(0,3).flatMap(a=>opportunityPeople.slice(0,3).filter(b=>b.key!==a.key).slice(0,1).map(b=>({personA:a.name,personB:b.name,reason:`${a.name} shows connector/referral signals and ${b.name} has opportunity signals.`,confidence:'low',evidence:[a.evidence[0],b.evidence[0]].filter(Boolean),suggestedIntroMessage:`${a.name}, I thought of you because ${b.name} is working through something that may overlap with your world. Would an introduction be useful?`}))).slice(0,5);
+  return {
+    ok:true,windowDays,generatedAt:new Date().toISOString(),errors,
+    relationshipProfiles:contacts.map(c=>c.profile),
+    topRelationshipPriorities,
+    highestLeverageRelationships,
+    coolingRelationships,
+    momentumRelationships,
+    peopleNotContactedRecently,
+    forgottenCommitments,
+    hiddenOpportunities,
+    suggestedIntroductions,
+    relationshipTaskPriorities:topRelationshipPriorities.map(c=>({contact:c.name,priority:c.score>=70?'High':c.score>=45?'Medium':'Low',tasks:c.openLoops||[],suggestedNextTask:c.recommendedAction,recommendedOutreach:c.draftOutreach})),
+    draftCommunications:topRelationshipPriorities.slice(0,8).map(c=>({contact:c.name,score:c.score,draft:c.draftOutreach,evidence:c.evidence.slice(0,2)})),
+    priorityReviewIntegration:{highestLeverageRelationship:highestLeverageRelationships[0]||null,top3RelationshipPriorities:topRelationshipPriorities.slice(0,3),oneCoolingRelationship:coolingRelationships[0]||null,oneForgottenCommitment:forgottenCommitments[0]||null,oneSuggestedIntroduction:suggestedIntroductions[0]||null,oneHiddenOpportunity:hiddenOpportunities[0]||null},
+    askForAssistance:{question:'Would you like me to help with any of these relationships?',options:['Draft outreach','Create tasks','Brainstorm opportunities','Brainstorm ways to help this person','Prepare for upcoming meeting','Review relationship history']}
+  };
 }
 
 function mapGoogleEvent(ev){
@@ -811,7 +2404,8 @@ function normalizeRocketReachPerson(data){
 }
 
 async function lookupRocketReach(attendee){
-  if(!ROCKETREACH_API_KEY) return {configured:false, error:'ROCKETREACH_API_KEY is not set'};
+  const rocketReachKey=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
+  if(!rocketReachKey) return {configured:false, error:'ROCKETREACH_API_KEY is not set'};
   if(Date.now()<rocketReachLimitedUntil) return {configured:true, error:'RocketReach rate-limited; skipped to protect quota'};
   const params = new URLSearchParams();
   if(attendee.email) params.set('email',attendee.email);
@@ -819,7 +2413,7 @@ async function lookupRocketReach(attendee){
   if(attendee.name) params.set('name',attendee.name);
   if(attendee.company) params.set('current_employer',attendee.company);
   const url = `${ROCKETREACH_BASE_URL.replace(/\/$/,'')}/person/lookup?${params.toString()}`;
-  const response = await fetch(url,{headers:{'Api-Key':ROCKETREACH_API_KEY}});
+  const response = await fetch(url,{headers:{'Api-Key':rocketReachKey}});
   const data = await readJsonResponse(response);
   if(response.status===429){
     rocketReachLimitedUntil = Date.now() + 10*60*1000;
@@ -830,13 +2424,14 @@ async function lookupRocketReach(attendee){
 }
 
 async function lookupOutscraperLinkedIn(attendee, profile){
-  if(!OUTSCRAPER_API_KEY) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
   if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
   const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
   const query = profile?.linkedinUrl || attendee.linkedinUrl || attendee.email || attendee.name;
   if(query) url.searchParams.set('query', query);
   url.searchParams.set('async','false');
-  const response = await fetch(url.toString(),{headers:{'X-API-KEY':OUTSCRAPER_API_KEY}});
+  const response = await fetch(url.toString(),{headers:{'X-API-KEY':outscraperKey}});
   const data = await readJsonResponse(response);
   if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
   const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
@@ -878,19 +2473,26 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
 
 app.get('/api/meetings',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const events=demoState(req,res).calendarEvents||[];
+      const today=events.filter(e=>new Date(e.startTime).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
+      return res.json({meetingsToday:today.length,appointments:today,calendarSource:'demo',calendarId:'demo-calendar',_debug:{demo:true,googleCount:today.filter(e=>e.source==='google').length,ghlCount:today.filter(e=>e.source==='ghl').length,valCount:today.filter(e=>e.source==='val').length}});
+    }
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setHours(23,59,59,999);
 
-    const [ghlRes,googleRes] = await Promise.allSettled([
+    const [ghlRes,googleRes,valRes] = await Promise.allSettled([
       fetchGhlCalendarEvents(s,e),
-      fetchGoogleCalendarEvents(s,e,25)
+      fetchGoogleCalendarEvents(s,e,25),
+      fetchValCalendarEvents(s,e)
     ]);
 
     const ghlEvents = ghlRes.status==='fulfilled' ? ghlRes.value : [];
     const googleEvents = googleRes.status==='fulfilled' ? googleRes.value : [];
-    const allEvents=[...ghlEvents,...googleEvents];
+    const valEvents = valRes.status==='fulfilled' ? valRes.value : [];
+    const allEvents=[...ghlEvents,...googleEvents,...valEvents];
     allEvents.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
-    res.json({meetingsToday:allEvents.length, appointments:allEvents, calendarSource:'ghl+google', calendarId:GHL_CALENDAR_ID, _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:googleRes.status==='rejected'}});
+    res.json({meetingsToday:allEvents.length, appointments:allEvents, calendarSource:'ghl+google+val', calendarId:GHL_CALENDAR_ID, _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, valCount:valEvents.length, googleNeedsAuth:googleRes.status==='rejected'}});
   }catch(e){
     console.error('meetings error:',e);
     res.json({meetingsToday:0,appointments:[]});
@@ -898,7 +2500,8 @@ app.get('/api/meetings',async(req,res)=>{
 });
 
 async function fetchGhlOpportunities({status='open',limit=100}={}){
-  const encodedLoc=encodeURIComponent(GHL_LOC);
+  const loc=await resolveGhlLocationId();
+  const encodedLoc=encodeURIComponent(loc||GHL_LOC);
   const encodedStatus=encodeURIComponent(status);
   const attempts=[
     `/opportunities/search?location_id=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
@@ -929,7 +2532,13 @@ async function fetchGhlOpportunities({status='open',limit=100}={}){
 
 app.get('/api/pipeline',async(req,res)=>{
   try{
-    if(!GHL_KEY||!GHL_LOC){
+    if(DEMO_MODE){
+      const opps=demoState(req,res).opportunities||[];
+      return res.json({pipelineActive:opps.filter(o=>o.status==='open').length,stalledDeals:opps.filter(o=>o.stalled).length,opportunities:opps,_debug:{configured:true,demo:true}});
+    }
+    const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
+    const ghlLoc=await resolveGhlLocationId();
+    if(!ghlKey||!ghlLoc){
       return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL_KEY or GHL_LOC'}});
     }
     const found=await fetchGhlOpportunities({status:'open',limit:100});
@@ -978,13 +2587,15 @@ app.get('/api/pipeline',async(req,res)=>{
 
 app.get('/api/debug/ghl-pipeline',async(req,res)=>{
   try{
-    if(!GHL_KEY||!GHL_LOC){
+    const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
+    const ghlLoc=await resolveGhlLocationId();
+    if(!ghlKey||!ghlLoc){
       return res.json({configured:false,error:'Missing GHL_KEY or GHL_LOC'});
     }
     const found=await fetchGhlOpportunities({status:req.query.status||'open',limit:Number(req.query.limit||100)});
     res.json({
       configured:true,
-      locationId:GHL_LOC,
+      locationId:ghlLoc,
       selectedPath:found.path,
       attempts:found.attempts,
       count:(found.data.opportunities||[]).length,
@@ -1006,26 +2617,32 @@ app.get('/api/debug/ghl-pipeline',async(req,res)=>{
 
 app.get('/api/calendar',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const mapped=(demoState(req,res).calendarEvents||[]).slice().sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
+      return res.json({calendarEvents:mapped,calendarSource:'demo',calendarId:'demo-calendar',_debug:{demo:true,ghlCount:mapped.filter(e=>e.source==='ghl').length,googleCount:mapped.filter(e=>e.source==='google').length,valCount:mapped.filter(e=>e.source==='val').length}});
+    }
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
 
-    const [ghlRes,googleRes] = await Promise.allSettled([
+    const [ghlRes,googleRes,valRes] = await Promise.allSettled([
       fetchGhlCalendarEvents(s,e),
-      fetchGoogleCalendarEvents(s,e,75)
+      fetchGoogleCalendarEvents(s,e,75),
+      fetchValCalendarEvents(s,e)
     ]);
 
     const ghlEvents = ghlRes.status==='fulfilled'?ghlRes.value:[];
     const googleEvents = googleRes.status==='fulfilled'?googleRes.value:[];
+    const valEvents = valRes.status==='fulfilled'?valRes.value:[];
 
-    console.log(`Calendar: ${ghlEvents.length} GHL events across ${GHL_CALENDAR_IDS.length||'all'} calendars; ${googleEvents.length} Google events`);
+    console.log(`Calendar: ${ghlEvents.length} GHL events across ${GHL_CALENDAR_IDS.length||'all'} calendars; ${googleEvents.length} Google events; ${valEvents.length} VAL retro events`);
 
-    const mapped = [...ghlEvents,...googleEvents];
+    const mapped = [...ghlEvents,...googleEvents,...valEvents];
     mapped.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
     res.json({
       calendarEvents:mapped,
-      calendarSource:'ghl+google',
+      calendarSource:'ghl+google+val',
       calendarId:GHL_CALENDAR_ID,
-      _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:googleRes.status==='rejected'}
+      _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, valCount:valEvents.length, googleNeedsAuth:googleRes.status==='rejected'}
     });
   }catch(e){
     console.error('calendar error:',e);
@@ -1167,6 +2784,14 @@ app.get('/api/debug/tasks',async(req,res)=>{
 
 app.get('/api/proposals',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const proposals=[
+        {id:'demo-prop-1',title:'Atlas Operations Pilot',status:'viewed',stage:'viewed',contactName:'Marcus Chen',value:48000,viewCount:4,sentAt:demoIso(-2,10,0),url:VAL_SIGNUP_URL},
+        {id:'demo-prop-2',title:'Northstar Advisory Scope',status:'draft',stage:'draft',contactName:'Elena Brooks',value:85000,viewCount:0,sentAt:null,url:VAL_SIGNUP_URL},
+        {id:'demo-prop-3',title:'HealthBridge Renewal',status:'sent',stage:'sent',contactName:'Priya Raman',value:32000,viewCount:1,sentAt:demoIso(-7,9,0),url:VAL_SIGNUP_URL}
+      ];
+      return res.json({total:2,draft:1,sent:1,viewed:1,signed:0,allCount:proposals.length,proposals,waiting:proposals.filter(p=>['sent','viewed'].includes(p.stage))});
+    }
     // Fetch all status groups in parallel using the correct endpoint
     const statusGroups={
       draft:['draft'],
@@ -1261,6 +2886,12 @@ app.get('/api/debug/conversation',async(req,res)=>{
 // ── CONVERSATION THREAD ────────────────────────────────
 app.get('/api/conversation/:id',async(req,res)=>{
   const id=req.params.id;
+  if(DEMO_MODE){
+    const s=demoState(req,res);
+    const conv=(s.conversations||[]).find(c=>c.id===id)||{};
+    const messages=s.messages?.[id]||[];
+    return res.json({id,contactName:conv.contactName||'Contact',contactId:conv.contactId||'',type:conv.type||'demo',unreadCount:conv.unreadCount||conv.unread||0,lastMessageBody:conv.lastMessageBody||conv.lastMessage||'',messages,lastMessage:messages[messages.length-1]?.body||conv.lastMessage||'',_debug:{demo:true}});
+  }
   let convRaw={}, msgRaw={}, convErr=null, msgErr=null;
   try{
     convRaw=await ghl('GET',`/conversations/${id}`);
@@ -1318,6 +2949,11 @@ app.get('/api/conversation/:id',async(req,res)=>{
 
 app.get('/api/comms',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const convos=demoState(req,res).conversations||[];
+      const unread=convos.filter(c=>(c.unreadCount||c.unread)>0);
+      return res.json({total:unread.length,ghlUnread:unread.length,items:unread.map(c=>({id:c.id,label:`${c.contactName||'Contact'} (${c.unreadCount||c.unread} unread)`,sublabel:c.lastMessage||'',source:'demo',type:'unread',actionUrl:VAL_SIGNUP_URL}))});
+    }
     const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=50`);
     const convos=d.conversations||[];
     const unread=convos.filter(c=>c.unreadCount>0);
@@ -1495,6 +3131,11 @@ app.post('/api/val/leads/research',async(req,res)=>{
     const location=String(body.location||body.cityState||'').trim();
     const contactId=String(body.contactId||'').trim();
     if(!company) return res.status(400).json({error:'Missing company name'});
+    if(DEMO_MODE){
+      const lead={...demoLeads({market:location||'United States',limit:1})[0],organizationName:company,location:location||'Demo Market'};
+      const content=`company_payload:\nCompany Name: ${lead.organizationName}\nIndustry: ${lead.industry}\nPrimary Service: ${lead.primaryService}\nBusiness Model: B2B services\nLocation(s): ${lead.location}\nWebsite Status: active\n\ngoogle_raw:\n${lead.googleRaw}\n\ncompany_signals_raw:\n- Hiring activity: ${lead.hiringActivity}\n- Careers page: ${lead.careersPage}\n- Operational indicators: ${lead.operationalIndicators}\n\ncompany_news_raw:\n${lead.newsRaw}\n\nlinkedin_personal_url:\n${lead.linkedinPersonalUrl}\n\nlinkedin_company_url:\n${lead.linkedinCompanyUrl}`;
+      return res.json({ok:true,company,location,content:withDemoCta(content),fields:parseLeadFieldOutputs(content),ghlUpdate:{updated:!!contactId,demo:true}});
+    }
     const user=[
       'Research this potential business lead for GOALL using the GOALL lead intelligence standard.',
       'Company name: '+company,
@@ -1523,6 +3164,10 @@ app.post('/api/val/leads/research',async(req,res)=>{
 
 app.post('/api/val/leads/discover',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery(req.body||{});
+      return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
+    }
     const body=req.body||{};
     const market=String(body.market||body.location||body.cityState||'').trim()||'United States';
     const criteria=String(body.criteria||body.query||'businesses with at least 300 employees or clear operational complexity').trim();
@@ -1566,6 +3211,10 @@ app.post('/api/val/leads/discover',async(req,res)=>{
 
 app.post('/api/val/leads/discover-create',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery(req.body||{});
+      return res.json({...discovered,...{created:discovered.leads,failed:[],skipped:[],content:withDemoCta(`Imported ${discovered.leads.length} demo leads to the demo CRM.\n\nTag applied: ${discovered.tag}\nPipeline stage: New Lead`)}});
+    }
     const body=req.body||{};
     const discovered=await discoverHbsLeadProspects(body);
     const imported=await importApprovedHbsLeads(discovered);
@@ -1575,6 +3224,10 @@ app.post('/api/val/leads/discover-create',async(req,res)=>{
 
 app.post('/api/val/leads/discover-preview',async(req,res)=>{
   try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery(req.body||{});
+      return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
+    }
     const discovered=await discoverHbsLeadProspects(req.body||{});
     res.json({...discovered,content:leadPreviewText(discovered)});
   }catch(e){res.status(500).json({error:e.message});}
@@ -1583,6 +3236,11 @@ app.post('/api/val/leads/discover-preview',async(req,res)=>{
 app.post('/api/val/leads/import-approved',async(req,res)=>{
   try{
     const body=req.body||{};
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery(body);
+      const leads=Array.isArray(body.leads)&&body.leads.length?body.leads:discovered.leads;
+      return res.json({...discovered,leads,created:leads,failed:[],skipped:[],content:withDemoCta(`Imported ${leads.length} approved demo lead${leads.length===1?'':'s'} to the demo CRM.\n\nTag applied: ${discovered.tag}\nSource: LimitLess Leads\nPipeline stage: New Lead`)});
+    }
     const discovered={
       market:String(body.market||'United States'),
       criteria:String(body.criteria||'Approved GOALL lead import'),
@@ -1603,6 +3261,11 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
     const body=req.body||{};
     const leads=Array.isArray(body.leads)?body.leads:[];
     if(!leads.length) throw new Error('No leads were provided for RocketReach enrichment.');
+    if(DEMO_MODE){
+      const enriched=leads.map((p,i)=>({...p,email:p.email||`decisionmaker${i+1}@example.com`,decisionMakerName:p.decisionMakerName||['Dana Holt','Marcus Chen','Renee Wallace'][i%3],decisionMakerTitle:p.decisionMakerTitle||'Operations Leader',rocketReachStatus:'verified demo email'}));
+      const discovered={...demoLeadDiscovery(body),leads:enriched,rocketReachMode:'review'};
+      return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
+    }
     const enriched=await mapWithConcurrency(leads,1,p=>enrichProspect(p,{rocketReachMode:'force'}));
     const discovered={
       ok:true,
@@ -1622,6 +3285,11 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
 app.post('/api/val/leads/enrich-current',async(req,res)=>{
   try{
     const body=req.body||{};
+    if(DEMO_MODE){
+      const leads=demoLeads({limit:4,market:'Demo CRM'}).map((l,i)=>({name:l.organizationName,contactName:l.decisionMakerName,email:l.email,phone:l.phone,website:l.website,decisionMakerName:l.decisionMakerName,confidence:l.confidence}));
+      const content=withDemoCta(leads.map((l,i)=>`${i+1}. ${l.name}\n   Decision maker: ${l.decisionMakerName}\n   Email: ${l.email}\n   Phone: ${l.phone}\n   Status: verified demo data`).join('\n\n'));
+      return res.json({ok:true,count:leads.length,leads,content,demo:true});
+    }
     const exclude=(Array.isArray(body.exclude)?body.exclude:['aric','jessa']).map(v=>String(v).toLowerCase());
     const limit=leadLimitValue(body.limit);
     const d=await ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100`);
@@ -1919,6 +3587,7 @@ function rowToTask(row){
   return {id:row.id,title:row.title,contactName:row.contact_name||'',dueDate:row.due_date?row.due_date.toISOString():null,notes:row.notes||'',details:row.details||[],completed:!!row.completed,createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString()};
 }
 async function loadTasks(){
+  if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.tasks || []);
   await valDbReady;
   if(pgPool){
     const r=await dbQuery('select * from val_tasks where user_id=$1 order by completed asc, due_date asc nulls last, created_at desc',[VAL_USER_ID]);
@@ -1927,6 +3596,15 @@ async function loadTasks(){
   return readTasks();
 }
 async function saveTask(task){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state){
+      const clean={...task,id:task.id||uuid('demo-task'),title:String(task.title||'Untitled task').trim()||'Untitled task',createdAt:task.createdAt||new Date().toISOString()};
+      const idx=state.tasks.findIndex(t=>t.id===clean.id);
+      if(idx>=0) state.tasks[idx]=clean; else state.tasks.push(clean);
+    }
+    return;
+  }
   await valDbReady;
   task.title=String(task.title||'Untitled task').trim()||'Untitled task';
   task.contactName=task.contactName||'';
@@ -1952,6 +3630,11 @@ async function saveTask(task){
   writeTasks(tasks);
 }
 async function replaceTasks(tasks){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state) state.tasks=cloneDemo(tasks);
+    return;
+  }
   await valDbReady;
   if(pgPool){
     for(const task of tasks) await saveTask(task);
@@ -1963,6 +3646,11 @@ async function replaceTasks(tasks){
   writeTasks(Object.keys(byId).map(id=>byId[id]));
 }
 async function deleteTask(id){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state) state.tasks=(state.tasks||[]).filter(t=>t.id!==id);
+    return;
+  }
   await valDbReady;
   if(pgPool){ await dbQuery('delete from val_tasks where user_id=$1 and id=$2',[VAL_USER_ID,id]); return; }
   writeTasks(readTasks().filter(t=>t.id!==id));
@@ -1972,7 +3660,94 @@ app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!ta
 app.put('/api/val/tasks',async(req,res)=>{try{if(!Array.isArray(req.body))return res.status(400).json({error:'Expected array'});await replaceTasks(req.body);res.json({ok:true,count:req.body.length});}catch(e){res.status(500).json({error:e.message});}});
 app.delete('/api/val/tasks/:id',async(req,res)=>{try{await deleteTask(req.params.id);res.json({ok:true});}catch(e){res.status(500).json({error:e.message});}});
 
+function rowToDraft(row){
+  return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,draftType:row.draft_type,contactId:row.contact_id||'',provider:row.provider,subject:row.subject||'',body:row.body||'',status:row.status,sourceContext:row.source_context_json||{},createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
+}
+async function saveInternalDraft(payload){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    const draft={id:payload.id||uuid('demo-draft'),userId:'demo-user',tenantId:'demo-val',draftType:payload.draftType||payload.draft_type||'follow_up',contactId:payload.contactId||payload.contact_id||'',provider:payload.provider||'internal',subject:payload.subject||'',body:payload.body||'',status:payload.status||'draft',sourceContext:payload.sourceContext||payload.source_context_json||{},createdAt:payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    if(state){
+      const idx=state.drafts.findIndex(d=>d.id===draft.id);
+      if(idx>=0) state.drafts[idx]={...state.drafts[idx],...draft}; else state.drafts.unshift(draft);
+    }
+    return draft;
+  }
+  await valDbReady;
+  const draft={id:payload.id||uuid('draft'),userId:payload.userId||currentUserId(),tenantId:tenantId(),draftType:payload.draftType||payload.draft_type||'follow_up',contactId:payload.contactId||payload.contact_id||'',provider:payload.provider||'internal',subject:payload.subject||'',body:payload.body||'',status:payload.status||'draft',sourceContext:payload.sourceContext||payload.source_context_json||{}};
+  if(pgPool){
+    const r=await dbQuery(`
+      insert into drafts (id,user_id,tenant_id,draft_type,contact_id,provider,subject,body,status,source_context_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
+      on conflict (id) do update set draft_type=excluded.draft_type,contact_id=excluded.contact_id,provider=excluded.provider,subject=excluded.subject,body=excluded.body,status=excluded.status,source_context_json=excluded.source_context_json,updated_at=now()
+      returning *
+    `,[draft.id,draft.userId,draft.tenantId,draft.draftType,draft.contactId,draft.provider,draft.subject,draft.body,draft.status,JSON.stringify(draft.sourceContext)]);
+    return rowToDraft(r.rows[0]);
+  }
+  const store=valStore();store.drafts=store.drafts||[];
+  const idx=store.drafts.findIndex(d=>d.id===draft.id);
+  const record={...draft,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(idx>=0)store.drafts[idx]={...store.drafts[idx],...record}; else store.drafts.unshift(record);
+  saveValStore(store);
+  return record;
+}
+async function listDrafts(status=''){
+  if(DEMO_MODE){
+    const drafts=requestContext.getStore()?.demoState?.drafts || [];
+    return cloneDemo(drafts.filter(d=>!status||d.status===status).slice(0,100));
+  }
+  await valDbReady;
+  if(pgPool){
+    const params=[currentUserId(),tenantId()];
+    let sql='select * from drafts where user_id=$1 and tenant_id=$2';
+    if(status){params.push(status);sql+=' and status=$3';}
+    sql+=' order by created_at desc limit 100';
+    const r=await dbQuery(sql,params);
+    return r.rows.map(rowToDraft);
+  }
+  return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
+}
+app.get('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,drafts:await listDrafts(req.query.status||'')});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,draft:await saveInternalDraft(req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.patch('/api/val/drafts/:id',async(req,res)=>{
+  try{
+    const existing=(await listDrafts()).find(d=>d.id===req.params.id);
+    if(!existing)return res.status(404).json({ok:false,error:'Draft not found'});
+    res.json({ok:true,draft:await saveInternalDraft({...existing,...req.body,id:req.params.id})});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/gmail/drafts',async(req,res)=>{
+  try{
+    await ensureGoogleTokensLoaded();
+    const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.compose']);
+    const payload=req.body||{};
+    if(missing.length){
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:'Gmail compose scope missing. Created internal draft instead.',to:payload.to||'',threadId:payload.threadId||''}});
+      return res.status(202).json({ok:true,warning:'Gmail compose scope missing. Created internal draft instead.',draft});
+    }
+    const token=await getGoogleToken();
+    if(!token){
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:lastGoogleAuthError||'Google auth required',to:payload.to||'',threadId:payload.threadId||''}});
+      return res.status(202).json({ok:true,warning:'Google auth unavailable. Created internal draft instead.',draft});
+    }
+    const lines=[`To: ${payload.to||''}`,`Subject: ${payload.subject||''}`,'',payload.body||''];
+    const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
+    const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||undefined}})});
+    const d=await readJsonResponse(r);
+    if(!r.ok) throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
+    res.json({ok:true,gmailDraft:d});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
 async function saveMemoryItem(payload){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state){
+      state.memoryItems=state.memoryItems||[];
+      state.memoryItems.unshift({id:payload.id||uuid('demo-mem'),kind:payload.kind||payload.type||'note',summary:payload.summary||'',rawText:payload.rawText||payload.transcript||payload.summary||'',importance:payload.importance||1,metadata:payload.metadata||{},createdAt:new Date().toISOString()});
+    }
+    return {id:payload.id||uuid('demo-mem')};
+  }
   await valDbReady;
   const id=payload.id||uuid('mem');
   const rawText=payload.rawText||payload.transcript||payload.summary||'';
@@ -1986,6 +3761,14 @@ async function saveMemoryItem(payload){
   return {id};
 }
 async function saveTranscript(payload){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    const id=payload.id||uuid('demo-tr');
+    const type=payload.type||'transcript';
+    const rawText=payload.transcript||payload.rawText||'';
+    if(state) state.transcripts.unshift({id,type,title:payload.title||'',rawText,metadata:{...payload},createdAt:payload.timestamp||new Date().toISOString()});
+    return {id,type};
+  }
   await valDbReady;
   const id=payload.id||uuid('tr');
   const type=payload.type||'transcript';
@@ -2007,7 +3790,166 @@ async function saveTranscript(payload){
   }
   return {id,type};
 }
+async function recentTranscripts(days=7){
+  if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.transcripts || []);
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select id,type,title,raw_text,metadata,created_at from val_transcripts where user_id=$1 and created_at >= $2 order by created_at desc',[VAL_USER_ID,since]);
+    return r.rows.map(row=>({id:row.id,type:row.type,title:row.title||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?row.created_at.toISOString():''}));
+  }
+  return (valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
+}
+async function countTranscriptMeetingLinks(days=7){
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select count(*)::int as count from meeting_transcript_links where user_id=$1 and tenant_id=$2 and created_at >= $3',[VAL_USER_ID,tenantId(),since]);
+    return r.rows[0]?.count||0;
+  }
+  return (valStore().meetingTranscriptLinks||[]).filter(l=>l.userId===VAL_USER_ID&&l.tenantId===tenantId()&&new Date(l.createdAt||0)>=new Date(since)).length;
+}
+async function linkedTranscriptsForEvent(event,limit=5){
+  await valDbReady;
+  if(!event?.id) return [];
+  const source=event.source||'unknown';
+  if(pgPool){
+    const r=await dbQuery(`
+      select t.id,t.type,t.title,t.raw_text,t.metadata,t.created_at,l.confidence,l.matched_reason
+      from meeting_transcript_links l
+      join val_transcripts t on t.id=l.transcript_id
+      where l.user_id=$1 and l.tenant_id=$2 and l.meeting_event_id=$3 and (l.meeting_source=$4 or l.meeting_source is null)
+      order by l.created_at desc
+      limit $5
+    `,[VAL_USER_ID,tenantId(),event.id,source,limit]);
+    return r.rows.map(row=>({id:row.id,type:row.type,title:row.title||'',createdAt:row.created_at?row.created_at.toISOString():'',confidence:Number(row.confidence||0),reason:row.matched_reason||'explicit transcript link',summary:String(row.raw_text||'').slice(0,900),metadata:row.metadata||{}}));
+  }
+  const store=valStore();
+  const links=(store.meetingTranscriptLinks||[]).filter(l=>l.userId===VAL_USER_ID&&l.tenantId===tenantId()&&l.meetingEventId===event.id&&(!l.meetingSource||l.meetingSource===source)).slice(0,limit);
+  const transcripts=store.transcripts||[];
+  return links.map(l=>{
+    const t=transcripts.find(tr=>tr.id===l.transcriptId);
+    return t ? {id:t.id,type:t.type,title:t.title||'',createdAt:t.createdAt||'',confidence:Number(l.confidence||0),reason:l.matchedReason||'explicit transcript link',summary:String(t.rawText||'').slice(0,900),metadata:t.metadata||{}} : null;
+  }).filter(Boolean);
+}
+function transcriptMeetingTitle(transcript){
+  const text=[transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ');
+  const explicit=String(transcript.title||'').replace(/\b(transcript|meeting|call|zoom|recording)\b/ig,' ').replace(/[^a-z0-9\s]/ig,' ').replace(/\s+/g,' ').trim();
+  const source=[explicit,text].filter(Boolean).join(' ');
+  const seen=new Set();
+  const words=(source.toLowerCase().match(/[a-z0-9]{3,}/g)||[])
+    .filter(w=>!['transcript','meeting','call','zoom','recording','with','from','this','that','notes','summary','unknown','processed','source','smoke','test','jessa'].includes(w))
+    .filter(w=>{if(seen.has(w)) return false; seen.add(w); return true;})
+    .slice(0,4);
+  if(words.length>=3) return words.map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  const people=splitPeopleFromText(text).slice(0,2).map(p=>p.name||p.email?.split('@')[0]).filter(Boolean);
+  if(people.length) return people.concat(['Follow Up']).join(' ').split(/\s+/).slice(0,4).join(' ');
+  return 'Retro Conversation Notes';
+}
+async function saveValCalendarEvent(event){
+  await valDbReady;
+  const id=event.id||uuid('vev');
+  const record={id,userId:VAL_USER_ID,tenantId:tenantId(),source:event.source||'val',title:event.title||'Retro Conversation Notes',startTime:event.startTime||new Date().toISOString(),endTime:event.endTime||event.startTime||new Date().toISOString(),attendees:event.attendees||[],metadata:event.metadata||{}};
+  if(pgPool){
+    await dbQuery(`
+      insert into val_calendar_events (id,user_id,tenant_id,source,title,start_time,end_time,attendees,metadata,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())
+      on conflict (id) do update set title=excluded.title,start_time=excluded.start_time,end_time=excluded.end_time,attendees=excluded.attendees,metadata=excluded.metadata,updated_at=now()
+    `,[record.id,record.userId,record.tenantId,record.source,record.title,record.startTime,record.endTime,JSON.stringify(record.attendees),JSON.stringify(record.metadata)]);
+  }else{
+    const store=valStore();store.calendarEvents=store.calendarEvents||[];
+    const idx=store.calendarEvents.findIndex(e=>e.id===id);
+    if(idx>=0)store.calendarEvents[idx]={...store.calendarEvents[idx],...record}; else store.calendarEvents.unshift(record);
+    saveValStore(store);
+  }
+  return {id:record.id,title:record.title,summary:record.title,startTime:record.startTime,endTime:record.endTime,attendees:record.attendees,source:'val',calendarName:'VAL Retroactive Meetings',metadata:record.metadata};
+}
+async function fetchValCalendarEvents(start,end){
+  await valDbReady;
+  const s=start?.toISOString?start.toISOString():new Date(Date.now()-7*24*60*60*1000).toISOString();
+  const e=end?.toISOString?end.toISOString():new Date(Date.now()+7*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select * from val_calendar_events where user_id=$1 and tenant_id=$2 and start_time >= $3 and start_time <= $4 order by start_time asc',[VAL_USER_ID,tenantId(),s,e]);
+    return r.rows.map(row=>({id:row.id,title:row.title,summary:row.title,startTime:row.start_time?row.start_time.toISOString():'',endTime:row.end_time?row.end_time.toISOString():'',attendees:row.attendees||[],source:'val',calendarName:'VAL Retroactive Meetings',metadata:row.metadata||{}}));
+  }
+  return (valStore().calendarEvents||[]).filter(ev=>new Date(ev.startTime||0)>=new Date(s)&&new Date(ev.startTime||0)<=new Date(e));
+}
+function scoreTranscriptMeetingMatch(transcript,event){
+  const tText=[transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ').toLowerCase();
+  const eTitle=String(event.title||event.summary||'').toLowerCase();
+  let score=0,reasons=[];
+  if(eTitle&&tText.includes(eTitle.slice(0,80))){score+=0.45;reasons.push('title');}
+  const attendees=inferAttendeesFromEvent(event);
+  attendees.forEach(a=>{
+    if(a.email&&tText.includes(a.email.toLowerCase())){score+=0.2;reasons.push('attendee email');}
+    if(a.name&&a.name.length>3&&tText.includes(a.name.toLowerCase())){score+=0.12;reasons.push('attendee name');}
+  });
+  const ts=new Date(transcript.createdAt||transcript.metadata?.timestamp||transcript.metadata?.createdAt||0).getTime();
+  const start=new Date(event.startTime||event.start||0).getTime();
+  if(ts&&start&&Math.abs(ts-start)<4*60*60*1000){score+=0.25;reasons.push('time window');}
+  return {confidence:Math.min(Number(score.toFixed(2)),1),reason:[...new Set(reasons)].join(', ')||'weak match'};
+}
+async function saveMeetingTranscriptLink({event,transcript,confidence,reason}){
+  if(!event?.id||!transcript?.id) return null;
+  const isRetro=event.source==='val' || event.metadata?.retroactive;
+  if(!isRetro&&confidence<0.35) return null;
+  const record={id:uuid('mtl'),userId:VAL_USER_ID,tenantId:tenantId(),meetingSource:event.source||'unknown',meetingEventId:event.id,transcriptId:transcript.id,confidence,matchedReason:reason,createdAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery(`
+      insert into meeting_transcript_links (id,user_id,tenant_id,meeting_source,meeting_event_id,transcript_id,confidence,matched_reason)
+      values ($1,$2,$3,$4,$5,$6,$7,$8)
+      on conflict (user_id,tenant_id,meeting_source,meeting_event_id,transcript_id) do update set confidence=greatest(meeting_transcript_links.confidence,excluded.confidence),matched_reason=excluded.matched_reason
+    `,[record.id,record.userId,record.tenantId,record.meetingSource,record.meetingEventId,record.transcriptId,record.confidence,record.matchedReason]);
+  }else{
+    const store=valStore();store.meetingTranscriptLinks=store.meetingTranscriptLinks||[];
+    if(!store.meetingTranscriptLinks.some(l=>l.meetingEventId===record.meetingEventId&&l.transcriptId===record.transcriptId))store.meetingTranscriptLinks.push(record);
+    saveValStore(store);
+  }
+  return record;
+}
+async function linkTranscriptToBestMeeting(transcript,options={}){
+  const now=new Date(transcript.createdAt||Date.now());
+  const start=new Date(now);start.setDate(start.getDate()-1);
+  const end=new Date(now);end.setDate(end.getDate()+1);
+  const events=[
+    ...(await fetchGhlCalendarEvents(start,end).catch(()=>[])),
+    ...(await fetchGoogleCalendarEvents(start,end,100).catch(()=>[])),
+    ...(await fetchValCalendarEvents(start,end).catch(()=>[]))
+  ];
+  let best=null;
+  for(const event of events){
+    const m=scoreTranscriptMeetingMatch(transcript,event);
+    if(!best||m.confidence>best.confidence) best={event,...m};
+  }
+  if(best&&best.confidence>=0.35) return saveMeetingTranscriptLink({event:best.event,transcript,confidence:best.confidence,reason:best.reason});
+  if(options.createRetro!==false){
+    const ts=transcript.createdAt||transcript.metadata?.timestamp||transcript.metadata?.createdAt||new Date().toISOString();
+    const retro=await saveValCalendarEvent({
+      title:transcriptMeetingTitle(transcript),
+      startTime:ts,
+      endTime:new Date(new Date(ts).getTime()+30*60*1000).toISOString(),
+      attendees:splitPeopleFromText([transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ')).slice(0,8),
+      metadata:{retroactive:true,createdFrom:'unmatched_transcript',transcriptId:transcript.id,originalTitle:transcript.title||''}
+    });
+    return saveMeetingTranscriptLink({event:retro,transcript,confidence:0.25,reason:'retroactive VAL meeting created for unmatched transcript'});
+  }
+  return null;
+}
 async function saveConversation(payload){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    const id=payload.id||uuid('demo-chat');
+    const messages=Array.isArray(payload.messages)?payload.messages:[];
+    const title=payload.title||(messages.find(m=>m.role==='user')?.content||'Demo Conversation').slice(0,80);
+    if(state){
+      state.savedConversations=state.savedConversations||[];
+      state.savedConversationMessages=state.savedConversationMessages||{};
+      state.savedConversations=state.savedConversations.filter(c=>c.id!==id);
+      state.savedConversations.unshift({id,title,source:payload.source||payload.type||'chat',metadata:payload.metadata||{},created_at:payload.timestamp||new Date().toISOString(),updated_at:new Date().toISOString()});
+      state.savedConversationMessages[id]=messages.map(m=>({role:m.role||'user',content:m.content||'',metadata:m.metadata||{},created_at:m.timestamp||new Date().toISOString()}));
+    }
+    return {id,title,count:messages.length};
+  }
   await valDbReady;
   const id=payload.id||uuid('conv');
   const messages=Array.isArray(payload.messages)?payload.messages:[];
@@ -2073,10 +4015,11 @@ function normalizeNotesPayload(data){
 async function fetchContactNotes(contactId,limit=25){
   if(!contactId)return [];
   const encoded=encodeURIComponent(contactId);
+  const ghlLoc=await resolveGhlLocationId();
   const paths=[
     `/contacts/${encoded}/notes`,
-    `/contacts/${encoded}/notes?locationId=${encodeURIComponent(GHL_LOC)}`,
-    `/contacts/notes?contactId=${encoded}&locationId=${encodeURIComponent(GHL_LOC)}`
+    `/contacts/${encoded}/notes?locationId=${encodeURIComponent(ghlLoc||GHL_LOC)}`,
+    `/contacts/notes?contactId=${encoded}&locationId=${encodeURIComponent(ghlLoc||GHL_LOC)}`
   ];
   for(const path of paths){
     const r=await ghlTry('GET',path);
@@ -2123,7 +4066,9 @@ async function getContactNotesContextForId(contactId){
   }catch(e){return '';}
 }
 async function ghlContactNotesContext(query,dashboard){
-  if(!GHL_KEY||!GHL_LOC)return '';
+  const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
+  const ghlLoc=await resolveGhlLocationId();
+  if(!ghlKey||!ghlLoc)return '';
   const sections=[];
   const seenIds=new Set();
   for(const id of collectContactIdsFromDashboard(dashboard||{})){
@@ -2188,9 +4133,11 @@ function responseText(payload){
 }
 
 async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
-  if(!OPENAI_KEY) throw new Error('OPENAI_KEY not configured');
+  const openAiKey=await resolveOpenAIKey();
+  const openAiModel=await resolveOpenAIModel();
+  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
   const body = {
-    model:OPENAI_CHAT_MODEL,
+    model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
     input:messages.map(m=>({
       role:m.role === 'assistant' ? 'assistant' : 'user',
@@ -2202,7 +4149,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   if(json) body.text = {format:{type:'json_object'}};
   let r=await fetch('https://api.openai.com/v1/responses',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
     body:JSON.stringify(body)
   });
   let d=await r.json();
@@ -2210,7 +4157,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     delete body.temperature;
     r=await fetch('https://api.openai.com/v1/responses',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify(body)
     });
     d=await r.json();
@@ -2220,9 +4167,11 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
 }
 
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
-  if(!OPENAI_KEY) throw new Error('OPENAI_KEY not configured');
+  const openAiKey=await resolveOpenAIKey();
+  const openAiModel=await resolveOpenAIModel();
+  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
   const body = {
-    model: OPENAI_CHAT_MODEL,
+    model: openAiModel,
     input: [
       {role:'system',content:system},
       {role:'user',content:user}
@@ -2233,7 +4182,7 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
   };
   let r=await fetch('https://api.openai.com/v1/responses',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
     body:JSON.stringify(body)
   });
   let d=await r.json();
@@ -2241,7 +4190,7 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
     delete body.temperature;
     r=await fetch('https://api.openai.com/v1/responses',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify(body)
     });
     d=await r.json();
@@ -2593,12 +4542,13 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
 }
 
 async function discoverOutscraperProspects({organizationType,employeeMinimum,market,limit}){
-  if(!OUTSCRAPER_API_KEY) return {configured:false, leads:[], error:'OUTSCRAPER_API_KEY is not set'};
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey) return {configured:false, leads:[], error:'OUTSCRAPER_API_KEY is not set'};
   const url=new URL(OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL);
   url.searchParams.set('query',`${organizationType} businesses in ${market}`);
   url.searchParams.set('limit',String(limit||12));
   url.searchParams.set('async','false');
-  const response=await fetch(url.toString(),{headers:{'X-API-KEY':OUTSCRAPER_API_KEY}});
+  const response=await fetch(url.toString(),{headers:{'X-API-KEY':outscraperKey}});
   const data=await readJsonResponse(response);
   if(!response.ok) return {configured:true, leads:[], error:data.errorMessage||data.message||`Outscraper ${response.status}`};
   const rows=(Array.isArray(data.data)?data.data:[data]).flat(4).filter(v=>v&&typeof v==='object');
@@ -2814,7 +4764,8 @@ async function importApprovedHbsLeads(discovered){
 }
 
 async function enrichProspectWithRocketReach(p){
-  if(!ROCKETREACH_API_KEY) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
+  const rocketReachKey=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
+  if(!rocketReachKey) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
   const hasPersonSignal=!!(p.linkedinPersonalUrl || p.decisionMakerName || isLikelyPersonEmail(p.email));
   if(!hasPersonSignal){
     return {...p,rocketReachStatus:'skipped: needs person name, personal LinkedIn, or person email'};
@@ -2939,9 +4890,9 @@ Round table strategy: evaluate business strategy through Systems Builder, Produc
 
 Tool governance: GHL is the execution layer for CRM, contacts, pipelines, appointments, tasks, workflows, documents, email delivery, and operational tracking. Make.com is the orchestration layer for automation, routing, API coordination, conditional logic, webhooks, system communication, and execution sequencing. VAL/Postgres memory is the memory and retrieval layer for transcripts, institutional memory, historical recall, contact context, and document context. If legacy Pinecone memory is referenced, treat it as the previous memory layer; current durable memory is VAL/Postgres. Do not collapse tool responsibilities.
 
-Mark Bierman / GOALL configuration: this VAL supports Mark Bierman, founder of the GOALL program. The primary operating use case is an AI-supported sales call center command center. Prioritize pipeline clarity, caller context, call notes, contact notes, transcript history, next best action, deal risk, salesperson accountability, and concise executive visibility.
+Client configuration: this VAL supports ${CLIENT_CONFIG.clientName}. ${process.env.VAL_CLIENT_CONTEXT || 'Prioritize relationship context, calendar awareness, tasks, transcripts, contact notes, pipeline clarity, next best action, and concise executive visibility.'}
 
-Contact notes are critical context. GHL creates notes after phone calls with transcript content. When a contact, caller, prospect, or opportunity is discussed, use all available GHL notes provided in context as source material. Always give Mark a clear overview of what the notes reveal: caller history, objections, promises, buying signals, sales status, risks, follow-up needs, and next actions. Do not summarize a contact without checking the provided GHL note history.
+Contact notes are critical context. GHL may create notes after phone calls with transcript content. When a contact, caller, prospect, or opportunity is discussed, use all available GHL notes provided in context as source material. Always give the user a clear overview of what the notes reveal: caller history, objections, promises, buying signals, sales status, risks, follow-up needs, and next actions. Do not summarize a contact without checking the provided GHL note history.
 
 GOALL Agency lead intelligence: when the user asks to research a lead, identify a target market, qualify a company, structure prospect data, or prepare CRM fields, evaluate whether the company is a strong business lead for GOALL based on employee count, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Use the GOALL standard: factual, restrained, source-prioritized, no guessing, and structured for GHL.
 
@@ -2957,7 +4908,7 @@ Final governing principle: you are not here to maximize activity. You govern lev
 `.trim();
 
 function actionPrompt(action){
-  const prompts={daily_command:'Create a relationship-first daily command briefing for a founder/executive whose highest leverage is high-trust connection. Include today meetings, 15-minute prep needs, urgent promises, relationship radar, approvals waiting, one focus block, the single highest-leverage action, and one high-impact use of the time VAL is saving. Be assertive and practical.',what_now:'Choose exactly what the user should do next. Consider energy, urgency, calendar, overdue tasks, user memory, business leverage, and whether VAL has freed time that should be spent on a higher-value relationship, strategic move, recovery block, or creative work. Be decisive.',weekly_review:'Create a weekly review: wins, stuck loops, avoided work, relationship follow-ups, stop/start/continue, and top 3 priorities for next week.',relationship_briefing:'Create a relationship briefing for the person or meeting named by the user. Include context, last known interaction, tone, likely needs, open promises, opportunity angle, questions, and follow-up suggestions.',project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',task_intelligence:'Review the task list. Group by urgency/energy/project/contact, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first. Do not suggest deleting tasks without user approval.',followup_radar:'Rank the highest-priority relationships to nurture now. Focus on people where trust, revenue, referrals, partnership, or promised follow-up could be lost if ignored. For each person include why now, what was promised or implied, the smallest next action, and a ready-to-send message draft when appropriate.',relationship_radar:'Create a Relationship Radar view. Rank high-value contacts by urgency and opportunity. Use calendar, conversations, tasks, pipeline, memory, and open loops. For each person include relationship context, why they matter, what is at risk, next best action, and a ready-to-send message when appropriate.',pre_meeting_brief:'Prepare the next meeting as if it starts in 15 minutes. Identify all attendees, infer who matters most, summarize prior context, open promises, current opportunity, likely objective, relationship risks, suggested opening line, three questions, and the cleanest follow-up VAL should send afterward.',auto_followups:'Review recent meetings and conversations. Draft the follow-ups VAL should send now. For each draft include recipient, why it should go now, subject, message body, and whether it is safe to send automatically or should sit in the Approval Queue.',contact_command_center:'Create a contact command center for the relevant person or company. Group all tasks, notes, promises, meetings, opportunities, relationship context, and suggested next moves by contact. Make it easy to see what is waiting on them and what is waiting on the user.',integrity_tracker:'Audit open promises and commitments. List what the user said they would do, who it is for, source/context, due timing if known, risk if dropped, and the next closure action. Do not suggest deleting tasks. The user must close loops manually.',daily_rhythm:'Run the daily executive rhythm: morning briefing, midday check-in, end-of-day wrap, and tomorrow prep. Keep it relationship-first. Surface dynamic prompts based on meetings, overdue tasks, approvals, stale relationships, pipeline urgency, and high-impact use of saved time.',saved_time_leverage:'Suggest the highest-impact things the user could do with the time, energy, and cognitive load VAL is saving. Focus on moves that create revenue, deepen high-value relationships, strengthen authority, protect recovery, improve strategic thinking, or create long-term leverage. Give 3 to 5 options, explain why each matters, and recommend one to do now.',onboarding_profile:'Run the Tell Me About Yourself onboarding. Ask one deep question at a time to understand identity, business model, high-value relationships, communication style, decision patterns, energy patterns, personality profile, boundaries, approval preferences, and documents to upload. Be warm, direct, and psychologically insightful.',executive_review:'Run an executive review in this exact order. First: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. For each one, include person, why now, ready-to-send draft, and smallest approval action. Second: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Third: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',lead_intelligence:'Use the GOALL Agency lead intelligence standard for business lead research. Qualify the company by employee base, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.'};
+  const prompts={daily_command:'Create a relationship-first daily command briefing for a founder/executive whose highest leverage is high-trust connection. Include today meetings, 15-minute prep needs, urgent promises, relationship radar, approvals waiting, email intelligence including important unread emails, needed replies, waiting-on-response items, forwarding suggestions, rule suggestions, ignored email count, appointment recap drafts, one focus block, the single highest-leverage action, and one high-impact use of the time VAL is saving. Be assertive and practical.',what_now:'Choose exactly what the user should do next. Consider energy, urgency, calendar, overdue tasks, user memory, business leverage, and whether VAL has freed time that should be spent on a higher-value relationship, strategic move, recovery block, or creative work. Be decisive.',weekly_review:'Create a weekly review: wins, stuck loops, avoided work, relationship follow-ups, stop/start/continue, and top 3 priorities for next week.',relationship_briefing:'Create a relationship briefing for the person or meeting named by the user. Include context, last known interaction, tone, likely needs, open promises, opportunity angle, questions, and follow-up suggestions.',project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',task_intelligence:'Review the task list. Group by urgency/energy/project/contact, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first. Do not suggest deleting tasks without user approval.',followup_radar:'Rank the highest-priority relationships to nurture now. Focus on people where trust, revenue, referrals, partnership, or promised follow-up could be lost if ignored. For each person include why now, what was promised or implied, the smallest next action, and a ready-to-send message draft when appropriate.',relationship_radar:'Create a Relationship Radar view. Rank high-value contacts by urgency and opportunity. Use calendar, conversations, tasks, pipeline, memory, and open loops. For each person include relationship context, why they matter, what is at risk, next best action, and a ready-to-send message when appropriate.',pre_meeting_brief:'Prepare the next meeting as if it starts in 15 minutes. Identify all attendees, infer who matters most, summarize prior context, open promises, current opportunity, likely objective, relationship risks, suggested opening line, three questions, and the cleanest follow-up VAL should send afterward.',auto_followups:'Review recent meetings and conversations. Draft the follow-ups VAL should send now. For each draft include recipient, why it should go now, subject, message body, and whether it is safe to send automatically or should sit in the Approval Queue.',contact_command_center:'Create a contact command center for the relevant person or company. Group all tasks, notes, promises, meetings, opportunities, relationship context, and suggested next moves by contact. Make it easy to see what is waiting on them and what is waiting on the user.',integrity_tracker:'Audit open promises and commitments. List what the user said they would do, who it is for, source/context, due timing if known, risk if dropped, and the next closure action. Do not suggest deleting tasks. The user must close loops manually.',daily_rhythm:'Run the daily executive rhythm: morning briefing, midday check-in, end-of-day wrap, and tomorrow prep. Keep it relationship-first. Surface dynamic prompts based on meetings, overdue tasks, approvals, stale relationships, pipeline urgency, and high-impact use of saved time.',saved_time_leverage:'Suggest the highest-impact things the user could do with the time, energy, and cognitive load VAL is saving. Focus on moves that create revenue, deepen high-value relationships, strengthen authority, protect recovery, improve strategic thinking, or create long-term leverage. Give 3 to 5 options, explain why each matters, and recommend one to do now.',onboarding_profile:'Run the Tell Me About Yourself onboarding. Ask one deep question at a time to understand identity, business model, high-value relationships, communication style, decision patterns, energy patterns, personality profile, boundaries, approval preferences, and documents to upload. Be warm, direct, and psychologically insightful.',executive_review:'Run an executive review in this exact order. First: review Email Intelligence, including important unread emails, emails needing reply, waiting-on-response items, forwarding suggestions, rule suggestions, ignored email count, and appointment recap drafts. Second: include Relationship Intelligence: highest leverage relationship, top 3 relationship priorities, one cooling relationship, one forgotten commitment, one suggested introduction, and one hidden opportunity. Third: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. Fourth: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Fifth: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',lead_intelligence:'Use the GOALL Agency lead intelligence standard for business lead research. Qualify the company by employee base, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.'};
   return prompts[action]||prompts.what_now;
 }
 
@@ -2977,15 +4928,17 @@ async function processTranscriptPayload(payload){
   const transcript=payload.transcript||payload.rawText||'';
   if(!transcript.trim()) throw new Error('Missing transcript');
   const title=payload.title||'Processed transcript';
-  const sourceId=payload.id||payload.transcriptId||payload.sourceId||title;
+  const sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId||title;
   const memory=await recentMemoryContext(title+' '+transcript.slice(0,1000));
   const system=[VAL_SYSTEM_PROMPT,'You process transcripts for VAL. Your job is to prevent commitments from leaking.','Extract every unresolved promise, next step, follow-up, owner action, waiting-for item, meeting prep need, and task implied by the conversation.','If someone says they will send, review, schedule, introduce, decide, follow up, check, draft, prepare, update, research, or circle back, that belongs in actionItems unless it was explicitly completed in the transcript.','If a follow-up message should be sent after the meeting, include it in followupDrafts and also create a matching actionItems entry unless another action item already covers it.','Do not invent work. Do not create tasks for completed items. When due timing is unclear, use null.','Return strict JSON with keys: summary, actionItems, decisions, people, memoryUpdates, followupDrafts.','actionItems must be an array of objects with title, dueDate, notes, priority, contactName, person, evidence.','Every action item title should start with a verb and be clear enough to execute without reopening the transcript.',memory?'Relevant saved memory:\n'+memory:''].filter(Boolean).join('\n\n');
   const raw=await callValModel({system,user:'Transcript title: '+title+'\n\nTranscript:\n'+transcript.slice(0,30000),maxTokens:1800,temperature:0.2,json:true});
   let parsed={};
   try{parsed=JSON.parse(raw);}catch(e){parsed={summary:raw,actionItems:[],decisions:[],people:[],memoryUpdates:[],followupDrafts:[]};}
   const createdTasks=[];
+  const createdDrafts=[];
   const taskItems=Array.isArray(parsed.actionItems)?parsed.actionItems.slice(0,18):[];
-  const followupItems=(Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8).map(f=>({title:f.title||f.task||('Send follow-up'+(f.recipient||f.contactName||f.person?' to '+(f.recipient||f.contactName||f.person):'')),contactName:f.contactName||f.person||f.recipient||'',dueDate:f.dueDate||null,notes:[f.reason||'',f.subject?'Subject: '+f.subject:'',f.message||f.body||''].filter(Boolean).join('\n'),priority:f.priority||'high',evidence:f.evidence||'Follow-up draft created from transcript'}));
+  const rawFollowupDrafts=(Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8);
+  const followupItems=rawFollowupDrafts.map(f=>({title:f.title||f.task||('Send follow-up'+(f.recipient||f.contactName||f.person?' to '+(f.recipient||f.contactName||f.person):'')),contactName:f.contactName||f.person||f.recipient||'',dueDate:f.dueDate||null,notes:[f.reason||'',f.subject?'Subject: '+f.subject:'',f.message||f.body||''].filter(Boolean).join('\n'),priority:f.priority||'high',evidence:f.evidence||'Follow-up draft created from transcript'}));
   const existing=await loadTasks();
   const seen=new Set(existing.filter(t=>!t.completed).map(t=>taskFingerprint(t.title,t.contactName)));
   for(const item of taskItems.concat(followupItems)){
@@ -2997,21 +4950,122 @@ async function processTranscriptPayload(payload){
     await saveTask(task);
     createdTasks.push(task);
   }
+  for(const f of rawFollowupDrafts){
+    const body=f.message||f.body||'';
+    if(!body.trim()) continue;
+    createdDrafts.push(await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:f.subject||('Follow-up: '+title),body,status:'draft',sourceContext:{source:'transcript_processing',transcriptId:sourceId,recipient:f.recipient||f.email||'',person:f.person||f.contactName||'',reason:f.reason||''}}));
+  }
   if(Array.isArray(parsed.memoryUpdates)){
     for(const m of parsed.memoryUpdates.slice(0,12)){
       const text=typeof m==='string'?m:(m.text||m.summary||JSON.stringify(m));
       await saveMemoryItem({kind:'transcript_insight',summary:title,rawText:text,importance:3,metadata:{title,source:'transcript_processing'}});
     }
   }
-  return {analysis:parsed,createdTasks};
+  let meetingMatch=payload.meetingMatch||null;
+  if(!meetingMatch){
+    try{
+      meetingMatch=await linkTranscriptToBestMeeting({id:sourceId,title,rawText:transcript,metadata:payload.metadata||payload,createdAt:payload.timestamp||payload.createdAt||new Date().toISOString()});
+    }catch(e){console.log('Transcript meeting match skipped:',e.message);}
+  }
+  console.log(`Transcript processed: title="${title}" actionItems=${taskItems.length} tasksCreated=${createdTasks.length} draftsCreated=${createdDrafts.length} meetingMatched=${!!meetingMatch}`);
+  return {analysis:parsed,createdTasks,createdDrafts,meetingMatch,counts:{actionItemsExtracted:taskItems.length,tasksCreated:createdTasks.length,draftsCreated:createdDrafts.length,meetingMatched:meetingMatch?1:0}};
 }
-app.post('/api/val/transcripts',async(req,res)=>{try{const saved=await saveTranscript(req.body||{});if(req.body&&req.body.process!==false)return res.json({ok:true,...saved,...await processTranscriptPayload(req.body)});res.json({ok:true,...saved});}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const title=req.body.title||'Processed transcript';await saveTranscript({type:'processed_transcript',title,transcript:req.body.transcript||req.body.rawText||'',metadata:{source:req.body.source||'manual_process'},importance:3});res.json({ok:true,...await processTranscriptPayload(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts',async(req,res)=>{try{console.log('Transcript received:',req.body?.title||req.body?.type||'untitled');const saved=await saveTranscript(req.body||{});const transcriptRecord={id:saved.id,title:req.body?.title||saved.type,rawText:req.body?.transcript||req.body?.rawText||'',metadata:req.body||{},createdAt:req.body?.timestamp||req.body?.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});if(req.body&&req.body.process!==false)return res.json({ok:true,...saved,...await processTranscriptPayload({...req.body,savedTranscriptId:saved.id,meetingMatch})});res.json({ok:true,...saved,meetingMatch});}catch(e){console.error('Transcript save/process error:',e.message);res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts/process',async(req,res)=>{try{const title=req.body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:req.body.transcript||req.body.rawText||'',metadata:{source:req.body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:req.body.transcript||req.body.rawText||'',metadata:req.body||{},createdAt:req.body.timestamp||req.body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...req.body,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
-app.get('/api/val/conversations',async(req,res)=>{try{await valDbReady;if(pgPool){const r=await dbQuery('select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 order by updated_at desc limit $2',[VAL_USER_ID,Number(req.query.limit)||25]);return res.json(r.rows);}res.json(valStore().conversations.slice(0,Number(req.query.limit)||25));}catch(e){res.status(500).json({error:e.message});}});
-app.get('/api/val/conversations/:id/messages',async(req,res)=>{try{await valDbReady;if(pgPool){const r=await dbQuery('select role,content,metadata,created_at from val_messages where conversation_id=$1 order by created_at asc',[req.params.id]);return res.json(r.rows);}res.json(valStore().messages.filter(m=>m.conversationId===req.params.id));}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/intelligence',async(req,res)=>{try{const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[],memory=await recentMemoryContext(`${action} ${query}`),ghlNotes=await ghlContactNotesContext(`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use saved memory, dashboard data, GHL contact notes, task state, and the requested action. Be specific, practical, and decisive.',memory?'Relevant saved memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const user=['Requested VAL action: '+action,'Instruction: '+actionPrompt(action),query?'User query: '+query:'','Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)].filter(Boolean).join('\n\n');res.json({ok:true,action,content:await callValModel({system,user,maxTokens:1800,temperature:0.35})});}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/chat',async(req,res)=>{try{const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{},memory=await recentMemoryContext(lastUser+'\n'+memoryQuery),ghlNotes=await ghlContactNotesContext(lastUser+'\n'+memoryQuery,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, GHL contact notes, and saved memory when relevant. Do not pretend to know facts that are not present.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant GHL contact notes and call transcripts are present, use them as current contact/caller source context.',memory?'Recent saved VAL memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});res.json({message:{role:'assistant',content:content||'I could not process that.'}});}catch(e){res.status(500).json({error:e.message});}});
+app.get('/api/val/conversations',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const rows=[...(state.savedConversations||[]),{id:'demo-chat-1',title:'Morning Relationship Briefing',source:'chat',metadata:{demo:true},created_at:demoIso(0,8,0),updated_at:demoIso(0,8,12)},{id:'demo-chat-2',title:'Pipeline Priorities Review',source:'chat',metadata:{demo:true},created_at:demoIso(-1,15,30),updated_at:demoIso(-1,15,48)},{id:'demo-chat-3',title:'Meeting Follow-Up Drafts',source:'chat',metadata:{demo:true},created_at:demoIso(-2,10,0),updated_at:demoIso(-2,10,25)}];return res.json(rows.slice(0,Number(req.query.limit)||25));}await valDbReady;if(pgPool){const r=await dbQuery('select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 order by updated_at desc limit $2',[VAL_USER_ID,Number(req.query.limit)||25]);return res.json(r.rows);}res.json(valStore().conversations.slice(0,Number(req.query.limit)||25));}catch(e){res.status(500).json({error:e.message});}});
+app.get('/api/val/conversations/:id/messages',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const sets={'demo-chat-1':[{role:'user',content:'What needs my attention today?',created_at:demoIso(0,8,0)},{role:'assistant',content:withDemoCta('Marcus needs the pilot memo before the 2 PM demo. Elena needs the scope revision. Jordan has a warm intro offer that should not sit.'),created_at:demoIso(0,8,1)}],'demo-chat-2':[{role:'user',content:'Show me pipeline risk.',created_at:demoIso(-1,15,30)},{role:'assistant',content:withDemoCta('HealthBridge is the risk. The expansion is not blocked by value. It is blocked by sponsor fatigue and implementation load.'),created_at:demoIso(-1,15,31)}],'demo-chat-3':[{role:'user',content:'Draft the follow-ups.',created_at:demoIso(-2,10,0)},{role:'assistant',content:withDemoCta('I would queue three drafts: Marcus pilot memo, Elena revised scope, and Jordan one-paragraph intro ask.'),created_at:demoIso(-2,10,1)}]};return res.json(state.savedConversationMessages?.[req.params.id]||sets[req.params.id]||[]);}await valDbReady;if(pgPool){const r=await dbQuery('select role,content,metadata,created_at from val_messages where conversation_id=$1 order by created_at asc',[req.params.id]);return res.json(r.rows);}res.json(valStore().messages.filter(m=>m.conversationId===req.params.id));}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/meeting-briefing',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const input=req.body||{};
+      const meeting={...input,id:input.eventId||input.id,title:input.title||input.summary||'',source:input.source||'demo',attendees:Array.isArray(input.attendees)?input.attendees:[]};
+      const state=demoState(req,res);
+      const attendees=inferAttendeesFromEvent(meeting);
+      const nameText=attendees.map(a=>a.name||a.email).join(', ') || 'attendees unclear';
+      const relatedTasks=(state.tasks||[]).filter(t=>!t.completed&&[meeting.title,nameText].some(v=>String(v||'').toLowerCase().includes(String(t.contactName||'').toLowerCase()))).slice(0,4);
+      const transcriptContext=(state.transcripts||[]).filter(t=>String(t.title||'').toLowerCase().includes(String(meeting.title||'').split(' ')[0]?.toLowerCase()||'')).slice(0,2);
+      const briefing=[
+        `What matters: ${meeting.title||'This meeting'} is tied to active revenue, relationship momentum, or an open promise.`,
+        `Attendees: ${nameText}.`,
+        relatedTasks.length?`Open loops: ${relatedTasks.map(t=>t.title).join('; ')}.`:'Open loops: ask what would make this conversation useful and listen for the next concrete owner.',
+        'Suggested posture: be clear, concise, and move toward one specific next step.',
+        `After the call: VAL would draft the follow-up, create any tasks, and keep the relationship visible.`
+      ].join('\n\n');
+      return res.json({ok:true,meeting:{...meeting,attendees},gmailContext:state.emails.slice(0,3),transcriptContext,taskContext:relatedTasks,memoryContext:['Demo memory: VAL tracks promises, relationship context, meeting notes, and open loops.'],contactNotes:[],briefing,openLoops:relatedTasks.map(t=>t.title),suggestedQuestions:['What would make this a clear win by the end of the call?','Who else needs to be involved before this moves?','What should I send after we hang up?'],recommendedFollowUps:['Send concise recap','Create next-step task','Update opportunity notes']});
+    }
+    const input=req.body||{};
+    let meeting={...input,id:input.eventId||input.id,title:input.title||input.summary||'',source:input.source||'unknown',attendees:Array.isArray(input.attendees)?input.attendees:[]};
+    if(meeting.source==='google'&&meeting.id){
+      const token=await getGoogleToken();
+      if(token){
+        const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(meeting.id)}?maxAttendees=50`,{headers:{Authorization:`Bearer ${token}`}});
+        const full=await readJsonResponse(r);
+        if(r.ok) meeting={...mapGoogleEvent(full),eventId:full.id};
+      }
+    }
+    const attendees=inferAttendeesFromEvent(meeting);
+    const [gmail,transcripts,tasks,memory,ghlNotes]=await Promise.all([
+      fetchGmailMessages({query:gmailMeetingQuery(meeting),maxResults:12}).catch(e=>({emails:[],error:e.message})),
+      matchingTranscriptContext(meeting,5).catch(()=>[]),
+      matchingTaskContext(meeting,12).catch(()=>[]),
+      recentMemoryContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' ')).catch(()=>''),
+      ghlContactNotesContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' '),{appointments:[meeting]}).catch(()=>'')
+    ]);
+    const openLoops=tasks.map(t=>t.title).slice(0,8);
+    const context=[
+      'Meeting: '+(meeting.title||meeting.summary||'(No title)'),
+      attendees.length?'Attendees: '+attendees.map(a=>a.name||a.email).join(', '):'Attendees: unclear',
+      gmail.emails?.length?'Recent Gmail context:\n'+gmail.emails.slice(0,5).map(e=>`- ${e.subject} from ${e.from?.email||e.from?.name||'unknown'}: ${e.snippet||e.bodyPreview||''}`).join('\n'):'',
+      transcripts.length?'Transcript context:\n'+transcripts.map(t=>`- ${t.title}: ${t.summary}`).join('\n'):'',
+      tasks.length?'Open tasks:\n'+tasks.map(t=>`- ${t.title}`).join('\n'):'',
+      memory?'Memory:\n'+memory:'',
+      ghlNotes?'Contact notes:\n'+ghlNotes:''
+    ].filter(Boolean).join('\n\n');
+    const briefing=await callValModel({system:[VAL_SYSTEM_PROMPT,'Create a concise meeting briefing from only the supplied context. Include what matters, risks, open loops, suggested questions, and follow-up recommendations.'].join('\n\n'),user:context,maxTokens:1200,temperature:0.25});
+    res.json({ok:true,meeting:{...meeting,attendees},gmailContext:gmail.emails||[],gmailError:gmail.error||'',transcriptContext:transcripts,taskContext:tasks,memoryContext:memory?memory.split('\n\n').slice(0,6):[],contactNotes:ghlNotes?ghlNotes.split('\n\n').slice(0,6):[],briefing,openLoops,suggestedQuestions:[],recommendedFollowUps:[]});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/relationships/review',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const relationships=demoState(req,res).relationships||[];
+      return res.json({ok:true,windowDays:Number(req.query.windowDays)||7,total:relationships.length,highestPriority:relationships.slice(0,3),relationships,summary:{needsNurture:3,atRisk:1,hiddenOpportunity:2},recommendedNextAction:relationships[0]?.recommendedAction||'Review your highest-priority relationship.'});
+    }
+    const windowDays=Math.min(Math.max(Number(req.query.windowDays)||7,1),90);
+    res.json(await buildRelationshipReview({windowDays}));
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/actions',async(req,res)=>{
+  try{
+    const action=String(req.body.action||'').trim();
+    const contact=req.body.contact||{};
+    if(!contact.name&&!contact.email) return res.status(400).json({ok:false,error:'Missing contact'});
+    if(action==='draft_message'){
+      const draft=await saveInternalDraft({draftType:'relationship_outreach',provider:'internal',subject:req.body.subject||contact.draftOutreach?.subject||`Follow-up with ${contact.name||contact.email}`,body:req.body.body||contact.draftOutreach?.body||draftRelationshipOutreach(contact).body,sourceContext:{source:'relationship_review',contact}});
+      return res.json({ok:true,draft});
+    }
+    if(action==='create_task'){
+      const task={id:uuid('task'),title:req.body.title||contact.recommendedAction||`Follow up with ${contact.name||contact.email}`,contactName:contact.name||contact.email||'',dueDate:req.body.dueDate||null,notes:req.body.notes||`Created from Relationship Review. Score: ${contact.score||'unknown'}`,details:[{text:'Created from Relationship Review',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      await saveTask(task);
+      return res.json({ok:true,task});
+    }
+    if(['mark_vip','snooze','not_important'].includes(action)){
+      await saveMemoryItem({kind:'relationship_preference',summary:`${action}: ${contact.name||contact.email}`,rawText:JSON.stringify({action,contact,until:req.body.until||''}),importance:action==='mark_vip'?4:2,metadata:{source:'relationship_review',action,contact}});
+      return res.json({ok:true,status:'saved'});
+    }
+    if(action==='brainstorm'){
+      const evidence=(contact.evidence||[]).map(e=>`- [${e.type}] ${e.summary}`).join('\n');
+      const content=await callValModel({system:[VAL_SYSTEM_PROMPT,'Brainstorm specific, evidence-based ways to strengthen one relationship. Do not invent facts. Give practical value-add ideas, useful introductions, follow-up topics, strategic conversations, and collaboration ideas.'].join('\n\n'),user:`Contact: ${contact.name||contact.email}\nScore: ${contact.score||''}\nRecommended action: ${contact.recommendedAction||''}\nEvidence:\n${evidence||'No evidence supplied.'}`,maxTokens:900,temperature:0.35});
+      return res.json({ok:true,content});
+    }
+    res.status(400).json({ok:false,error:'Unsupported action'});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/intelligence',async(req,res)=>{try{const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];if(DEMO_MODE){const s=demoState(req,res);const top=s.relationships?.[0];let content=`Recommended next move: ${top?.recommendedAction||'Start with the highest-priority relationship.'}\n\nVAL is weighing meetings, unread messages, open tasks, draft queue, and active pipeline together. In this demo, the sharpest move is to protect the Marcus deal first, then close the Elena scope loop, then use Jordan's warm intro while it is still fresh.`;if(action==='executive_review'||/review/i.test(action))content='Executive review: your biggest leverage is not another meeting. It is finishing the three promises already in motion: Marcus pilot memo, Elena scope revision, and Jordan intro language. Priya needs care, not pressure. That is the difference between velocity and sprawl.';if(action==='relationship_radar'||/relationship/i.test(action))content='Relationship review: Marcus, Elena, and Jordan need attention now. Marcus is revenue-sensitive. Elena is influence-sensitive. Jordan is momentum-sensitive. Priya is trust-sensitive, so handle her with patience before expansion.';return res.json({ok:true,action,content:withDemoCta(content),demo:true});}const memory=await recentMemoryContext(`${action} ${query}`),ghlNotes=await ghlContactNotesContext(`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use saved memory, dashboard data, GHL contact notes, task state, and the requested action. Be specific, practical, and decisive.',memory?'Relevant saved memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const user=['Requested VAL action: '+action,'Instruction: '+actionPrompt(action),query?'User query: '+query:'','Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)].filter(Boolean).join('\n\n');res.json({ok:true,action,content:await callValModel({system,user,maxTokens:1800,temperature:0.35})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/chat',async(req,res)=>{try{const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};if(DEMO_MODE){const s=demoState(req,res);const q=lastUser.toLowerCase();let content='Here is what I see in this demo VAL: Marcus needs a pilot memo before the 2 PM demo, Elena is waiting on a clearer first-30-days scope, Priya has a renewal risk because her team feels stretched, and Jordan offered a warm intro that should be used while it is still fresh.';if(/meeting|prep|calendar|today|next/i.test(q))content='For today, prep the Marcus demo first. The procurement owner and onboarding load are the two issues that could slow the deal. Then tighten Elena’s first-30-days scope before her investor prep. The useful move is not more activity. It is making each conversation easier to advance.';else if(/relationship|radar|who matters|priority/i.test(q))content='Highest-priority relationships right now: Marcus Chen because there is an active deal and a time-sensitive ask, Elena Brooks because she can influence capital and referrals, and Jordan Lee because a warm intro offer is fresh. Priya matters too, but the posture there should be care before expansion.';else if(/task|todo|to do|priority/i.test(q))content='Task priority is clear: send Marcus the pilot memo, send Elena the revised first-30-days scope, then review Priya’s renewal risk. The board update can wait. The Northstar intro path is valuable, but it needs one clean paragraph, not a long explanation.';else if(/draft|follow/i.test(q))content='I would draft three things: the Marcus pilot memo, Elena’s revised scope reply, and Jordan’s one-paragraph intro ask. In a real VAL account, those would sit in the Approval Queue so you can approve or edit before anything goes out.';else if(/reset/i.test(q))content='You can reset this demo any time with the demo reset control. That clears changes made during this visit and restores the sample meetings, tasks, drafts, emails, relationships, and pipeline.';content=withDemoCta(content);return res.json({message:{role:'assistant',content},demo:true});}const memory=await recentMemoryContext(lastUser+'\n'+memoryQuery),ghlNotes=await ghlContactNotesContext(lastUser+'\n'+memoryQuery,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, GHL contact notes, and saved memory when relevant. Do not pretend to know facts that are not present.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant GHL contact notes and call transcripts are present, use them as current contact/caller source context.',memory?'Recent saved VAL memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});res.json({message:{role:'assistant',content:content||'I could not process that.'}});}catch(e){res.status(500).json({error:e.message});}});
 
 async function extractUploadedText(file){
   const name=file.originalname||'uploaded-file', mime=file.mimetype||'', ext=path.extname(name).toLowerCase();

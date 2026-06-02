@@ -9,15 +9,20 @@ It prepares you for meetings, protects follow-up, organizes commitments by perso
 New to VAL? Start with these four moves.
 
 1. [Tell VAL about yourself](#tell-me-about-yourself)
-2. [Review meeting prep](#meeting-prep)
-3. [Run Relationship Radar](#relationship-radar)
+2. [Run Relationship Review](#relationship-review)
+3. [Review meeting prep](#meeting-prep)
 4. [Open the Approval Queue](#approval-queue)
 
 ## Quick Links
 
 - [What VAL helps you do](#what-val-helps-you-do)
 - [Daily rhythm](#daily-executive-rhythm)
+- [Relationship Review](#relationship-review)
 - [Relationship Radar](#relationship-radar)
+- [Email Intelligence](#email-intelligence)
+- [Integration Status](#integration-status)
+- [Register Your Keys](#register-your-keys)
+- [Transcript Webhook](#transcript-webhook)
 - [Meeting prep](#meeting-prep)
 - [Follow-ups and drafts](#follow-ups-and-drafts)
 - [Approval Queue](#approval-queue)
@@ -42,7 +47,10 @@ Use VAL when you need to:
 - keep promises visible until they are closed
 - turn conversations into tasks, notes, and next steps
 - review the people who need attention now
+- see which relationships are gaining momentum or cooling off
+- find forgotten commitments and hidden opportunities
 - draft messages, proposals, scopes, and recap notes
+- check whether Gmail, Calendar, transcripts, tasks, and drafts are connected
 - stay ahead of your calendar instead of reacting to it
 - use saved time for higher-leverage work
 
@@ -65,6 +73,14 @@ Upload helpful documents if you have them:
 - operating principles
 
 Why it matters: VAL gets sharper when it understands how you think, what matters to you, and how your relationships create value.
+
+### Run Relationship Review
+
+Click **Relationship Review** when you want VAL to review your network like a chief of staff.
+
+VAL looks at recent emails, meetings, tasks, notes, opportunities, transcripts, and memory to show who deserves attention, why they matter, what may be cooling off, what is gaining momentum, which commitments are still open, and where hidden opportunities may exist.
+
+Why it matters: this is where VAL stops being a reminder tool and starts becoming a relationship intelligence system.
 
 ### Use Relationship Radar
 
@@ -117,6 +133,118 @@ Try asking:
 - "Who am I at risk of dropping?"
 - "Which relationships need attention today?"
 - "Who should I follow up with before the week gets away from me?"
+
+### Relationship Review
+
+What you can do with it: get a full review of the relationships that matter most right now.
+
+How this helps: VAL scores meaningful contacts, explains the evidence, shows which relationships are warming up or cooling off, finds forgotten commitments, suggests introductions, and gives you a specific next move for each person.
+
+Use it when you want to know:
+
+- who deserves attention today
+- who is becoming more important
+- who you have not contacted recently
+- where revenue, referrals, or partnership potential may be hiding
+- what you promised and have not closed yet
+- who VAL thinks could benefit from an introduction
+
+Relationship cards include:
+
+- relationship score
+- reason VAL surfaced them
+- last meaningful interaction
+- recommended action
+- source evidence
+- draft message
+- create task
+- brainstorm
+- mark VIP
+- snooze
+- not important
+- view profile
+
+Try asking:
+
+- "Run Relationship Review."
+- "Who matters most right now?"
+- "Which relationships are cooling off?"
+- "What hidden opportunities are in my network?"
+- "Who should I introduce to each other?"
+
+### Email Intelligence
+
+What you can do with it: review important emails, needed replies, waiting-on-response items, forwarding suggestions, and low-priority messages.
+
+How this helps: VAL turns email into decisions instead of another inbox to manage. It can draft replies, create tasks, track follow-up, and suggest rules after you confirm them.
+
+Use it for:
+
+- important unread messages
+- emails that need a reply
+- conversations where you are waiting on someone
+- low-priority or repetitive senders
+- draft replies that should go to the Approval Queue
+- safe automation rules for repeated email patterns
+
+If Gmail is not connected or does not have the right permissions, VAL will now show that clearly instead of silently returning nothing.
+
+### Integration Status
+
+What you can do with it: check whether VAL's key data pipes are working.
+
+How this helps: you can quickly see whether Google, Gmail, Calendar, transcripts, tasks, and drafts are connected and producing data.
+
+Use it when:
+
+- Calendar looks empty
+- Gmail does not appear in Email Intelligence
+- meeting prep feels thin
+- transcripts are not creating tasks
+- drafts are not appearing
+- a client says something feels disconnected
+
+The status view shows connection state, missing scopes, recent Gmail counts, recent Calendar counts, transcript counts, matched meeting transcripts, and whether task/draft creation is available.
+
+### Transcript Webhook
+
+What you can do with it: copy the webhook URL that sends transcripts into this specific VAL dashboard.
+
+How this helps: every user has their own VAL deployment, so each user needs the correct transcript URL for their own dashboard. Jessa, Ed, Mark, and future clients should each copy the URL from inside their own VAL.
+
+Where to find it:
+
+1. Open the dashboard.
+2. Click **Integration Status**.
+3. Find **Transcript Webhook URL**.
+4. Click **Copy URL**.
+5. Paste it into Make.com, your transcription app, or any tool sending completed transcripts to VAL.
+
+You can also copy:
+
+- the webhook token
+- the sample JSON payload
+
+Use this when you want meeting transcripts to become VAL memory, tasks, summaries, open loops, meeting context, and follow-up drafts.
+
+### Register Your Keys
+
+What you can do with it: securely add or update client-owned API keys from inside VAL.
+
+How this helps: each client can register their own OpenAI, GoHighLevel, Outscraper, RocketReach, Google, or Microsoft connection without changing Railway variables every time.
+
+Use it for:
+
+- OpenAI key and preferred model
+- GoHighLevel key or access token
+- GoHighLevel Location ID
+- GoHighLevel MCP URL if used
+- Google OAuth connection
+- Microsoft OAuth connection
+- Outscraper key
+- RocketReach key
+
+Saved keys are encrypted. VAL never shows the full key again after saving.
 
 ### Meeting Prep
 
