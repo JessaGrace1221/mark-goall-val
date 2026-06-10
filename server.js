@@ -2811,6 +2811,15 @@ app.get('/api/debug/ghl-mcp-context',async(req,res)=>{
   }
 });
 
+app.post('/api/debug/goall-test-contact',async(req,res)=>{
+  try{
+    const result=await createOrUpdateGoallTestContact();
+    res.json({ok:true,message:goallTestContactSummary(result),result});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
 app.get('/api/calendar',async(req,res)=>{
   try{
     if(DEMO_MODE){
@@ -4679,6 +4688,160 @@ function normalizeCountryCode(value){
   return undefined;
 }
 
+function compactObject(obj){
+  return Object.fromEntries(Object.entries(obj||{}).filter(([,v])=>v!==undefined&&v!==null&&v!==''&&v!==null));
+}
+
+function normalizeGhlFieldName(value){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+
+function ghlCustomFieldId(field={}){
+  return field.id||field._id||field.fieldId||field.customFieldId||'';
+}
+
+async function fetchGhlCustomFields(){
+  const loc=await resolveGhlLocationId();
+  const data=await ghlStrict('GET',`/locations/${encodeURIComponent(loc||GHL_LOC||'')}/customFields`);
+  return data.customFields||data.fields||data.data||[];
+}
+
+function goallTestContactValues(){
+  return {
+    'Company Name':'TEST TESTERTON HVAC',
+    'Industry':'HVAC',
+    'Business Type':'Home Services',
+    'State':'Arizona',
+    'City':'Phoenix',
+    'Employee Count':'35',
+    'Company Size':'25 to 50 employees',
+    'Owner Name':'TEST TESTERTON',
+    'Title':'Owner',
+    'Decision Maker':'Yes',
+    'Lead Source':'Internal TEST',
+    'Lead Type':'Demo/Test Contact',
+    'GOALL Fit':'Demo qualified employer profile',
+    'Qualification Status':'Test record, not a real prospect',
+    'Sales Status':'Demo only',
+    'Primary Pain Point':'Employee retention and loyalty',
+    'Secondary Pain Point':'Keeping field employees engaged and supported',
+    'Benefits Interest':'Interested in employee support and retention programs',
+    'Current Benefits Situation':'Demo value, currently unclear',
+    'Urgency':'Medium',
+    'Estimated Opportunity Value':'50',
+    'Pipeline Note':'Demo contact for testing GHL custom fields and HVAC workflow',
+    'Follow-Up Status':'No live follow-up, test only',
+    'Automation Permission':'Do not automate unless manually approved',
+    'Notes':'TEST TESTERTON is a demo contact pretending to own an Arizona HVAC company with 35 employees. Used only for CRM testing.'
+  };
+}
+
+function goallTestContactTags(){
+  return ['HVAC','TEST - DO NOT AUTOMATE'];
+}
+
+function goallTestContactNote(){
+  return 'TEST/demo contact. TEST TESTERTON is a fictional HVAC company owner in Arizona with 35 employees. Use this record only to test GHL custom fields, tags, workflows, pipeline behavior, and CRM display. Do not treat as a real prospect unless manually approved. Email address used: miken@goallprogram.com. Tag requested: HVAC. Suppress automations if possible.';
+}
+
+function isGoallTestContactRequest(text=''){
+  const q=String(text||'').toLowerCase();
+  return /miken@goallprogram\.com/.test(q)
+    && /testerton|test testerton|test contact|demo contact/.test(q)
+    && /\b(create|update|upsert|add|execute|do this|make)\b/.test(q);
+}
+
+function testContactFieldPayloads(customFields,values){
+  const used=new Set();
+  const payloads=[];
+  for(const [label,value] of Object.entries(values)){
+    const wanted=normalizeGhlFieldName(label);
+    const found=(customFields||[]).find(f=>{
+      const id=ghlCustomFieldId(f);
+      if(!id||used.has(String(id))) return false;
+      const name=normalizeGhlFieldName(f.name||f.fieldName||'');
+      const key=normalizeGhlFieldName(f.fieldKey||f.key||f.field_key||'');
+      return name===wanted || key.endsWith(wanted.replace(/\s+/g,' ')) || key.includes(wanted);
+    });
+    if(found){
+      const id=String(ghlCustomFieldId(found));
+      used.add(id);
+      payloads.push({id,field_value:value});
+    }
+  }
+  return payloads;
+}
+
+async function searchGhlContactsByQuery(query,limit=10){
+  const loc=await resolveGhlLocationId();
+  const data=await ghlStrict('GET',`/contacts/?locationId=${encodeURIComponent(loc||GHL_LOC||'')}&query=${encodeURIComponent(query)}&limit=${limit}`);
+  return data.contacts||data.data||[];
+}
+
+async function createOrUpdateGoallTestContact(){
+  const email='miken@goallprogram.com';
+  const contacts=await searchGhlContactsByQuery(email,10).catch(()=>[]);
+  const existing=contacts.find(c=>String(c.email||'').toLowerCase()===email) || contacts[0] || null;
+  const customFields=await fetchGhlCustomFields().catch(()=>[]);
+  const customFieldPayloads=testContactFieldPayloads(customFields,goallTestContactValues());
+  const tags=goallTestContactTags();
+  const loc=await resolveGhlLocationId();
+  const payload=compactObject({
+    locationId:loc||GHL_LOC,
+    firstName:'TEST',
+    lastName:'TESTERTON',
+    name:'TEST TESTERTON',
+    companyName:'TEST TESTERTON HVAC',
+    email,
+    city:'Phoenix',
+    state:'Arizona',
+    country:'US',
+    source:'Internal TEST',
+    tags,
+    customFields:customFieldPayloads.length?customFieldPayloads:undefined
+  });
+  let contactId=existing?.id||existing?.contactId||'';
+  let data;
+  if(contactId){
+    data=await ghlStrict('PUT',`/contacts/${encodeURIComponent(contactId)}`,payload);
+  }else{
+    data=await ghlStrict('POST','/contacts',payload);
+    const contact=data.contact||data;
+    contactId=contact.id||contact.contactId||contact.contact?.id||'';
+  }
+  if(!contactId) throw new Error('GHL did not return a contact id for TEST TESTERTON.');
+  await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/tags`,{tags}).catch(()=>{});
+  await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body:goallTestContactNote()}).catch(()=>{});
+  return {
+    ok:true,
+    created:!existing,
+    updated:!!existing,
+    contactId,
+    email,
+    name:'TEST TESTERTON',
+    company:'TEST TESTERTON HVAC',
+    tags,
+    customFieldsMatched:customFieldPayloads.length,
+    customFieldsAvailable:customFields.length,
+    noteAdded:true,
+    rawContact:data.contact||data
+  };
+}
+
+function goallTestContactSummary(result){
+  return [
+    `${result.created?'Created':'Updated existing'} GHL test contact: TEST TESTERTON.`,
+    `Email: ${result.email}`,
+    `Company: ${result.company}`,
+    `Tags applied: ${(result.tags||[]).join(', ')}`,
+    `Contact ID: ${result.contactId}`,
+    `Custom fields populated by matching schema: ${result.customFieldsMatched}`,
+    `GHL custom fields scanned: ${result.customFieldsAvailable}`,
+    result.noteAdded?'Contact note added with TEST/demo safeguard text.':'',
+    'Automation suppression requested by tag/note. I did not trigger workflows.'
+  ].filter(Boolean).join('\n');
+}
+
 function leadCustomFieldsFromProspect(p){
   const name=p.organizationName||p.name||'';
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
@@ -5481,6 +5644,10 @@ app.post('/api/val/chat',async(req,res)=>{
       else if(/reset/i.test(q))content='You can reset this demo any time with the demo reset control. That clears changes made during this visit and restores the sample meetings, tasks, drafts, emails, relationships, and pipeline.';
       content=withDemoCta(content);
       return res.json({message:{role:'assistant',content},demo:true});
+    }
+    if(isGoallTestContactRequest(lastUser)){
+      const result=await createOrUpdateGoallTestContact();
+      return res.json({message:{role:'assistant',content:goallTestContactSummary(result)},ghlContact:result,ghlActionExecuted:true});
     }
     const [memory,ghlContext]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
