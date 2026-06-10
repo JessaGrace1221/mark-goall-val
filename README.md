@@ -28,4 +28,16 @@ Important setup:
 - optional `ROCKETREACH_API_KEY`
 - optional `OUTSCRAPER_API_KEY`
 
-The official GHL MCP server can cover much of the CRM context, but contact notes still use the GHL REST endpoint because contact notes are essential for the phone-call transcript workflow.
+GHL MCP architecture:
+- GHL access is centralized in `services/ghlMcpService.js`.
+- The server creates one shared `ghlMcp` service instance and all legacy `ghl`, `ghlStrict`, and `ghlTry` helpers route through it.
+- The shared service resolves the active user's saved GHL API key, Location ID, and MCP URL credential at call time, with env vars only as fallback.
+- Platform-wide VAL context is built through `ghlPlatformContext`, which pulls contacts, opportunities, tasks, notes, and conversations for chat, dashboard intelligence, relationship review, meeting prep, email context, and lead scraping.
+- Contact notes still use GHL endpoints underneath the shared service because transcript/call-note history is critical CRM context.
+
+Manual verification:
+- `GET /api/debug/ghl-mcp-context?q=<contact or company>` should return `configured: true`, the active `locationId`, counts for contacts/opportunities/tasks/notes/conversations, and a `textPreview`.
+- `POST /api/val/chat` with a GHL-related question should return `ghlContextAvailable: true` when GHL credentials are configured.
+- `POST /api/val/intelligence` for actions such as `daily_command`, `task_intelligence`, `relationship_radar`, `auto_followups`, or `pre_meeting_brief` should return `ghlContextAvailable: true`.
+- `POST /api/val/meeting-briefing` should include a `ghlContext` array in the response when related GHL data is available.
+- Lead preview/import routes should continue to work because they still use the same `ghl`/`ghlStrict` surface, now backed by the shared service.

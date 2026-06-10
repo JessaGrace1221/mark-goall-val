@@ -8,6 +8,7 @@ const {AsyncLocalStorage} = require('async_hooks');
 const multer  = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const {createGhlMcpService} = require('./services/ghlMcpService');
 const app     = express();
 
 app.use(cors());
@@ -79,7 +80,184 @@ const SESSION_COOKIE = 'val_session';
 const VAL_USER_ID = process.env.VAL_USER_ID || CLIENT_CONFIG.clientSlug || 'default';
 const MEMORY_CHUNK_SIZE = Number(process.env.MEMORY_CHUNK_SIZE) || 1800;
 const MEMORY_CHUNK_OVERLAP = Number(process.env.MEMORY_CHUNK_OVERLAP) || 250;
+const OPENAI_USAGE_LOG_FILE = process.env.OPENAI_USAGE_LOG_FILE || path.join(__dirname,'logs','openai-usage.jsonl');
 let pgPool = null;
+const ghlMcp = createGhlMcpService({
+  baseUrl:BASE,
+  fallbackApiKey:GHL_KEY,
+  fallbackLocationId:GHL_LOC,
+  calendarIds:GHL_CALENDAR_IDS,
+  resolveSecret:resolveIntegrationSecret,
+  getCurrentUser:currentValUser,
+  getTenantId:tenantId,
+  inferOwner:inferValOwner,
+  logger:console
+});
+
+function approxTokens(value){
+  if(value==null)return 0;
+  if(typeof value==='string')return Math.ceil(value.length/4);
+  if(Array.isArray(value))return value.reduce((sum,item)=>sum+approxTokens(item),0);
+  if(typeof value==='object')return Object.values(value).reduce((sum,item)=>sum+approxTokens(item),0);
+  return Math.ceil(String(value).length/4);
+}
+function requestMetaFromBody(body={}){
+  const transcriptText=body.transcript||body.rawText||body.text||'';
+  return {
+    contactId:String(body.contactId||body.contact_id||body.contact?.id||'').slice(0,120),
+    transcriptId:String(body.savedTranscriptId||body.transcriptId||body.id||body.sourceId||'').slice(0,120),
+    transcriptHash:transcriptText?crypto.createHash('sha256').update(String(transcriptText)).digest('hex').slice(0,16):''
+  };
+}
+function openAiRequestContext(extra={}){
+  const ctx=requestContext.getStore()||{};
+  const user=ctx.user||{};
+  return {
+    routeJobSource:extra.routeJobSource||ctx.routeJobSource||ctx.route||'unknown',
+    userId:extra.userId||user.id||VAL_USER_ID||'',
+    clientId:extra.clientId||user.clientSlug||CLIENT_CONFIG.clientSlug||'',
+    locationId:extra.locationId||GHL_LOC||'',
+    contactId:extra.contactId||ctx.contactId||'',
+    transcriptId:extra.transcriptId||ctx.transcriptId||'',
+    transcriptHash:extra.transcriptHash||ctx.transcriptHash||'',
+    requestReason:extra.requestReason||ctx.requestReason||''
+  };
+}
+function openAiTokenUsage(payload={}){
+  const u=payload.usage||{};
+  const details=u.output_tokens_details||{};
+  return {
+    actualInputTokens:u.input_tokens??u.prompt_tokens??null,
+    actualOutputTokens:u.output_tokens??u.completion_tokens??null,
+    totalTokens:u.total_tokens??null,
+    cachedInputTokens:u.input_tokens_details?.cached_tokens??u.prompt_tokens_details?.cached_tokens??null,
+    reasoningOutputTokens:details.reasoning_tokens??null
+  };
+}
+function openAiTextRates(model=''){
+  const m=String(model||'').toLowerCase();
+  if(m.includes('gpt-4o-mini-search'))return {input:0.15,output:0.60};
+  if(m.includes('gpt-4o-search'))return {input:2.50,output:10.00};
+  if(m.includes('gpt-4o-mini'))return {input:0.15,output:0.60};
+  if(m.includes('gpt-4o'))return {input:2.50,output:10.00};
+  if(m.includes('gpt-5-mini'))return {input:0.25,output:2.00};
+  if(m.includes('gpt-5-nano'))return {input:0.05,output:0.40};
+  if(m.includes('gpt-5'))return {input:1.25,output:10.00};
+  if(m.includes('gpt-4.1-mini'))return {input:0.40,output:1.60};
+  if(m.includes('gpt-4.1-nano'))return {input:0.10,output:0.40};
+  if(m.includes('gpt-4.1'))return {input:2.00,output:8.00};
+  if(m.includes('o3'))return {input:2.00,output:8.00};
+  if(m.includes('o4-mini'))return {input:1.10,output:4.40};
+  return {input:1.25,output:10.00};
+}
+function estimateOpenAiCost({model,estimatedInputTokens,estimatedOutputTokens,actualInputTokens,actualOutputTokens,flatCostUsd}={}){
+  if(Number.isFinite(flatCostUsd))return Number(flatCostUsd.toFixed(6));
+  const rates=openAiTextRates(model);
+  const inTokens=Number.isFinite(actualInputTokens)?actualInputTokens:(estimatedInputTokens||0);
+  const outTokens=Number.isFinite(actualOutputTokens)?actualOutputTokens:(estimatedOutputTokens||0);
+  return Number(((inTokens/1000000)*rates.input+(outTokens/1000000)*rates.output).toFixed(6));
+}
+async function appendOpenAiUsageLog(entry){
+  try{
+    await fs.promises.mkdir(path.dirname(OPENAI_USAGE_LOG_FILE),{recursive:true});
+    await fs.promises.appendFile(OPENAI_USAGE_LOG_FILE,JSON.stringify(entry)+'\n');
+  }catch(e){
+    console.error('OpenAI usage log failed:',e.message);
+  }
+}
+async function logOpenAiUsage({wrapper,model,estimatedInputTokens=0,estimatedOutputTokens=0,responsePayload={},requestId='',retry=false,extra={},flatCostUsd}){
+  const usage=openAiTokenUsage(responsePayload);
+  const meta=openAiRequestContext(extra);
+  const row={
+    timestamp:new Date().toISOString(),
+    wrapper,
+    routeJobSource:meta.routeJobSource,
+    model,
+    estimatedInputTokens,
+    actualInputTokens:usage.actualInputTokens,
+    actualOutputTokens:usage.actualOutputTokens,
+    estimatedCostUsd:estimateOpenAiCost({model,estimatedInputTokens,estimatedOutputTokens,actualInputTokens:usage.actualInputTokens,actualOutputTokens:usage.actualOutputTokens,flatCostUsd}),
+    openAiRequestId:requestId||responsePayload.id||'',
+    retry:!!retry,
+    userId:meta.userId,
+    clientId:meta.clientId,
+    locationId:meta.locationId,
+    contactId:meta.contactId,
+    transcriptId:meta.transcriptId,
+    transcriptHash:meta.transcriptHash,
+    requestReason:meta.requestReason,
+    totalTokens:usage.totalTokens,
+    cachedInputTokens:usage.cachedInputTokens,
+    reasoningOutputTokens:usage.reasoningOutputTokens
+  };
+  await appendOpenAiUsageLog(row);
+}
+async function readOpenAiUsageRows({hours=24,limit=10000}={}){
+  try{
+    const raw=await fs.promises.readFile(OPENAI_USAGE_LOG_FILE,'utf8');
+    const cutoff=Date.now()-(Number(hours)||24)*60*60*1000;
+    return raw.split('\n').filter(Boolean).slice(-limit).map(line=>{
+      try{return JSON.parse(line);}catch(_){return null;}
+    }).filter(row=>{
+      if(!row||!row.timestamp)return false;
+      const t=new Date(row.timestamp).getTime();
+      return !isNaN(t)&&t>=cutoff;
+    });
+  }catch(e){
+    if(e.code==='ENOENT')return [];
+    throw e;
+  }
+}
+function summarizeOpenAiUsageRows(rows){
+  const groups=new Map();
+  for(const row of rows){
+    const key=[row.model||'unknown',row.routeJobSource||'unknown',row.wrapper||'unknown'].join('||');
+    if(!groups.has(key)){
+      groups.set(key,{
+        model:row.model||'unknown',
+        routeJobSource:row.routeJobSource||'unknown',
+        wrapper:row.wrapper||'unknown',
+        totalCalls:0,
+        estimatedTotalCostUsd:0,
+        totalInputTokens:0,
+        totalOutputTokens:0,
+        averageCostPerCallUsd:0,
+        highestCostSingleCall:null
+      });
+    }
+    const g=groups.get(key);
+    const cost=Number(row.estimatedCostUsd)||0;
+    const input=Number(row.actualInputTokens ?? row.estimatedInputTokens)||0;
+    const output=Number(row.actualOutputTokens)||0;
+    g.totalCalls+=1;
+    g.estimatedTotalCostUsd+=cost;
+    g.totalInputTokens+=input;
+    g.totalOutputTokens+=output;
+    if(!g.highestCostSingleCall||cost>g.highestCostSingleCall.estimatedCostUsd){
+      g.highestCostSingleCall={
+        timestamp:row.timestamp,
+        estimatedCostUsd:cost,
+        estimatedInputTokens:row.estimatedInputTokens||0,
+        actualInputTokens:row.actualInputTokens,
+        actualOutputTokens:row.actualOutputTokens,
+        openAiRequestId:row.openAiRequestId||'',
+        retry:!!row.retry,
+        userId:row.userId||'',
+        clientId:row.clientId||'',
+        locationId:row.locationId||'',
+        contactId:row.contactId||'',
+        transcriptId:row.transcriptId||'',
+        transcriptHash:row.transcriptHash||'',
+        requestReason:row.requestReason||''
+      };
+    }
+  }
+  return Array.from(groups.values()).map(g=>({
+    ...g,
+    estimatedTotalCostUsd:Number(g.estimatedTotalCostUsd.toFixed(6)),
+    averageCostPerCallUsd:Number((g.estimatedTotalCostUsd/Math.max(1,g.totalCalls)).toFixed(6))
+  })).sort((a,b)=>b.estimatedTotalCostUsd-a.estimatedTotalCostUsd);
+}
 
 function inferValOwner(obj={}){
   const ids = [
@@ -230,42 +408,16 @@ if(process.env.DATABASE_URL){
 }
 
 async function gh(){
-  const key = await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
-  return {'Authorization':`Bearer ${key||''}`,'Version':'2021-07-28','Content-Type':'application/json'};
+  return ghlMcp.headers();
 }
 async function prepareGhlRequest(path,body){
-  const loc=await resolveGhlLocationId();
-  let nextPath=String(path||'');
-  if(loc){
-    const enc=encodeURIComponent(loc);
-    nextPath=nextPath
-      .replace(/locationId=(&|$)/g,`locationId=${enc}$1`)
-      .replace(/location_id=(&|$)/g,`location_id=${enc}$1`)
-      .replace(/\/location\/(?=\/|$)/g,`/location/${enc}`)
-      .replace(/\/locations\/(?=\/|$)/g,`/locations/${enc}/`);
-  }
-  let nextBody=body;
-  if(loc&&body&&typeof body==='object'&&!Array.isArray(body)){
-    nextBody={...body};
-    if('locationId' in nextBody&&!nextBody.locationId) nextBody.locationId=loc;
-    if('location_id' in nextBody&&!nextBody.location_id) nextBody.location_id=loc;
-  }
-  return {path:nextPath,body:nextBody};
+  return ghlMcp.prepare(path,body);
 }
 async function ghl(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  return r.json();
+  return ghlMcp.request(method,path,body);
 }
 async function ghlStrict(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  const data=await readJsonResponse(r);
-  if(!r.ok){
-    const detail=data.message||data.error||data.errorMessage||data.raw||JSON.stringify(data).slice(0,500);
-    throw new Error(`GHL ${method} ${path} failed (${r.status}): ${detail}`);
-  }
-  return data;
+  return ghlMcp.requestStrict(method,path,body);
 }
 async function readJsonResponse(response){
   const text = await response.text();
@@ -274,10 +426,7 @@ async function readJsonResponse(response){
 }
 
 async function ghlTry(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  const data=await readJsonResponse(r);
-  return {ok:r.ok,status:r.status,path,data};
+  return ghlMcp.requestTry(method,path,body);
 }
 
 function readJson(file,fallback){
@@ -962,15 +1111,16 @@ async function requireAuth(req,res,next){
 }
 
 // ── HEALTH ───────────────────────────────────────────────
-function statusPayload(){
+async function statusPayload(){
+  const ghlCreds=await ghlMcp.credentials().catch(()=>({apiKey:GHL_KEY,locationId:GHL_LOC}));
   return {
     status:'VAL Proxy OK',
     app:CLIENT_CONFIG.clientSlug,
     time:new Date().toISOString(),
     client:CLIENT_CONFIG,
     config:{
-      ghlConfigured:!!(GHL_KEY&&GHL_LOC),
-      ghlMissing:[GHL_KEY?'':'GHL_KEY/GHL_API_KEY',GHL_LOC?'':'GHL_LOC/GHL_LOCATION_ID'].filter(Boolean),
+      ghlConfigured:!!(ghlCreds.apiKey&&ghlCreds.locationId),
+      ghlMissing:[ghlCreds.apiKey?'':'GHL_KEY/GHL_API_KEY',ghlCreds.locationId?'':'GHL_LOC/GHL_LOCATION_ID'].filter(Boolean),
       openAiConfigured:!!OPENAI_KEY,
       databaseConfigured:!!process.env.DATABASE_URL,
       googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
@@ -988,8 +1138,8 @@ app.get('/',async(req,res)=>{
   if(!user) return res.type('html').send(loginHtml());
   return res.sendFile(path.join(__dirname,'dashboard.html'));
 });
-app.get('/api/health',(req,res)=>res.json(statusPayload()));
-app.get('/health',(req,res)=>res.json(statusPayload()));
+app.get('/api/health',async(req,res)=>res.json(await statusPayload()));
+app.get('/health',async(req,res)=>res.json(await statusPayload()));
 app.get('/login',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
   await valDbReady;
@@ -1049,8 +1199,37 @@ app.get('/api/auth/me',async(req,res)=>{
   res.status(user?200:401).json(user?{ok:true,user}:{ok:false,error:'Authentication required'});
 });
 app.use(requireAuth);
+app.use((req,res,next)=>{
+  const bodyMeta=requestMetaFromBody(req.body||{});
+  const routeMeta={
+    route:req.path,
+    routeJobSource:`${req.method} ${req.path}`,
+    contactId:bodyMeta.contactId,
+    transcriptId:bodyMeta.transcriptId,
+    transcriptHash:bodyMeta.transcriptHash,
+    requestReason:String(req.body?.reason||req.body?.action||req.body?.source||req.query?.reason||'').slice(0,160)
+  };
+  const ctx=requestContext.getStore();
+  if(ctx){Object.assign(ctx,routeMeta);return next();}
+  return requestContext.run(routeMeta,()=>next());
+});
 app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL}));
-app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
+app.get('/api/config/status',async(req,res)=>res.json(await statusPayload()));
+app.get('/api/debug/openai-usage-summary',async(req,res)=>{
+  try{
+    const rows=await readOpenAiUsageRows({hours:24,limit:Number(req.query.limit)||10000});
+    res.json({
+      ok:true,
+      windowHours:24,
+      logFile:OPENAI_USAGE_LOG_FILE,
+      totalCalls:rows.length,
+      estimatedTotalCostUsd:Number(rows.reduce((sum,row)=>sum+(Number(row.estimatedCostUsd)||0),0).toFixed(6)),
+      summary:summarizeOpenAiUsageRows(rows)
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
 app.get('/api/val/transcripts/webhook',(req,res)=>res.json(transcriptWebhookInfo(req)));
 app.get('/api/integrations/credentials',async(req,res)=>{
@@ -1135,7 +1314,7 @@ app.post('/api/integrations/test/:provider',async(req,res)=>{
       const loc=await resolveGhlLocationId();
       const key=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
       if(!key||!loc) throw new Error('GHL API key and Location ID are required');
-      const r=await fetch(`${BASE}/locations/${encodeURIComponent(loc)}`,{headers:{Authorization:`Bearer ${key}`,Version:'2021-07-28','Content-Type':'application/json'}});
+      const r=await ghlMcp.requestTry('GET',`/locations/${encodeURIComponent(loc)}`);
       ok=r.ok; message=ok?'Connected':`Failed (${r.status})`;
     }else if(provider==='outscraper'){
       const key=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
@@ -1556,6 +1735,16 @@ app.post('/api/analyze-image',async(req,res)=>{
       })
     });
     const d=await r.json();
+    await logOpenAiUsage({
+      wrapper:'route:/api/analyze-image',
+      model:'gpt-4o',
+      estimatedInputTokens:approxTokens(prompt||'Analyze this image and give detailed feedback. What do you see, what\'s working well, and what could be improved?')+1100,
+      estimatedOutputTokens:1000,
+      responsePayload:d,
+      requestId:r.headers.get('x-request-id')||'',
+      retry:false,
+      extra:{requestReason:'image_analysis'}
+    });
     if(d.error) return res.status(500).json({error:d.error.message});
     res.json({reply:d.choices?.[0]?.message?.content||'No response'});
   }catch(e){
@@ -1584,6 +1773,19 @@ app.post('/api/generate-image',async(req,res)=>{
       })
     });
     const d=await r.json();
+    const selectedQuality=quality||'standard';
+    const selectedSize=size||'1024x1024';
+    await logOpenAiUsage({
+      wrapper:'route:/api/generate-image',
+      model:'dall-e-3',
+      estimatedInputTokens:approxTokens(prompt),
+      estimatedOutputTokens:0,
+      responsePayload:d,
+      requestId:r.headers.get('x-request-id')||'',
+      retry:false,
+      extra:{requestReason:`image_generation:${selectedQuality}:${selectedSize}`},
+      flatCostUsd:selectedQuality==='hd'?0.08:0.04
+    });
     if(d.error) return res.status(500).json({error:d.error.message});
     const url=d.data?.[0]?.url;
     const revised=d.data?.[0]?.revised_prompt;
@@ -1755,47 +1957,7 @@ async function fetchGoogleCalendarEvents(start,end,maxResults=50){
 }
 
 async function fetchGhlCalendarEvents(start,end){
-  const calendarMap = new Map();
-  let calendarIds = GHL_CALENDAR_IDS.slice();
-  if(!calendarIds.length){
-    try{
-      const data = await ghl('GET',`/calendars/?locationId=${GHL_LOC}`);
-      const calendars = data.calendars || [];
-      calendars.forEach(c=>{ if(c.id){ calendarMap.set(String(c.id),c.name||c.title||'GHL Calendar'); calendarIds.push(String(c.id)); } });
-    }catch(e){ console.error('GHL calendar list error:',e.message); }
-  }
-  calendarIds = Array.from(new Set(calendarIds));
-  const range = `locationId=${GHL_LOC}&startTime=${start.getTime()}&endTime=${end.getTime()}`;
-  const calls = calendarIds.length
-    ? calendarIds.map(id=>ghl('GET',`/calendars/events?${range}&calendarId=${encodeURIComponent(id)}`).then(d=>({id,data:d})))
-    : [ghl('GET',`/calendars/events?${range}`).then(d=>({id:'all',data:d}))];
-  const results = await Promise.allSettled(calls);
-  const seen = new Set();
-  const events = [];
-  results.forEach(r=>{
-    if(r.status!=='fulfilled') return;
-    const calendarId = r.value.id;
-    const list = r.value.data.events || r.value.data.appointments || [];
-    list.forEach(ev=>{
-      const key = `${ev.id||ev.appointmentId||ev.startTime||ev.start}-${calendarId}`;
-      if(seen.has(key)) return;
-      seen.add(key);
-      events.push({
-        id: ev.id||ev.appointmentId,
-        title: ev.title||ev.name||ev.summary,
-        summary: ev.title||ev.name||ev.summary,
-        contactName: ev.contactName||ev.contact?.name,
-        startTime: ev.startTime||ev.start,
-        endTime: ev.endTime||ev.end,
-        status: ev.appointmentStatus||ev.status,
-        source: 'ghl',
-        owner: inferValOwner(ev),
-        calendarId,
-        calendarName: calendarMap.get(String(calendarId)) || ev.calendarName || 'GHL Calendar'
-      });
-    });
-  });
-  return events;
+  return ghlMcp.getCalendarEvents(start,end);
 }
 
 // ════════════════════════════════════════════════════════
@@ -1808,8 +1970,7 @@ app.get('/api/google/gmail', async (req, res) => {
     if(!token) return res.json({emails:[], needsAuth: true});
 
     // First get GHL contacts to cross-reference
-    const contactsData = await ghl('GET', `/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=desc`);
-    const contacts = contactsData.contacts||[];
+    const contacts = await ghlMcp.searchContacts({limit:100,sortBy:'date_added',sortDirection:'desc'});
     const contactEmails = new Set(contacts.map(c=>c.email).filter(Boolean).map(e=>e.toLowerCase()));
 
     // Search Gmail for recent unread messages
@@ -2243,7 +2404,7 @@ async function buildRelationshipReview({windowDays=7}={}){
     const topic=String(evidence.summary||'').split(/[.!?]/)[0].slice(0,90);
     if(topic) person.topics=Array.from(new Set((person.topics||[]).concat(topic))).slice(0,8);
   }
-  const [gmail,outlook,tasks,transcripts,memory,ghlEvents,googleEvents,pipeline]=await Promise.all([
+  const [gmail,outlook,tasks,transcripts,memory,ghlEvents,googleEvents,pipeline,ghlCrm]=await Promise.all([
     fetchGmailMessages({query:'newer_than:45d',maxResults:60}).catch(e=>{errors.push('Gmail: '+e.message);return {emails:[],error:e.message};}),
     fetchUnifiedOutlookEmails(60).catch(e=>{errors.push('Outlook: '+e.message);return {emails:[],error:e.message};}),
     loadTasks().catch(e=>{errors.push('Tasks: '+e.message);return [];}),
@@ -2251,7 +2412,8 @@ async function buildRelationshipReview({windowDays=7}={}){
     recentMemoryItems(45,120).catch(e=>{errors.push('Memory: '+e.message);return [];}),
     fetchGhlCalendarEvents(widerPast,future).catch(e=>{errors.push('GHL calendar: '+e.message);return [];}),
     fetchGoogleCalendarEvents(widerPast,future,150).catch(e=>{errors.push('Google calendar: '+e.message);return [];}),
-    fetchGhlOpportunities({status:'open',limit:100}).catch(e=>{errors.push('Pipeline: '+e.message);return {data:{opportunities:[]}};})
+    fetchGhlOpportunities({status:'open',limit:100}).catch(e=>{errors.push('Pipeline: '+e.message);return {data:{opportunities:[]}};}),
+    ghlMcp.buildContext('',{limit:12,opportunityLimit:50,conversationLimit:12,notesLimit:4,taskLimit:4}).catch(e=>{errors.push('GHL CRM context: '+e.message);return {contacts:[],conversations:[],notes:[],tasks:[],opportunities:[]};})
   ]);
   for(const email of (gmail.emails||[]).concat(outlook.emails||[])){
     const sender=touch({name:email.from?.name,email:email.from?.email});
@@ -2284,6 +2446,25 @@ async function buildRelationshipReview({windowDays=7}={}){
     const c=o.contact||{};
     const p=touch({name:c.name||o.contactName||o.name,email:c.email||o.contactEmail,company:o.name});
     addEvidence(p,relationshipEvidence('opportunity',`${o.name||'Open opportunity'}${o.monetaryValue?' worth $'+o.monetaryValue:''}${o.status?' is '+o.status:''}`,o.updatedAt||o.lastStatusChangeAt,'high',o.id));
+  }
+  for(const c of (ghlCrm.contacts||[])){
+    const p=touch({name:c.name,email:c.email,company:c.company,tags:['GHL contact']});
+    addEvidence(p,relationshipEvidence('ghl_contact',`GHL contact record${c.company?' at '+c.company:''}${c.phone?' | '+c.phone:''}`,'','medium',c.id));
+  }
+  for(const t of (ghlCrm.tasks||[])){
+    const p=touch({name:t.contactName||t.assignedToName||'',email:t.email||''});
+    if(p.name==='Unknown'&&!t.contactId) continue;
+    addEvidence(p,relationshipEvidence('ghl_task',`${t.title||t.name||t.body||'GHL task'}${t.dueDate||t.due_date?' due '+(t.dueDate||t.due_date):''}`,'','high',t.id||t.contactId));
+  }
+  for(const n of (ghlCrm.notes||[])){
+    const p=touch({name:n.contactName||'',email:n.email||''});
+    if(p.name==='Unknown'&&!n.contactId) continue;
+    addEvidence(p,relationshipEvidence('ghl_note',noteBody(n)||String(n.body||n.note||n.text||'GHL note').slice(0,220),n.createdAt||n.created_at,'high',n.id||n.contactId));
+  }
+  for(const c of (ghlCrm.conversations||[])){
+    const p=touch({name:c.contactName||c.fullName||c.name||'',email:c.email||''});
+    if(p.name==='Unknown'&&!c.contactId) continue;
+    addEvidence(p,relationshipEvidence('ghl_conversation',`${c.unreadCount||0} unread. ${c.lastMessageBody||c.lastMessage||'GHL conversation activity'}`,c.lastMessageDate||c.updatedAt,'high',c.id));
   }
   for(const p of people.values()){
     const introCount=p.evidence.filter(e=>/intro|introduction|connect|referral|referred/i.test(e.summary)).length;
@@ -2357,12 +2538,31 @@ function extractLinkedInUrl(data){
   return (text.match(/https?:\/\/([a-z]+\.)?linkedin\.com\/in\/[^"',\s)]+/i)||[])[0] || '';
 }
 
+function decodeBasicHtmlEntities(value){
+  return String(value||'')
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n)||32))
+    .replace(/&#x([0-9a-f]+);/gi,(_,n)=>String.fromCharCode(parseInt(n,16)||32))
+    .replace(/&commat;/gi,'@')
+    .replace(/&period;/gi,'.')
+    .replace(/&amp;/gi,'&');
+}
+
+function deobfuscateContactText(value){
+  return decodeBasicHtmlEntities(value)
+    .replace(/\s*(?:\[|\(|\{)\s*at\s*(?:\]|\)|\})\s*/gi,'@')
+    .replace(/\s+at\s+/gi,'@')
+    .replace(/\s*(?:\[|\(|\{)\s*dot\s*(?:\]|\)|\})\s*/gi,'.')
+    .replace(/\s+dot\s+/gi,'.')
+    .replace(/%40/g,'@')
+    .replace(/%2e/gi,'.');
+}
+
 function extractEmailsFromValue(value){
-  const text = typeof value === 'string' ? value : JSON.stringify(value||'');
+  const text = deobfuscateContactText(typeof value === 'string' ? value : JSON.stringify(value||''));
   const matches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
   return [...new Set(matches.map(e=>e.toLowerCase())
     .filter(e=>!/\.(png|jpg|jpeg|gif|webp|svg|css|js)$/i.test(e))
-    .filter(e=>!/(example|domain|email\.com|sentry|wixpress|wordpress|schema\.org)/i.test(e)))];
+    .filter(e=>!/(example|domain|email\.com|sentry|wixpress|wordpress|schema\.org|cloudflare|godaddy)/i.test(e)))];
 }
 
 function firstEmailFrom(...values){
@@ -2376,14 +2576,14 @@ function firstEmailFrom(...values){
 function isLikelyPersonEmail(email){
   const local = String(email||'').split('@')[0].toLowerCase();
   if(!local) return false;
-  return !/^(info|hello|contact|support|admin|office|team|media|press|help|careers|jobs|webmaster|noreply|no-reply)$/.test(local);
+  return !/^(info|hello|contact|support|admin|office|team|media|press|help|careers|jobs|webmaster|noreply|no-reply|donotreply|frontdesk|reception|appointments|billing|service|customerservice)$/.test(local);
 }
 
 function classifyEmail(email){
   if(!email) return 'missing';
   const local=String(email).split('@')[0].toLowerCase();
+  if(/^(owner|founder|ceo|president|coo|operations|ops|director|sales|partnerships|bizdev|businessdevelopment|hr|humanresources|benefits)$/.test(local)) return 'high-value role';
   if(isLikelyPersonEmail(email)) return 'person';
-  if(/^(sales|partnerships|bizdev|businessdevelopment|hr|humanresources|benefits|operations|ops|owner|founder|ceo|president|director)$/.test(local)) return 'high-value role';
   return 'general';
 }
 
@@ -2500,34 +2700,7 @@ app.get('/api/meetings',async(req,res)=>{
 });
 
 async function fetchGhlOpportunities({status='open',limit=100}={}){
-  const loc=await resolveGhlLocationId();
-  const encodedLoc=encodeURIComponent(loc||GHL_LOC);
-  const encodedStatus=encodeURIComponent(status);
-  const attempts=[
-    `/opportunities/search?location_id=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
-    `/opportunities/search?locationId=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
-    `/opportunities/search?location_id=${encodedLoc}&limit=${limit}`,
-    `/opportunities/search?locationId=${encodedLoc}&limit=${limit}`
-  ];
-  const results=[];
-  for(const path of attempts){
-    const r=await ghlTry('GET',path);
-    const opportunities=(r.data&&Array.isArray(r.data.opportunities))?r.data.opportunities:[];
-    results.push({path,status:r.status,ok:r.ok,count:opportunities.length,error:r.ok?'':(r.data?.message||r.data?.error||r.data?.raw||'')});
-    if(r.ok&&opportunities.length){
-      if(!path.includes('status=')){
-        const open=opportunities.filter(o=>String(o.status||'').toLowerCase()==='open');
-        if(open.length) r.data={...r.data,opportunities:open,meta:{...(r.data.meta||{}),total:open.length}};
-      }
-      return {path,data:r.data,attempts:results};
-    }
-  }
-  const firstOk=results.find(r=>r.ok);
-  if(firstOk){
-    const r=await ghlTry('GET',firstOk.path);
-    return {path:firstOk.path,data:r.data||{},attempts:results};
-  }
-  throw new Error('GHL opportunities search failed: '+results.map(r=>`${r.status} ${r.path}`).join(' | '));
+  return ghlMcp.findOpenOpportunities({status,limit});
 }
 
 app.get('/api/pipeline',async(req,res)=>{
@@ -2536,9 +2709,7 @@ app.get('/api/pipeline',async(req,res)=>{
       const opps=demoState(req,res).opportunities||[];
       return res.json({pipelineActive:opps.filter(o=>o.status==='open').length,stalledDeals:opps.filter(o=>o.stalled).length,opportunities:opps,_debug:{configured:true,demo:true}});
     }
-    const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
-    const ghlLoc=await resolveGhlLocationId();
-    if(!ghlKey||!ghlLoc){
+    if(!(await ghlMcp.isConfigured())){
       return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL_KEY or GHL_LOC'}});
     }
     const found=await fetchGhlOpportunities({status:'open',limit:100});
@@ -2557,10 +2728,10 @@ app.get('/api/pipeline',async(req,res)=>{
         if(contactId){
           const [notes,contactData]=await Promise.all([
             fetchContactNotes(contactId,20),
-            ghl('GET',`/contacts/${contactId}`)
+            ghlMcp.getContact(contactId)
           ]);
-          contactEmail=contactData.contact?.email||'';
-          contactPhone=contactData.contact?.phone||'';
+          contactEmail=contactData?.email||contactData?.contact?.email||'';
+          contactPhone=contactData?.phone||contactData?.contact?.phone||'';
         }
       }catch(e){console.log('contact enrich error:',e.message);}
       return {
@@ -2587,15 +2758,14 @@ app.get('/api/pipeline',async(req,res)=>{
 
 app.get('/api/debug/ghl-pipeline',async(req,res)=>{
   try{
-    const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
-    const ghlLoc=await resolveGhlLocationId();
-    if(!ghlKey||!ghlLoc){
+    const creds=await ghlMcp.credentials();
+    if(!creds.apiKey||!creds.locationId){
       return res.json({configured:false,error:'Missing GHL_KEY or GHL_LOC'});
     }
     const found=await fetchGhlOpportunities({status:req.query.status||'open',limit:Number(req.query.limit||100)});
     res.json({
       configured:true,
-      locationId:ghlLoc,
+      locationId:creds.locationId,
       selectedPath:found.path,
       attempts:found.attempts,
       count:(found.data.opportunities||[]).length,
@@ -2611,7 +2781,33 @@ app.get('/api/debug/ghl-pipeline',async(req,res)=>{
       }))
     });
   }catch(e){
-    res.json({configured:!!(GHL_KEY&&GHL_LOC),error:e.message});
+    res.json({configured:await ghlMcp.isConfigured().catch(()=>false),error:e.message});
+  }
+});
+
+app.get('/api/debug/ghl-mcp-context',async(req,res)=>{
+  try{
+    const query=String(req.query.q||req.query.query||'').slice(0,500);
+    const creds=await ghlMcp.credentials();
+    const context=await ghlMcp.buildContext(query,{limit:Number(req.query.limit)||8,opportunityLimit:25,conversationLimit:8,notesLimit:4,taskLimit:4});
+    res.json({
+      ok:true,
+      configured:!!(creds.apiKey&&creds.locationId),
+      tenantId:creds.tenantId,
+      userId:creds.user?.id||'',
+      locationId:creds.locationId||'',
+      counts:{
+        contacts:context.contacts?.length||0,
+        opportunities:context.opportunities?.length||0,
+        tasks:context.tasks?.length||0,
+        notes:context.notes?.length||0,
+        conversations:context.conversations?.length||0
+      },
+      errors:context.errors||[],
+      textPreview:String(context.text||'').slice(0,3500)
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
   }
 });
 
@@ -3144,7 +3340,7 @@ app.post('/api/val/leads/research',async(req,res)=>{
       '',
       'Follow the required search process. Evaluate fit as a GOALL Agency business lead, especially employee count, hiring/growth signals, operational complexity, and reachable decision-makers. Return only the strict field outputs.'
     ].filter(Boolean).join('\n');
-    const content=await callOpenAIWebResearch({system:GOALL_LEADS_SYSTEM_PROMPT,user,maxTokens:2600,temperature:0.1});
+    const content=await callOpenAIWebResearch({system:GOALL_LEADS_SYSTEM_PROMPT,user,maxTokens:2600,temperature:0.1,meta:{contactId,requestReason:'lead_research'}});
     if(!String(content||'').trim()) throw new Error('Lead search returned no content. Check OPENAI_KEY, model web-search support, and the requested organization name.');
     const fields=parseLeadFieldOutputs(content);
     let ghlUpdate={updated:false};
@@ -3176,6 +3372,8 @@ app.post('/api/val/leads/discover',async(req,res)=>{
       GOALL_LEADS_SYSTEM_PROMPT,
       'Discovery mode: find multiple potential GOALL Agency business leads, not one named company.',
       'Prioritize companies with visible evidence of employee size, hiring, expansion, multiple locations, operational complexity, or active sales/service teams.',
+      'For contact quality, prioritize named owners, founders, CEOs, presidents, operations leaders, HR/benefits leaders, sales leaders, or partnership leaders. Treat receptionist, front desk, assistant, scheduler, billing, support, and office-manager contacts as gatekeepers unless no better route is public.',
+      'Check each company website for public emails on contact, about, team, staff, leadership, management, people, directory, careers, and footer sections before marking email missing.',
       'If exact employee count is not verified, do not invent it. Use "300+ employee likelihood: strong / moderate / weak / unclear" based only on public signals.',
       'Return a concise numbered list. No preamble.'
     ].join('\n\n');
@@ -3192,11 +3390,12 @@ app.post('/api/val/leads/discover',async(req,res)=>{
       '300+ employee likelihood:',
       'Evidence signals:',
       'Likely decision-maker title:',
+      'Best public email/contact route:',
       'Why this fits GOALL Agency:',
       'Next outreach angle:',
       'Confidence:'
     ].join('\n');
-    const content=await callOpenAIWebResearch({system,user,maxTokens:3600,temperature:0.2});
+    const content=await callOpenAIWebResearch({system,user,maxTokens:3600,temperature:0.2,meta:{requestReason:'lead_discovery'}});
     if(!String(content||'').trim()) throw new Error('Prospect discovery returned no content. Check OPENAI_KEY and whether the selected model supports web search.');
     await saveMemoryItem({
       kind:'goall_prospect_discovery',
@@ -3292,16 +3491,38 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
     }
     const exclude=(Array.isArray(body.exclude)?body.exclude:['aric','jessa']).map(v=>String(v).toLowerCase());
     const limit=leadLimitValue(body.limit);
-    const d=await ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100`);
-    const leads=(d.opportunities||[])
+    const d=(await fetchGhlOpportunities({status:'open',limit:100})).data||{};
+    let leads=(d.opportunities||[])
       .map(leadContactSnapshot)
       .filter(l=>l.name && !exclude.some(x=>String(l.name+' '+l.contactName).toLowerCase().includes(x)))
       .slice(0,limit);
     if(!leads.length) return res.status(404).json({error:'No current GHL opportunities found to enrich.'});
+    leads=await mapWithConcurrency(leads,2,async lead=>{
+      if(!lead.website) return lead;
+      const publicContact=await findPublicWebsiteContactData(lead.website);
+      const next={...lead,websiteContactStatus:publicContact.source?[
+        publicContact.email?`email found: ${publicContact.quality}`:'no email found',
+        publicContact.leader?.name?`decision-maker signal: ${publicContact.leader.title}`:'no decision-maker signal'
+      ].join('; '):'not found'};
+      if(publicContact.email && emailScore(publicContact)>emailScore({email:next.email,source:'ghl'})){
+        next.email=publicContact.email;
+        next.emailSource=publicContact.source;
+        next.emailQuality=publicContact.quality;
+      }
+      if(publicContact.leader?.name && (!next.contactName || titleScore(publicContact.leader.title)>0)){
+        next.contactName=publicContact.leader.name;
+        next.decisionMakerName=publicContact.leader.name;
+        next.decisionMakerTitle=publicContact.leader.title;
+        next.decisionMakerSource=publicContact.leader.source;
+      }
+      return next;
+    });
     const system=[
       GOALL_LEADS_SYSTEM_PROMPT,
       'Current-lead enrichment mode: verify existing GHL lead data for business lead outreach.',
       'For each existing lead, verify or flag the best public phone, email/contact route, and actual likely decision-maker. Do not invent direct emails or phone numbers. If only a general contact channel is public, say that.',
+      'Do not accept gatekeepers as the likely decision-maker when a founder, owner, CEO, president, operations, HR/benefits, sales, or partnership leader is publicly visible.',
+      'Search the company website contact, about, team, staff, leadership, management, people, directory, careers, and footer sections for public emails before marking email missing.',
       'Return a compact audit, grouped by lead. No preamble.'
     ].join('\n\n');
     const user=[
@@ -3323,7 +3544,7 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
       'What needs correction:',
       'Confidence:'
     ].join('\n');
-    const content=await callOpenAIWebResearch({system,user,maxTokens:5000,temperature:0.15});
+    const content=await callOpenAIWebResearch({system,user,maxTokens:5000,temperature:0.15,meta:{requestReason:'current_lead_enrichment'}});
     if(!String(content||'').trim()) throw new Error('Current lead enrichment returned no content. Check OPENAI_KEY and whether the selected model supports web search.');
     await saveMemoryItem({
       kind:'goall_current_lead_enrichment',
@@ -4014,19 +4235,8 @@ function normalizeNotesPayload(data){
 }
 async function fetchContactNotes(contactId,limit=25){
   if(!contactId)return [];
-  const encoded=encodeURIComponent(contactId);
-  const ghlLoc=await resolveGhlLocationId();
-  const paths=[
-    `/contacts/${encoded}/notes`,
-    `/contacts/${encoded}/notes?locationId=${encodeURIComponent(ghlLoc||GHL_LOC)}`,
-    `/contacts/notes?contactId=${encoded}&locationId=${encodeURIComponent(ghlLoc||GHL_LOC)}`
-  ];
-  for(const path of paths){
-    const r=await ghlTry('GET',path);
-    const notes=normalizeNotesPayload(r.data).map(noteBody).filter(Boolean);
-    if(r.ok&&notes.length)return notes.slice(0,limit);
-  }
-  return [];
+  const notes=await ghlMcp.getContactNotes(contactId,{limit});
+  return normalizeNotesPayload({notes}).map(noteBody).filter(Boolean).slice(0,limit);
 }
 function contactDisplayName(contact){
   const c=contact?.contact||contact||{};
@@ -4057,7 +4267,7 @@ function collectContactIdsFromDashboard(dashboard){
 async function getContactNotesContextForId(contactId){
   try{
     const [contactData,notes]=await Promise.all([
-      ghl('GET',`/contacts/${contactId}`).catch(()=>({})),
+      ghlMcp.getContact(contactId).catch(()=>({})),
       fetchContactNotes(contactId,30)
     ]);
     const contact=contactData.contact||contactData;
@@ -4066,9 +4276,7 @@ async function getContactNotesContextForId(contactId){
   }catch(e){return '';}
 }
 async function ghlContactNotesContext(query,dashboard){
-  const ghlKey=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
-  const ghlLoc=await resolveGhlLocationId();
-  if(!ghlKey||!ghlLoc)return '';
+  if(!(await ghlMcp.isConfigured()))return '';
   const sections=[];
   const seenIds=new Set();
   for(const id of collectContactIdsFromDashboard(dashboard||{})){
@@ -4080,8 +4288,8 @@ async function ghlContactNotesContext(query,dashboard){
   for(const q of likelyContactQueries(query)){
     if(sections.length>=8)break;
     try{
-      const d=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&query=${encodeURIComponent(q)}&limit=3`);
-      for(const c of (d.contacts||[])){
+      const contacts=await ghlMcp.searchContacts({query:q,limit:3});
+      for(const c of contacts){
         const id=c.id||c.contactId;
         if(!id||seenIds.has(String(id)))continue;
         seenIds.add(String(id));
@@ -4093,8 +4301,19 @@ async function ghlContactNotesContext(query,dashboard){
   }
   return sections.length ? sections.join('\n\n') : '';
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
-  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
+async function ghlPlatformContext(query,dashboard,opts={}){
+  if(!(await ghlMcp.isConfigured())) return '';
+  const [crm,notes]=await Promise.all([
+    ghlMcp.buildContext(query,{limit:opts.limit||8,opportunityLimit:opts.opportunityLimit||25,conversationLimit:opts.conversationLimit||8,notesLimit:opts.notesLimit||5,taskLimit:opts.taskLimit||5}).catch(e=>({text:'GHL CRM context error: '+e.message})),
+    ghlContactNotesContext(query,dashboard).catch(()=>'')
+  ]);
+  return [
+    crm.text||'',
+    notes?`Targeted GHL note history:\n${notes}`:''
+  ].filter(Boolean).join('\n\n');
+}
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,meta={}}){
+  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,meta});
 }
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
@@ -4132,7 +4351,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,meta={}}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_KEY not configured');
@@ -4153,6 +4372,8 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     body:JSON.stringify(body)
   });
   let d=await r.json();
+  let requestId=r.headers.get('x-request-id')||'';
+  let retry=false;
   if(d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
     r=await fetch('https://api.openai.com/v1/responses',{
@@ -4161,12 +4382,24 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
       body:JSON.stringify(body)
     });
     d=await r.json();
+    requestId=r.headers.get('x-request-id')||requestId;
+    retry=true;
   }
+  await logOpenAiUsage({
+    wrapper:'callOpenAIResponses',
+    model:openAiModel,
+    estimatedInputTokens:approxTokens(body.instructions)+approxTokens(body.input),
+    estimatedOutputTokens:maxTokens,
+    responsePayload:d,
+    requestId,
+    retry,
+    extra:meta
+  });
   if(d.error) throw new Error(d.error.message);
   return responseText(d);
 }
 
-async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
+async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1,meta={}}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_KEY not configured');
@@ -4186,6 +4419,8 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
     body:JSON.stringify(body)
   });
   let d=await r.json();
+  let requestId=r.headers.get('x-request-id')||'';
+  let retry=false;
   if(d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
     r=await fetch('https://api.openai.com/v1/responses',{
@@ -4194,7 +4429,19 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
       body:JSON.stringify(body)
     });
     d=await r.json();
+    requestId=r.headers.get('x-request-id')||requestId;
+    retry=true;
   }
+  await logOpenAiUsage({
+    wrapper:'callOpenAIWebResearch',
+    model:openAiModel,
+    estimatedInputTokens:approxTokens(body.input),
+    estimatedOutputTokens:maxTokens,
+    responsePayload:d,
+    requestId,
+    retry,
+    extra:{...meta,requestReason:meta.requestReason||'web_research'}
+  });
   if(d.error) throw new Error(d.error.message);
   return responseText(d);
 }
@@ -4215,6 +4462,7 @@ Primary lead target:
 - Organizations with operational complexity
 - Businesses showing hiring, growth, expansion, or activity signals
 - Decision-makers such as founders, owners, CEOs, operations leaders, HR leaders, benefits leaders, sales leaders, and partnership leaders
+- Avoid gatekeepers as the primary contact when a higher-authority owner, founder, executive, operations, HR, benefits, sales, or partnership leader is publicly visible. Reception, front desk, admin, office manager, scheduler, billing, and generic support contacts are fallback routes only.
 
 CORE ROLE
 You are a lead intelligence scraper and data structuring agent for GOALL.
@@ -4235,17 +4483,18 @@ For each lead, collect and structure:
 3. Signals of hiring, growth, or activity
 4. Public presence: website, LinkedIn, Google
 5. Indicators of operational complexity
-6. Best available decision-maker contact path
+6. Best available decision-maker contact path, with preference for a named owner/executive/department leader and a public direct or role-based email from the company's own website
 
 SEARCH PROCESS - follow in order:
 1. Search company name + city/state
 2. Identify official website
-3. Extract core company data
-4. Search LinkedIn company page
-5. Search LinkedIn people / likely decision-makers
-6. Check Google Business
-7. Scan for news, hiring, activity, expansion, funding, operations, and growth signals
-8. Compile structured outputs
+3. Crawl the official website's contact, about, team, staff, leadership, management, people, directory, careers, and footer areas for public email/contact routes
+4. Extract core company data
+5. Search LinkedIn company page
+6. Search LinkedIn people / likely decision-makers
+7. Check Google Business
+8. Scan for news, hiring, activity, expansion, funding, operations, and growth signals
+9. Compile structured outputs
 
 Source priority:
 1. Official website
@@ -4257,6 +4506,8 @@ Source priority:
 Accuracy rules:
 - Only include information that is directly observed, clearly stated, or strongly supported by multiple signals.
 - Never invent employee counts, services, locations, contact info, decision-makers, or company descriptions.
+- Do not settle for a gatekeeper if a stronger decision-maker is visible on the company website, LinkedIn, or a staff/leadership page.
+- If a direct person email is not visible, prefer public role emails tied to revenue, operations, HR, benefits, partnerships, owner, founder, CEO, president, or director functions before generic info/contact/support addresses.
 - If exact employee count is unavailable, estimate only from supported signals such as LinkedIn employee range, job postings, team pages, or public staff count.
 - Otherwise write "unclear".
 
@@ -4327,9 +4578,11 @@ async function updateGhlLeadFields(contactId,fields){
   return {updated:true, contact:data.contact||data, fieldsUpdated:customFields.length};
 }
 
-let leadFieldIdCache=null;
+const leadFieldIdCache=new Map();
 async function resolveLeadFieldIds(){
-  if(leadFieldIdCache) return leadFieldIdCache;
+  const loc=await resolveGhlLocationId();
+  const cacheKey=loc||GHL_LOC||tenantId();
+  if(leadFieldIdCache.has(cacheKey)) return leadFieldIdCache.get(cacheKey);
   const resolved={...GHL_LEAD_FIELD_IDS};
   const missing=Object.entries(resolved).filter(([,id])=>!id);
   if(missing.length){
@@ -4346,7 +4599,7 @@ async function resolveLeadFieldIds(){
       if(found) resolved[key]=found.id||found._id||found.fieldId||'';
     }
   }
-  leadFieldIdCache=resolved;
+  leadFieldIdCache.set(cacheKey,resolved);
   return resolved;
 }
 
@@ -4373,6 +4626,7 @@ function leadContactSnapshot(o={}){
     contactName:o.contact?.name||o.contactName||'',
     email:o.contact?.email||o.email||'',
     phone:o.contact?.phone||o.phone||'',
+    website:o.contact?.website||o.website||o.contact?.additionalEmails?.website||'',
     owner:inferValOwner(o),
     stage:o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage||'',
     value:o.monetaryValue||o.value||''
@@ -4432,6 +4686,7 @@ function leadCustomFieldsFromProspect(p){
     `Decision maker: ${p.decisionMakerName||'unclear'}`,
     `Title: ${p.decisionMakerTitle||'unclear'}`,
     `Email source: ${p.emailSource||'unclear'} (${p.emailQuality||classifyEmail(p.email)})`,
+    `Website contact scrape: ${p.websiteContactStatus||'not run'}`,
     `RocketReach: ${p.rocketReachStatus||p.rocketReach?.error||p.rocketReach?.data?.rawPreview||'not available'}`,
     `Employee estimate basis: ${p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
     `Next outreach angle: ${p.nextOutreachAngle||'unclear'}`,
@@ -4574,7 +4829,16 @@ async function fetchTextWithTimeout(url,timeoutMs=3500){
   }
 }
 
+function normalizeWebsiteUrl(website){
+  const raw=String(website||'').trim();
+  if(!raw) return '';
+  try{return new URL(raw).href;}catch(_){}
+  try{return new URL('https://'+raw.replace(/^\/+/,'')).href;}catch(_){}
+  return '';
+}
+
 function candidateContactUrls(website){
+  website=normalizeWebsiteUrl(website);
   if(!website) return [];
   try{
     const base = new URL(website);
@@ -4588,50 +4852,135 @@ function candidateContactUrls(website){
       new URL('/team',origin).href,
       new URL('/staff',origin).href,
       new URL('/leadership',origin).href,
+      new URL('/management',origin).href,
+      new URL('/our-team',origin).href,
+      new URL('/meet-the-team',origin).href,
+      new URL('/executive-team',origin).href,
       new URL('/careers',origin).href,
       new URL('/jobs',origin).href,
       new URL('/services',origin).href,
       new URL('/locations',origin).href,
       new URL('/people',origin).href,
-      new URL('/who-we-are',origin).href
+      new URL('/who-we-are',origin).href,
+      new URL('/company',origin).href,
+      new URL('/directory',origin).href
     ])];
   }catch(_){
     return [];
   }
 }
 
+function contactUrlScore(url){
+  const text=String(url||'').toLowerCase();
+  let score=0;
+  if(/team|staff|leadership|management|people|directory/.test(text)) score+=8;
+  if(/about|who-we-are|company/.test(text)) score+=5;
+  if(/contact/.test(text)) score+=4;
+  if(/career|job/.test(text)) score+=1;
+  if(/privacy|terms|login|cart|shop|blog|news|event|wp-content|uploads/.test(text)) score-=10;
+  return score;
+}
+
+function emailScore(candidate){
+  const email=String(candidate.email||'').toLowerCase();
+  const local=email.split('@')[0]||'';
+  const quality=candidate.quality||classifyEmail(email);
+  let score=({person:80,'high-value role':70,general:35,missing:0}[quality]||0);
+  if(/^(owner|founder|ceo|president|coo|operations|director|sales|partnerships|hr|benefits)$/.test(local)) score+=18;
+  if(/^(info|hello|contact)$/.test(local)) score+=6;
+  if(/^(admin|office|team|support|service|customerservice)$/.test(local)) score-=10;
+  if(/^(frontdesk|reception|appointments|billing|noreply|no-reply|donotreply)$/.test(local)) score-=35;
+  score+=Math.min(12,Math.max(0,contactUrlScore(candidate.source)));
+  return score;
+}
+
 function bestEmail(candidates){
   const unique=[...new Map(candidates.filter(c=>c.email).map(c=>[c.email.toLowerCase(),{...c,email:c.email.toLowerCase(),quality:classifyEmail(c.email)}])).values()];
-  const score={person:4,'high-value role':3,general:2,missing:0};
-  unique.sort((a,b)=>(score[b.quality]||0)-(score[a.quality]||0));
+  unique.sort((a,b)=>emailScore(b)-emailScore(a));
   return unique[0]||{email:'',source:'',quality:'missing'};
+}
+
+function titleScore(title){
+  const t=String(title||'').toLowerCase();
+  if(!t) return 0;
+  let score=0;
+  if(/\b(owner|founder|co-founder|chief executive|ceo|president|principal|managing partner)\b/.test(t)) score+=100;
+  if(/\b(chief operating|coo|operations|general manager|executive director|managing director)\b/.test(t)) score+=85;
+  if(/\b(vp|vice president|director|head of|sales|partnership|business development|human resources|hr|benefits|people)\b/.test(t)) score+=70;
+  if(/\b(manager|administrator)\b/.test(t)) score+=25;
+  if(/\b(reception|front desk|assistant|coordinator|office manager|admin|customer service|support|billing|scheduler)\b/.test(t)) score-=60;
+  return score;
+}
+
+function isGatekeeperTitle(title){
+  return titleScore(title)<20 && /\b(reception|front desk|assistant|coordinator|office manager|admin|customer service|support|billing|scheduler)\b/i.test(String(title||''));
+}
+
+function betterLeader(a={},b={}){
+  if(!b.name) return a;
+  if(!a.name) return b;
+  const aScore=titleScore(a.title)+contactUrlScore(a.source);
+  const bScore=titleScore(b.title)+contactUrlScore(b.source);
+  return bScore>aScore ? b : a;
 }
 
 function extractLeadership(text){
   const clean=String(text||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
-  const titles='Chief Executive Officer|CEO|Founder|Owner|President|Operations Manager|Director of Operations|Chief Operating Officer|COO|HR Director|Human Resources Director|Benefits Manager|Sales Director|VP Sales|Partnerships Director|General Manager';
-  const titleFirst=new RegExp(`\\b(${titles})\\b\\s*[:\\-–]?\\s*([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})`,'i');
-  const nameFirst=new RegExp(`\\b([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})\\s*[,\\-–|]+\\s*(${titles})\\b`,'i');
-  let m=clean.match(titleFirst);
-  if(m) return {name:m[2].trim(),title:m[1].trim()};
-  m=clean.match(nameFirst);
-  if(m) return {name:m[1].trim(),title:m[2].trim()};
-  return {name:'',title:''};
+  const titles='Chief Executive Officer|CEO|Founder|Co-Founder|Owner|President|Principal|Managing Partner|Executive Director|Managing Director|Operations Manager|Director of Operations|Chief Operating Officer|COO|HR Director|Human Resources Director|Benefits Manager|Sales Director|VP Sales|Vice President of Sales|Partnerships Director|Business Development Director|General Manager|Office Manager|Administrative Assistant|Receptionist|Front Desk';
+  const titleFirst=new RegExp(`\\b(${titles})\\b\\s*[:\\-–|,]?\\s*([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})`,'gi');
+  const nameFirst=new RegExp(`\\b([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})\\s*[,\\-–|]+\\s*(${titles})\\b`,'gi');
+  let best={name:'',title:''};
+  for(const re of [nameFirst,titleFirst]){
+    for(const m of clean.matchAll(re)){
+      const candidate = re===nameFirst ? {name:m[1].trim(),title:m[2].trim()} : {name:m[2].trim(),title:m[1].trim()};
+      if(!/^(Contact Us|About Us|Our Team|Learn More)$/i.test(candidate.name)) best=betterLeader(best,candidate);
+    }
+  }
+  return isGatekeeperTitle(best.title) ? {name:'',title:''} : best;
+}
+
+function extractInternalContactLinks(html,pageUrl,origin){
+  const urls=[];
+  const text=String(html||'');
+  for(const m of text.matchAll(/href\s*=\s*["']([^"']+)["']/gi)){
+    const href=decodeBasicHtmlEntities(m[1]||'').trim();
+    if(!href || /^(mailto:|tel:|javascript:|#)/i.test(href)) continue;
+    try{
+      const url=new URL(href,pageUrl);
+      if(url.origin!==origin) continue;
+      url.hash='';
+      const path=(url.pathname||'').toLowerCase();
+      if(/contact|about|team|staff|leadership|management|people|directory|company|who-we-are|owner|founder|executive/.test(path)){
+        urls.push(url.href);
+      }
+    }catch(_){}
+  }
+  return urls;
 }
 
 async function findPublicWebsiteContactData(website){
-  const urls = candidateContactUrls(website);
+  const normalized=normalizeWebsiteUrl(website);
+  const origin=normalized?new URL(normalized).origin:'';
+  const urls = candidateContactUrls(normalized);
   const emails=[];
   let leader={name:'',title:''};
-  for(const url of urls){
+  const seen=new Set();
+  for(let i=0;i<urls.length&&i<28;i++){
+    const url=urls[i];
+    if(seen.has(url)) continue;
+    seen.add(url);
     const text = await fetchTextWithTimeout(url);
+    if(!text) continue;
     extractEmailsFromValue(text).forEach(email=>emails.push({email,source:url}));
-    if(!leader.name){
-      const found=extractLeadership(text);
-      if(found.name) leader={...found,source:url};
+    if(origin && i<10){
+      for(const linked of extractInternalContactLinks(text,url,origin).sort((a,b)=>contactUrlScore(b)-contactUrlScore(a))){
+        if(!seen.has(linked) && !urls.includes(linked)) urls.push(linked);
+      }
     }
+    const found=extractLeadership(text);
+    if(found.name) leader=betterLeader(leader,{...found,source:url});
     const currentBest=bestEmail(emails);
-    if(currentBest.quality==='person' && leader.name) break;
+    if(emailScore(currentBest)>=88 && leader.name && titleScore(leader.title)>=70) break;
   }
   return {...bestEmail(emails),leader};
 }
@@ -4674,6 +5023,8 @@ async function discoverHbsLeadProspects(body={}){
       GOALL_LEADS_SYSTEM_PROMPT,
       'Discovery mode: find potential GOALL business leads and return machine-readable JSON only.',
       'Find companies with visible evidence of employee size, hiring, growth, operational complexity, and reachable decision-makers.',
+      'Before returning email as missing, check the company website contact, about, team, staff, leadership, management, people, directory, careers, and footer sections for public person or role emails.',
+      'Avoid gatekeepers as decisionMakerName when a founder, owner, CEO, president, operations, HR/benefits, sales, or partnership leader is public.',
       'Do not invent exact employee counts. approximateDonors is being used as the legacy numeric field for approximate employees and must be a conservative integer estimate from public signals.',
       'Return ONLY valid JSON. No markdown. No commentary.'
     ].join('\n\n');
@@ -4685,9 +5036,9 @@ async function discoverHbsLeadProspects(body={}){
       `Criteria: ${criteria}`,
       '',
       'Return JSON with this exact shape:',
-      '{"leads":[{"organizationName":"","website":"","industry":"","primaryService":"","location":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
+      '{"leads":[{"organizationName":"","website":"","industry":"","primaryService":"","location":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","decisionMakerSource":"","email":"","emailSource":"","emailQuality":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
     ].join('\n');
-    raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
+    raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15,meta:{requestReason:'lead_discovery_fallback_web_search'}});
     leads=extractJsonArray(raw).slice(0,limit);
     leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||employeeMinimum},{rocketReachMode}));
   }
@@ -4787,15 +5138,22 @@ async function enrichProspect(p,opts={}){
   if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
   if(next.website){
     const publicContact = await findPublicWebsiteContactData(next.website);
-    if(publicContact.email && (!next.email || classifyEmail(publicContact.email)==='person' || (next.emailQuality==='general' && publicContact.quality==='high-value role'))){
+    const existingEmailScore=next.email?emailScore({email:next.email,quality:next.emailQuality,source:next.emailSource}):0;
+    if(publicContact.email && emailScore(publicContact)>existingEmailScore){
       next.email = publicContact.email;
       next.emailSource = publicContact.source;
       next.emailQuality = publicContact.quality;
     }
-    if(publicContact.leader?.name && !next.decisionMakerName){
+    if(publicContact.leader?.name && (!next.decisionMakerName || titleScore(publicContact.leader.title)>titleScore(next.decisionMakerTitle))){
       next.decisionMakerName = publicContact.leader.name;
       next.decisionMakerTitle = publicContact.leader.title || next.decisionMakerTitle || '';
       next.decisionMakerSource = publicContact.leader.source || '';
+    }
+    if(publicContact.source){
+      next.websiteContactStatus = [
+        publicContact.email?`email found: ${publicContact.quality}`:'no email found',
+        publicContact.leader?.name?`decision-maker signal: ${publicContact.leader.title}`:'no decision-maker signal'
+      ].join('; ');
     }
   }
   if(mode==='defer'){
@@ -4931,7 +5289,19 @@ async function processTranscriptPayload(payload){
   const sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId||title;
   const memory=await recentMemoryContext(title+' '+transcript.slice(0,1000));
   const system=[VAL_SYSTEM_PROMPT,'You process transcripts for VAL. Your job is to prevent commitments from leaking.','Extract every unresolved promise, next step, follow-up, owner action, waiting-for item, meeting prep need, and task implied by the conversation.','If someone says they will send, review, schedule, introduce, decide, follow up, check, draft, prepare, update, research, or circle back, that belongs in actionItems unless it was explicitly completed in the transcript.','If a follow-up message should be sent after the meeting, include it in followupDrafts and also create a matching actionItems entry unless another action item already covers it.','Do not invent work. Do not create tasks for completed items. When due timing is unclear, use null.','Return strict JSON with keys: summary, actionItems, decisions, people, memoryUpdates, followupDrafts.','actionItems must be an array of objects with title, dueDate, notes, priority, contactName, person, evidence.','Every action item title should start with a verb and be clear enough to execute without reopening the transcript.',memory?'Relevant saved memory:\n'+memory:''].filter(Boolean).join('\n\n');
-  const raw=await callValModel({system,user:'Transcript title: '+title+'\n\nTranscript:\n'+transcript.slice(0,30000),maxTokens:1800,temperature:0.2,json:true});
+  const raw=await callValModel({
+    system,
+    user:'Transcript title: '+title+'\n\nTranscript:\n'+transcript.slice(0,30000),
+    maxTokens:1800,
+    temperature:0.2,
+    json:true,
+    meta:{
+      routeJobSource:'transcript_processing',
+      transcriptId:sourceId,
+      transcriptHash:crypto.createHash('sha256').update(String(transcript)).digest('hex').slice(0,16),
+      requestReason:'process_transcript'
+    }
+  });
   let parsed={};
   try{parsed=JSON.parse(raw);}catch(e){parsed={summary:raw,actionItems:[],decisions:[],people:[],memoryUpdates:[],followupDrafts:[]};}
   const createdTasks=[];
@@ -5005,12 +5375,13 @@ app.post('/api/val/meeting-briefing',async(req,res)=>{
       }
     }
     const attendees=inferAttendeesFromEvent(meeting);
-    const [gmail,transcripts,tasks,memory,ghlNotes]=await Promise.all([
+    const ghlQuery=[meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' ');
+    const [gmail,transcripts,tasks,memory,ghlContext]=await Promise.all([
       fetchGmailMessages({query:gmailMeetingQuery(meeting),maxResults:12}).catch(e=>({emails:[],error:e.message})),
       matchingTranscriptContext(meeting,5).catch(()=>[]),
       matchingTaskContext(meeting,12).catch(()=>[]),
-      recentMemoryContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' ')).catch(()=>''),
-      ghlContactNotesContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' '),{appointments:[meeting]}).catch(()=>'')
+      recentMemoryContext(ghlQuery).catch(()=>''),
+      ghlPlatformContext(ghlQuery,{appointments:[meeting]},{limit:10,opportunityLimit:20,conversationLimit:8,notesLimit:6,taskLimit:6}).catch(()=>'')
     ]);
     const openLoops=tasks.map(t=>t.title).slice(0,8);
     const context=[
@@ -5020,10 +5391,10 @@ app.post('/api/val/meeting-briefing',async(req,res)=>{
       transcripts.length?'Transcript context:\n'+transcripts.map(t=>`- ${t.title}: ${t.summary}`).join('\n'):'',
       tasks.length?'Open tasks:\n'+tasks.map(t=>`- ${t.title}`).join('\n'):'',
       memory?'Memory:\n'+memory:'',
-      ghlNotes?'Contact notes:\n'+ghlNotes:''
+      ghlContext?'GHL platform context:\n'+ghlContext:''
     ].filter(Boolean).join('\n\n');
-    const briefing=await callValModel({system:[VAL_SYSTEM_PROMPT,'Create a concise meeting briefing from only the supplied context. Include what matters, risks, open loops, suggested questions, and follow-up recommendations.'].join('\n\n'),user:context,maxTokens:1200,temperature:0.25});
-    res.json({ok:true,meeting:{...meeting,attendees},gmailContext:gmail.emails||[],gmailError:gmail.error||'',transcriptContext:transcripts,taskContext:tasks,memoryContext:memory?memory.split('\n\n').slice(0,6):[],contactNotes:ghlNotes?ghlNotes.split('\n\n').slice(0,6):[],briefing,openLoops,suggestedQuestions:[],recommendedFollowUps:[]});
+    const briefing=await callValModel({system:[VAL_SYSTEM_PROMPT,'Create a concise meeting briefing from only the supplied context. Include what matters, risks, open loops, suggested questions, and follow-up recommendations.'].join('\n\n'),user:context,maxTokens:1200,temperature:0.25,meta:{requestReason:'meeting_briefing'}});
+    res.json({ok:true,meeting:{...meeting,attendees},gmailContext:gmail.emails||[],gmailError:gmail.error||'',transcriptContext:transcripts,taskContext:tasks,memoryContext:memory?memory.split('\n\n').slice(0,6):[],ghlContext:ghlContext?ghlContext.split('\n\n').slice(0,8):[],contactNotes:ghlContext?ghlContext.split('\n\n').slice(0,6):[],briefing,openLoops,suggestedQuestions:[],recommendedFollowUps:[]});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/relationships/review',async(req,res)=>{
@@ -5058,14 +5429,75 @@ app.post('/api/relationships/actions',async(req,res)=>{
     }
     if(action==='brainstorm'){
       const evidence=(contact.evidence||[]).map(e=>`- [${e.type}] ${e.summary}`).join('\n');
-      const content=await callValModel({system:[VAL_SYSTEM_PROMPT,'Brainstorm specific, evidence-based ways to strengthen one relationship. Do not invent facts. Give practical value-add ideas, useful introductions, follow-up topics, strategic conversations, and collaboration ideas.'].join('\n\n'),user:`Contact: ${contact.name||contact.email}\nScore: ${contact.score||''}\nRecommended action: ${contact.recommendedAction||''}\nEvidence:\n${evidence||'No evidence supplied.'}`,maxTokens:900,temperature:0.35});
+      const content=await callValModel({system:[VAL_SYSTEM_PROMPT,'Brainstorm specific, evidence-based ways to strengthen one relationship. Do not invent facts. Give practical value-add ideas, useful introductions, follow-up topics, strategic conversations, and collaboration ideas.'].join('\n\n'),user:`Contact: ${contact.name||contact.email}\nScore: ${contact.score||''}\nRecommended action: ${contact.recommendedAction||''}\nEvidence:\n${evidence||'No evidence supplied.'}`,maxTokens:900,temperature:0.35,meta:{contactId:contact.id||contact.contactId||'',requestReason:'relationship_brainstorm'}});
       return res.json({ok:true,content});
     }
     res.status(400).json({ok:false,error:'Unsupported action'});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/intelligence',async(req,res)=>{try{const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];if(DEMO_MODE){const s=demoState(req,res);const top=s.relationships?.[0];let content=`Recommended next move: ${top?.recommendedAction||'Start with the highest-priority relationship.'}\n\nVAL is weighing meetings, unread messages, open tasks, draft queue, and active pipeline together. In this demo, the sharpest move is to protect the Marcus deal first, then close the Elena scope loop, then use Jordan's warm intro while it is still fresh.`;if(action==='executive_review'||/review/i.test(action))content='Executive review: your biggest leverage is not another meeting. It is finishing the three promises already in motion: Marcus pilot memo, Elena scope revision, and Jordan intro language. Priya needs care, not pressure. That is the difference between velocity and sprawl.';if(action==='relationship_radar'||/relationship/i.test(action))content='Relationship review: Marcus, Elena, and Jordan need attention now. Marcus is revenue-sensitive. Elena is influence-sensitive. Jordan is momentum-sensitive. Priya is trust-sensitive, so handle her with patience before expansion.';return res.json({ok:true,action,content:withDemoCta(content),demo:true});}const memory=await recentMemoryContext(`${action} ${query}`),ghlNotes=await ghlContactNotesContext(`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use saved memory, dashboard data, GHL contact notes, task state, and the requested action. Be specific, practical, and decisive.',memory?'Relevant saved memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const user=['Requested VAL action: '+action,'Instruction: '+actionPrompt(action),query?'User query: '+query:'','Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)].filter(Boolean).join('\n\n');res.json({ok:true,action,content:await callValModel({system,user,maxTokens:1800,temperature:0.35})});}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/chat',async(req,res)=>{try{const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};if(DEMO_MODE){const s=demoState(req,res);const q=lastUser.toLowerCase();let content='Here is what I see in this demo VAL: Marcus needs a pilot memo before the 2 PM demo, Elena is waiting on a clearer first-30-days scope, Priya has a renewal risk because her team feels stretched, and Jordan offered a warm intro that should be used while it is still fresh.';if(/meeting|prep|calendar|today|next/i.test(q))content='For today, prep the Marcus demo first. The procurement owner and onboarding load are the two issues that could slow the deal. Then tighten Elena’s first-30-days scope before her investor prep. The useful move is not more activity. It is making each conversation easier to advance.';else if(/relationship|radar|who matters|priority/i.test(q))content='Highest-priority relationships right now: Marcus Chen because there is an active deal and a time-sensitive ask, Elena Brooks because she can influence capital and referrals, and Jordan Lee because a warm intro offer is fresh. Priya matters too, but the posture there should be care before expansion.';else if(/task|todo|to do|priority/i.test(q))content='Task priority is clear: send Marcus the pilot memo, send Elena the revised first-30-days scope, then review Priya’s renewal risk. The board update can wait. The Northstar intro path is valuable, but it needs one clean paragraph, not a long explanation.';else if(/draft|follow/i.test(q))content='I would draft three things: the Marcus pilot memo, Elena’s revised scope reply, and Jordan’s one-paragraph intro ask. In a real VAL account, those would sit in the Approval Queue so you can approve or edit before anything goes out.';else if(/reset/i.test(q))content='You can reset this demo any time with the demo reset control. That clears changes made during this visit and restores the sample meetings, tasks, drafts, emails, relationships, and pipeline.';content=withDemoCta(content);return res.json({message:{role:'assistant',content},demo:true});}const memory=await recentMemoryContext(lastUser+'\n'+memoryQuery),ghlNotes=await ghlContactNotesContext(lastUser+'\n'+memoryQuery,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, GHL contact notes, and saved memory when relevant. Do not pretend to know facts that are not present.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant GHL contact notes and call transcripts are present, use them as current contact/caller source context.',memory?'Recent saved VAL memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});res.json({message:{role:'assistant',content:content||'I could not process that.'}});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/intelligence',async(req,res)=>{
+  try{
+    const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
+    if(DEMO_MODE){
+      const s=demoState(req,res);
+      const top=s.relationships?.[0];
+      let content=`Recommended next move: ${top?.recommendedAction||'Start with the highest-priority relationship.'}\n\nVAL is weighing meetings, unread messages, open tasks, draft queue, and active pipeline together. In this demo, the sharpest move is to protect the Marcus deal first, then close the Elena scope loop, then use Jordan's warm intro while it is still fresh.`;
+      if(action==='executive_review'||/review/i.test(action))content='Executive review: your biggest leverage is not another meeting. It is finishing the three promises already in motion: Marcus pilot memo, Elena scope revision, and Jordan intro language. Priya needs care, not pressure. That is the difference between velocity and sprawl.';
+      if(action==='relationship_radar'||/relationship/i.test(action))content='Relationship review: Marcus, Elena, and Jordan need attention now. Marcus is revenue-sensitive. Elena is influence-sensitive. Jordan is momentum-sensitive. Priya is trust-sensitive, so handle her with patience before expansion.';
+      return res.json({ok:true,action,content:withDemoCta(content),demo:true});
+    }
+    const contextQuery=`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`;
+    const [memory,ghlContext]=await Promise.all([
+      recentMemoryContext(`${action} ${query}`),
+      ghlPlatformContext(contextQuery,dashboard,{limit:10,opportunityLimit:35,conversationLimit:10,notesLimit:6,taskLimit:6}).catch(()=>'')
+    ]);
+    const system=[
+      VAL_SYSTEM_PROMPT,
+      'Use saved memory, dashboard data, GHL CRM context, GHL notes, GHL opportunities, GHL tasks, and the requested action. Be specific, practical, and decisive.',
+      memory?'Relevant saved memory:\n'+memory:'',
+      ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''
+    ].filter(Boolean).join('\n\n');
+    const user=[
+      'Requested VAL action: '+action,
+      'Instruction: '+actionPrompt(action),
+      query?'User query: '+query:'',
+      'Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),
+      'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)
+    ].filter(Boolean).join('\n\n');
+    res.json({ok:true,action,ghlContextAvailable:!!ghlContext,content:await callValModel({system,user,maxTokens:1800,temperature:0.35,meta:{requestReason:'val_intelligence:'+action}})});
+  }catch(e){res.status(500).json({error:e.message});}
+});
+app.post('/api/val/chat',async(req,res)=>{
+  try{
+    const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
+    if(DEMO_MODE){
+      const s=demoState(req,res);
+      const q=lastUser.toLowerCase();
+      let content='Here is what I see in this demo VAL: Marcus needs a pilot memo before the 2 PM demo, Elena is waiting on a clearer first-30-days scope, Priya has a renewal risk because her team feels stretched, and Jordan offered a warm intro that should be used while it is still fresh.';
+      if(/meeting|prep|calendar|today|next/i.test(q))content='For today, prep the Marcus demo first. The procurement owner and onboarding load are the two issues that could slow the deal. Then tighten Elena’s first-30-days scope before her investor prep. The useful move is not more activity. It is making each conversation easier to advance.';
+      else if(/relationship|radar|who matters|priority/i.test(q))content='Highest-priority relationships right now: Marcus Chen because there is an active deal and a time-sensitive ask, Elena Brooks because she can influence capital and referrals, and Jordan Lee because a warm intro offer is fresh. Priya matters too, but the posture there should be care before expansion.';
+      else if(/task|todo|to do|priority/i.test(q))content='Task priority is clear: send Marcus the pilot memo, send Elena the revised first-30-days scope, then review Priya’s renewal risk. The board update can wait. The Northstar intro path is valuable, but it needs one clean paragraph, not a long explanation.';
+      else if(/draft|follow/i.test(q))content='I would draft three things: the Marcus pilot memo, Elena’s revised scope reply, and Jordan’s one-paragraph intro ask. In a real VAL account, those would sit in the Approval Queue so you can approve or edit before anything goes out.';
+      else if(/reset/i.test(q))content='You can reset this demo any time with the demo reset control. That clears changes made during this visit and restores the sample meetings, tasks, drafts, emails, relationships, and pipeline.';
+      content=withDemoCta(content);
+      return res.json({message:{role:'assistant',content},demo:true});
+    }
+    const [memory,ghlContext]=await Promise.all([
+      recentMemoryContext(lastUser+'\n'+memoryQuery),
+      ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard,{limit:10,opportunityLimit:35,conversationLimit:10,notesLimit:6,taskLimit:6}).catch(()=>'')
+    ]);
+    const system=[
+      VAL_SYSTEM_PROMPT,
+      'Use dashboard context, platform-wide GHL CRM context, GHL contact notes, GHL opportunities, GHL tasks, GHL conversations, and saved memory when relevant. Do not pretend to know facts that are not present.',
+      'When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.',
+      'When Platform-wide GHL MCP context is present, treat it as current CRM source context across contacts, opportunities, tasks, conversations, and notes.',
+      memory?'Recent saved VAL memory:\n'+memory:'',
+      ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''
+    ].filter(Boolean).join('\n\n');
+    const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7,meta:{requestReason:'val_chat'}});
+    res.json({message:{role:'assistant',content:content||'I could not process that.'},ghlContextAvailable:!!ghlContext});
+  }catch(e){res.status(500).json({error:e.message});}
+});
 
 async function extractUploadedText(file){
   const name=file.originalname||'uploaded-file', mime=file.mimetype||'', ext=path.extname(name).toLowerCase();
