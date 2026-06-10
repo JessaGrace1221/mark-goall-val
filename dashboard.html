@@ -1470,10 +1470,13 @@ function renderTranscriptWebhook(webhook){
   if(!webhook||!webhook.ok)return '<div class="email-reason"><strong>Transcript Webhook:</strong><br>Unavailable: '+docSafe(webhook&&webhook.error||'Could not load webhook URL')+'</div>';
   var sample=JSON.stringify(webhook.samplePayload||{},null,2);
   window._valTranscriptWebhook=webhook;
-  return '<div class="email-reason"><strong>Transcript Webhook URL</strong><br>'
-    +'<div style="margin-top:8px;word-break:break-all;font-family:var(--mono);font-size:11px;color:var(--cream);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;">'+docSafe(webhook.url)+'</div>'
-    +'<div class="email-actions"><button class="primary" onclick="copyText(window._valTranscriptWebhook.url,&quot;Webhook URL&quot;)">Copy URL</button><button onclick="copyText(window._valTranscriptWebhook.headerToken,&quot;Webhook Token&quot;)">Copy Token</button><button onclick="copyText(JSON.stringify(window._valTranscriptWebhook.samplePayload,null,2),&quot;Sample Payload&quot;)">Copy Sample JSON</button></div>'
-    +'<div style="margin-top:8px;color:var(--muted);font-size:12px;">Use POST with JSON. You can put the token in the URL or send it as the <strong>X-VAL-Transcript-Token</strong> header.</div>'
+  var last=webhook.lastReceivedAt?new Date(webhook.lastReceivedAt).toLocaleString():'No transcripts received in the last 30 days.';
+  return '<div class="email-reason"><strong>Transcript Webhook: '+(webhook.live?'Live':'Needs attention')+'</strong><br>'
+    +'<div style="margin-top:6px;font-size:12px;line-height:1.55;">Paste this URL into your transcriber, Make.com, Zapier, or any tool that can send a POST webhook to VAL.</div>'
+    +'<div style="margin-top:8px;word-break:break-all;font-family:var(--mono);font-size:11px;color:#111827;background:#f8fafc;border:1px solid rgba(17,24,39,.14);border-radius:8px;padding:10px;">'+docSafe(webhook.url)+'</div>'
+    +'<div style="margin-top:8px;font-size:12px;line-height:1.55;"><strong>Last received:</strong> '+docSafe(last)+'<br><strong>Recent transcripts:</strong> '+docSafe(webhook.recent30DaysCount||0)+' in 30 days<br><strong>Matched to meetings:</strong> '+docSafe(webhook.matchedToMeetings30DaysCount||0)+'</div>'
+    +'<div class="email-actions"><button class="primary" onclick="copyText(window._valTranscriptWebhook.url,&quot;Webhook URL&quot;)">Copy Webhook URL</button><button onclick="copyText(window._valTranscriptWebhook.pingUrl,&quot;Ping URL&quot;)">Copy Ping URL</button><button onclick="copyText(window._valTranscriptWebhook.headerUrl,&quot;Header URL&quot;)">Copy Header URL</button><button onclick="copyText(window._valTranscriptWebhook.headerToken,&quot;Webhook Token&quot;)">Copy Token</button><button onclick="copyText(JSON.stringify(window._valTranscriptWebhook.samplePayload,null,2),&quot;Sample Payload&quot;)">Copy Sample JSON</button></div>'
+    +'<div style="margin-top:8px;color:#334155;font-size:12px;">Use POST with JSON. The easiest setup is the full Webhook URL above. Advanced setup can POST to the Header URL and send the token as the <strong>X-VAL-Transcript-Token</strong> header. Use the Ping URL to test whether the webhook is live without creating a transcript.</div>'
     +'<pre style="white-space:pre-wrap;max-height:190px;overflow:auto;margin-top:10px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;font-size:11px;">'+docSafe(sample)+'</pre></div>';
 }
 
