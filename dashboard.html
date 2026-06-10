@@ -9,13 +9,17 @@
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 * { cursor: none !important; }
+input,textarea,[contenteditable="true"]{cursor:text!important;caret-color:var(--gold)!important}
+button,a,[role="button"],.chip,.tbtn,.cbtn,.send-btn{cursor:pointer!important}
 #val-cursor{position:fixed;width:8px;height:8px;background:var(--gold);border-radius:50%;pointer-events:none;z-index:10000;transform:translate(-50%,-50%);transition:transform 0.1s,background 0.2s;}
 #val-cursor-ring{position:fixed;width:32px;height:32px;border:1px solid rgba(196,150,58,0.4);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:transform 0.15s ease,width 0.2s,height 0.2s,opacity 0.2s;}
 :root{
   --navy:#1B2B45;--navy-2:#243450;--navy-3:#1a2535;
-  --cream:#F8F5EE;--cream-2:#F2EFE7;--cream-3:#E8E4D8;
+  --val-white:#ffffff;--val-soft-white:#f8fafc;--val-muted-white:#e5e7eb;--val-slate:#94a3b8;
+  --cream:#ffffff;--cream-2:#f8fafc;--cream-3:#e5e7eb;
   --gold:#C4963A;--gold-2:#D4A84B;--gold-dim:rgba(196,150,58,0.12);--gold-border:rgba(196,150,58,0.25);
-  --text:#1B2B45;--text-2:#3E5070;--text-3:#7B8FA6;--text-4:#B2BEC8;
+  --text:#f8fafc;--text-2:#e5e7eb;--text-3:#94a3b8;--text-4:#64748b;
+  --body:'Jost',system-ui,sans-serif;--serif:'Cormorant Garamond',Georgia,serif;--mono:'DM Mono',monospace;
   --border:rgba(27,43,69,0.08);--border-2:rgba(27,43,69,0.13);
   --red:#B83228;--red-dim:rgba(184,50,40,0.1);
   --green:#1A7A4A;--green-dim:rgba(26,122,74,0.1);
@@ -28,7 +32,7 @@
   --ease:cubic-bezier(0.4,0,0.2,1);
   --spring:cubic-bezier(0.34,1.56,0.64,1);
 }
-html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-family:var(--body);color:var(--text);-webkit-font-smoothing:antialiased;margin:0;padding:0}
+html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-family:var(--body);color:var(--val-soft-white);-webkit-font-smoothing:antialiased;margin:0;padding:0}
 
 /* ── LAYOUT ── */
 .app{display:flex;flex-direction:column;height:100dvh;width:100vw;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0}
@@ -132,13 +136,13 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 /* ── LEFT PANEL ── */
 .lpanel{
   width:340px;flex-shrink:0;
-  background:var(--cream);
-  border-right:1px solid var(--border);
+  background:#121d2d;
+  border-right:1px solid rgba(255,255,255,0.08);
   display:flex;flex-direction:column;overflow:hidden;
 }
 .lpanel-head{
   padding:0.875rem 1rem 0.625rem;
-  border-bottom:1px solid var(--border);
+  border-bottom:1px solid rgba(255,255,255,0.08);
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
 }
 .lpanel-title{
@@ -161,30 +165,30 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .fitem{
   display:flex;align-items:flex-start;gap:0.625rem;
   padding:0.6875rem 1rem;cursor:pointer;
-  border-bottom:1px solid rgba(27,43,69,0.04);
+  border-bottom:1px solid rgba(255,255,255,0.05);
   transition:background 0.18s,transform 0.18s var(--spring);
   position:relative;animation:fitemIn 0.35s var(--ease) both;
 }
 @keyframes fitemIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
-.fitem:hover{background:var(--cream-2);transform:translateX(2px)}
+.fitem:hover{background:rgba(255,255,255,0.05);transform:translateX(2px)}
 .fitem.active{background:var(--gold-dim);border-right:2px solid var(--gold)}
 .fitem-pip{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
 .pip-gold{background:var(--gold)}.pip-green{background:var(--green)}.pip-red{background:var(--red)}.pip-amber{background:var(--amber)}.pip-navy{background:var(--navy-3)}.pip-blue{background:var(--blue)}
 .fitem-body{flex:1;min-width:0}
-.fitem-title{font-size:0.8125rem;font-weight:500;color:var(--navy);line-height:1.4}
+.fitem-title{font-size:0.8125rem;font-weight:500;color:var(--val-soft-white);line-height:1.4}
 .fitem-meta{font-size:0.5625rem;color:var(--text-3);margin-top:2px;font-family:'DM Mono',monospace}
 
 /* bottom summary cards */
-.summary-cards{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--border);flex-shrink:0}
+.summary-cards{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0}
 .scard{
-  padding:0.75rem 1rem;border-right:1px solid var(--border);
+  padding:0.75rem 1rem;border-right:1px solid rgba(255,255,255,0.08);
   cursor:pointer;transition:background 0.2s;
 }
 .scard:nth-child(even){border-right:none}
-.scard:nth-child(3),.scard:nth-child(4){border-top:1px solid var(--border)}
-.scard:hover{background:var(--cream-2)}
+.scard:nth-child(3),.scard:nth-child(4){border-top:1px solid rgba(255,255,255,0.08)}
+.scard:hover{background:rgba(255,255,255,0.05)}
 .scard-label{font-size:0.4375rem;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-4);margin-bottom:3px}
-.scard-val{font-family:var(--serif);font-size:1.375rem;font-weight:600;color:var(--navy);line-height:1}
+.scard-val{font-family:var(--serif);font-size:1.375rem;font-weight:600;color:var(--val-white);line-height:1}
 .scard-sub{font-size:0.5625rem;color:var(--text-3);margin-top:2px}
 .scard-link{font-size:0.5rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-top:5px;display:block;transition:color 0.2s}
 .scard:hover .scard-link{color:var(--gold-2)}
@@ -192,27 +196,89 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 /* ── CENTER ── */
 .center{
   flex:1;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--cream);position:relative;min-width:0;
+  background:var(--val-white);position:relative;min-width:0;
 }
 
 /* center welcome state */
 .center-welcome{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:1.5rem;text-align:center;overflow:hidden;
+  padding:1.5rem 1.5rem 7.25rem;text-align:center;overflow-y:auto;min-height:0;
+  -webkit-overflow-scrolling:touch;
 }
+.center-welcome::-webkit-scrollbar{width:8px}
+.center-welcome::-webkit-scrollbar-thumb{background:rgba(27,43,69,0.18);border-radius:999px}
+.center-welcome::-webkit-scrollbar-track{background:transparent}
 .cw-label{font-size:0.5625rem;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:0.75rem}
 .cw-title{font-family:var(--serif);font-size:2rem;font-weight:600;color:var(--navy);margin-bottom:0.4rem}
-.cw-sub{font-size:0.9375rem;color:var(--text-3);margin-bottom:2rem;max-width:420px;line-height:1.6}
+.cw-sub{font-size:0.9375rem;color:#3E5070;margin-bottom:2rem;max-width:620px;line-height:1.6}
 .cw-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:0.625rem;width:100%;max-width:640px}
 .cw-action{
   padding:1rem;border:1px solid var(--border-2);border-radius:11px;
-  background:white;cursor:pointer;text-align:left;
+  background:rgba(255,255,255,0.06);cursor:pointer;text-align:left;
   transition:all 0.25s var(--ease);
 }
 .cw-action:hover{border-color:var(--gold-border);background:var(--gold-dim);transform:translateY(-2px);box-shadow:var(--shadow-sm)}
 .cw-action:active{transform:translateY(-1px)}
 .cw-action-label{font-size:0.5rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);margin-bottom:4px}
 .cw-action-text{font-size:0.8125rem;font-weight:500;color:var(--navy)}
+.alert-board{width:100%;max-width:1040px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.75rem;text-align:left;margin-bottom:1rem}
+.alert-section{background:var(--val-white);border:1px solid rgba(27,43,69,0.1);border-radius:8px;padding:0.9rem;box-shadow:0 12px 34px rgba(27,43,69,0.08)}
+.alert-section.primary{grid-column:1/-1;background:#f8fafc;border-color:rgba(196,150,58,0.28)}
+.alert-kicker{font-size:0.48rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:var(--gold);margin-bottom:0.35rem}
+.alert-title{font-size:1rem;font-weight:600;color:var(--navy);line-height:1.25;margin-bottom:0.35rem}
+.alert-copy{font-size:0.78rem;line-height:1.5;color:#3E5070;margin-bottom:0.55rem}
+.alert-actions{display:flex;gap:0.4rem;flex-wrap:wrap}
+.alert-btn{height:29px;border:1px solid rgba(27,43,69,0.14);border-radius:7px;background:#f8fafc;color:var(--navy);font-size:0.52rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;padding:0 0.65rem;cursor:pointer}
+.alert-btn.primary{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.alert-btn:hover{transform:translateY(-1px);border-color:var(--gold-border)}
+
+.exec-workspace-overlay{position:fixed;inset:0;z-index:2200;background:rgba(7,17,29,.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:22px}
+.exec-workspace-modal{width:min(1180px,100%);height:min(860px,94dvh);background:#111c2c;border:1px solid rgba(196,150,58,.28);border-radius:12px;box-shadow:0 30px 110px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden;color:var(--val-soft-white)}
+.exec-workspace-head{height:64px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;background:#16253a;border-bottom:1px solid rgba(196,150,58,.22);flex-shrink:0}
+.exec-workspace-kicker{font-size:.48rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:4px}
+.exec-workspace-title{font-family:var(--serif);font-size:1.55rem;line-height:1;color:var(--val-white)}
+.exec-workspace-close{width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);color:var(--val-soft-white);cursor:pointer}
+.exec-workspace-body{flex:1;min-height:0;overflow:auto;padding:16px;background:#0f1928}
+.exec-workspace-footer{min-height:56px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:10px 16px;background:#16253a;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0}
+.exec-workspace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.exec-card{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:14px}
+.exec-card h3{font-family:var(--serif);font-size:1.18rem;line-height:1.15;color:var(--val-white);margin-bottom:8px}
+.exec-card p,.exec-card li{font-size:.78rem;line-height:1.55;color:var(--val-muted-white)}
+.exec-card ul{padding-left:1rem}
+.exec-workspace-body>.email-body{height:calc(100% - 51px);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden}
+.exec-workspace-body>.email-tabs{background:#111c2c;border:1px solid rgba(255,255,255,.08);border-bottom:0;border-radius:8px 8px 0 0}
+.task-board{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:14px;min-height:100%}
+.task-column{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:8px;overflow:hidden;min-width:0}
+.task-column-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;background:rgba(255,255,255,.045);border-bottom:1px solid rgba(255,255,255,.08)}
+.task-column-title{font-family:var(--serif);font-size:1.05rem;color:var(--val-white);line-height:1.15}
+.task-count-pill{border:1px solid rgba(199,146,43,.28);border-radius:999px;padding:4px 8px;color:var(--gold);font:700 .55rem var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.task-list{display:grid;gap:8px;padding:10px}
+.task-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:flex-start;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(248,245,238,.97);color:var(--navy);padding:11px 12px;box-shadow:0 8px 18px rgba(0,0,0,.08)}
+.task-card.done{opacity:.72;background:rgba(248,245,238,.82)}
+.task-check{width:24px;height:24px;border:1px solid rgba(199,146,43,.52);border-radius:7px;background:white;color:transparent;font-weight:900;line-height:1;cursor:pointer;margin-top:1px}
+.task-check:hover{background:var(--gold-dim);color:var(--gold)}
+.task-card.done .task-check{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.task-title{font-size:.88rem;font-weight:700;line-height:1.35;color:var(--navy);overflow-wrap:anywhere}
+.task-card.done .task-title{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:rgba(22,38,62,.45)}
+.task-meta{font-size:.68rem;color:var(--text-3);line-height:1.45;margin-top:4px}
+.task-notes{font-size:.72rem;color:var(--text-2);line-height:1.45;margin-top:7px;max-height:54px;overflow:hidden}
+.task-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.task-actions button{height:27px;border:1px solid rgba(199,146,43,.25);border-radius:7px;background:#fff;color:var(--navy);font:700 .52rem var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0 8px}
+.task-actions button.primary{background:var(--gold-dim);color:var(--gold)}
+.task-empty{border:1px dashed rgba(255,255,255,.15);border-radius:8px;padding:18px;color:rgba(248,245,238,.72);font-size:.82rem;line-height:1.5;background:rgba(255,255,255,.025)}
+.task-complete-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2600;border:1px solid rgba(199,146,43,.38);background:rgba(248,245,238,.98);color:var(--navy);border-radius:8px;padding:12px 16px;box-shadow:0 18px 50px rgba(0,0,0,.22);font-size:.9rem;font-weight:700;animation:taskToastIn .22s ease}
+@keyframes taskToastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@media(max-width:820px){
+  .alert-board{grid-template-columns:1fr}
+  .task-board{grid-template-columns:1fr}
+  .task-column{min-height:auto}
+  .exec-workspace-overlay{padding:0;align-items:stretch}
+  .exec-workspace-modal{height:100dvh;width:100%;border-radius:0;border-left:0;border-right:0}
+  .exec-workspace-head{position:sticky;top:0;z-index:2}
+  .exec-workspace-footer{position:sticky;bottom:0;justify-content:stretch}
+  .exec-workspace-footer .alert-btn{flex:1;min-width:0}
+  .exec-workspace-grid{grid-template-columns:1fr}
+}
 
 /* center detail view */
 .center-detail{flex:1;overflow:hidden;display:none;flex-direction:column}
@@ -241,16 +307,35 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .cmsg.assistant{align-self:flex-start}
 .cmsg-bubble{padding:0.75rem 1rem;border-radius:12px;font-size:0.875rem;line-height:1.65}
 .cmsg.user .cmsg-bubble{background:var(--navy);color:white;border-bottom-right-radius:3px}
-.cmsg.assistant .cmsg-bubble{background:white;color:var(--text);border:1px solid var(--border);box-shadow:var(--shadow-xs);border-bottom-left-radius:3px}
+.cmsg.assistant .cmsg-bubble{background:white;color:#16233a!important;border:1px solid var(--border);box-shadow:var(--shadow-xs);border-bottom-left-radius:3px}
+.cmsg.assistant .cmsg-bubble *{color:#16233a!important}
 .cmsg.assistant .cmsg-bubble p{margin-bottom:0.5rem}.cmsg.assistant .cmsg-bubble p:last-child{margin-bottom:0}
-.cmsg.assistant .cmsg-bubble strong{font-weight:600}
+.cmsg.assistant .cmsg-bubble strong{font-weight:600;color:var(--navy)!important}
 .cmsg.assistant .cmsg-bubble ul,.cmsg.assistant .cmsg-bubble ol{margin:0.4rem 0;padding-left:1.25rem}
 .cmsg.assistant .cmsg-bubble li{margin-bottom:0.2rem}
+.cmsg.assistant .cmsg-bubble .chip{color:var(--navy)!important}
+.lead-preview-output{
+  white-space:pre-wrap;
+  color:#16233a!important;
+  background:var(--cream-2);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:0.85rem;
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:0.82rem;
+  line-height:1.55;
+  max-height:540px;
+  overflow:auto;
+}
+.lead-preview-output *{color:#16233a!important}
+.lead-preview-output strong{color:var(--navy)!important}
 .cmsg-meta{font-size:0.5rem;color:var(--text-4);margin-top:3px;padding:0 2px;font-family:'DM Mono',monospace;display:flex;align-items:center;gap:0.4rem}
 .cmsg.user .cmsg-meta{justify-content:flex-end}
 .cmsg-action{background:none;border:none;cursor:pointer;opacity:0.3;transition:opacity 0.2s;padding:0;display:flex}
 .cmsg-action:hover{opacity:0.8}
 .cmsg-action svg{width:11px;height:11px;color:var(--text-3)}
+.cmsg-copy-visible{height:22px;border:1px solid rgba(27,43,69,0.14);background:#f8fafc;color:#1B2B45;border-radius:6px;padding:0 8px;font-size:0.52rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;opacity:1}
+.cmsg-copy-visible:hover{border-color:var(--gold-border);color:#1B2B45;background:#fff7e8}
 .typing-row{display:flex;align-items:center;gap:5px;padding:0.75rem 1rem;background:white;border:1px solid var(--border);border-radius:12px;border-bottom-left-radius:3px;width:fit-content;box-shadow:var(--shadow-xs);margin-bottom:0.75rem}
 .tdot{width:5px;height:5px;background:var(--gold);border-radius:50%;animation:tBounce 1.4s ease-in-out infinite}
 .tdot:nth-child(2){animation-delay:.2s}.tdot:nth-child(3){animation-delay:.4s}
@@ -266,6 +351,10 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
   transition:border-color 0.25s,box-shadow 0.25s;box-shadow:var(--shadow-xs);
 }
 .cmd-box:focus-within{border-color:var(--gold-border);box-shadow:0 0 0 3px rgba(196,150,58,0.07)}
+.upload-status{display:none;margin-top:0.45rem;border:1px solid rgba(196,150,58,0.22);background:#fffaf0;color:#6b4b12;border-radius:8px;padding:0.45rem 0.65rem;font-size:0.72rem;line-height:1.35}
+.upload-status.on{display:block}
+.upload-status.success{border-color:rgba(34,197,94,0.25);background:#f0fdf4;color:#166534}
+.upload-status.error{border-color:rgba(239,68,68,0.25);background:#fef2f2;color:#991b1b}
 .cbtn{
   width:30px;height:30px;border:none;background:none;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -277,9 +366,12 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .cmd-ta{
   flex:1;border:none;background:transparent;
   font-family:var(--body);font-size:0.875rem;
-  color:var(--text);resize:none;outline:none;
+  color:#16233a!important;caret-color:var(--gold)!important;resize:none;outline:none;
   padding:0.3rem 0.125rem;max-height:100px;line-height:1.55;
+  cursor:text!important;
 }
+.cmd-ta:focus{color:#16233a!important;caret-color:var(--gold)!important}
+.cmd-ta::selection{background:rgba(196,150,58,0.24);color:#16233a}
 .cmd-ta::placeholder{color:var(--text-4)}
 .send-btn{
   width:32px;height:32px;border-radius:8px;
@@ -295,14 +387,14 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .chips::-webkit-scrollbar{display:none}
 .chip{
   height:24px;padding:0 0.625rem;border:1px solid var(--border-2);border-radius:12px;
-  background:white;color:var(--text-2);font-family:var(--body);
+  background:white;color:var(--navy);font-family:var(--body);
   font-size:0.5625rem;font-weight:600;cursor:pointer;white-space:nowrap;
   transition:all 0.2s var(--ease);letter-spacing:0.03em;
 }
 .chip:hover{border-color:var(--gold-border);background:var(--gold-dim);color:var(--navy);transform:translateY(-1px)}
-.suggestion-label{font-size:0.5625rem;font-weight:700;color:var(--text-4);letter-spacing:0.12em;text-transform:uppercase;margin-top:0.75rem;margin-bottom:0.375rem}
+.suggestion-label{font-size:0.5625rem;font-weight:700;color:#3E5070;letter-spacing:0.12em;text-transform:uppercase;margin-top:0.75rem;margin-bottom:0.375rem}
 .dynamic-suggestions{display:flex;flex-direction:column;gap:0.375rem;margin-top:0;flex-wrap:nowrap;overflow:visible;padding-bottom:2px}
-.dynamic-suggestions .chip{background:rgba(248,245,238,0.86)}
+.dynamic-suggestions .chip{background:var(--val-white);color:var(--navy);border-color:rgba(27,43,69,0.14)}
 
 /* ── WORKSPACE SIDEBAR OVERLAY ── */
 .ws-overlay{
@@ -453,7 +545,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
 .hidden{display:none!important}
-input[type=file]{display:none}
+input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 @media(max-width:900px){.rpanel{display:none}}
 @media(max-width:760px){.cw-actions{grid-template-columns:1fr 1fr;max-width:460px}}
 @media(max-width:900px), (hover:none) and (pointer:coarse){
@@ -502,6 +594,8 @@ input[type=file]{display:none}
   color:rgba(255,255,255,0.8)!important;
 }
 .tbtn-action:hover{background:rgba(196,150,58,0.22)!important;}
+.tbtn-action.compact-label{font-size:0.5rem;letter-spacing:0.08em;padding:0 0.55rem;gap:0.22rem}
+.tbtn-action.compact-label svg{width:10px;height:10px}
 .tbtn-meeting{
   background:rgba(26,122,74,0.12)!important;
   border-color:rgba(26,122,74,0.35)!important;
@@ -627,26 +721,26 @@ input[type=file]{display:none}
 .email-overlay{position:fixed;inset:0;background:rgba(7,17,29,.62);backdrop-filter:blur(6px);z-index:610;display:flex;align-items:center;justify-content:center;padding:22px}
 .email-modal{width:min(1120px,100%);height:min(820px,92dvh);background:var(--cream);border-radius:14px;box-shadow:0 28px 90px rgba(0,0,0,.32);display:flex;flex-direction:column;overflow:hidden}
 .email-head{height:60px;background:white;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 18px}
-.email-title{font-family:var(--serif);font-size:1.45rem;color:var(--navy)}.email-sub{font-size:.7rem;color:var(--text-3);margin-top:3px}
+.email-title{font-family:var(--serif);font-size:1.45rem;color:var(--navy)}.email-sub{font-size:.7rem;color:#3E5070;margin-top:3px}
 .email-close{width:32px;height:32px;border:1px solid var(--border-2);border-radius:8px;background:var(--cream-2);color:var(--navy);cursor:pointer}
 .email-tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 14px;background:var(--cream);border-bottom:1px solid var(--border)}
-.email-tabs button{height:30px;border:1px solid var(--border-2);border-radius:999px;background:white;color:var(--text-2);font-size:.55rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;padding:0 10px;cursor:pointer}
+.email-tabs button{height:30px;border:1px solid var(--border-2);border-radius:999px;background:white;color:var(--navy);font-size:.55rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;padding:0 10px;cursor:pointer}
 .email-tabs button.active{background:var(--navy);color:white;border-color:var(--navy)}
 .email-body{flex:1;display:grid;grid-template-columns:360px 1fr;min-height:0}
 .email-list{overflow:auto;border-right:1px solid var(--border);background:var(--cream)}
-.email-item{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;background:white}
+.email-item{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;background:white;color:var(--navy)}
 .email-item:hover,.email-item.active{background:var(--gold-dim)}
 .email-item-top{display:flex;justify-content:space-between;gap:8px;font-size:.62rem;color:var(--gold);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .email-item-subject{font-size:.86rem;color:var(--navy);font-weight:600;line-height:1.35;margin-top:5px}
-.email-item-meta{font-size:.7rem;color:var(--text-3);margin-top:4px;line-height:1.35}
+.email-item-meta{font-size:.7rem;color:#3E5070;margin-top:4px;line-height:1.35}
 .email-detail{overflow:auto;padding:18px}
-.email-card{background:white;border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow-xs)}
+.email-card{background:white;border:1px solid var(--border);border-radius:10px;padding:16px;box-shadow:var(--shadow-xs);color:var(--navy)}
 .email-card h3{font-family:var(--serif);font-size:1.35rem;color:var(--navy);line-height:1.2;margin-bottom:8px}
 .email-pill{display:inline-flex;height:22px;align-items:center;border-radius:999px;background:var(--cream);border:1px solid var(--border);font-size:.52rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:0 8px;color:var(--gold);margin:4px 4px 4px 0}
-.email-reason{font-size:.83rem;line-height:1.55;color:var(--text-2);margin:12px 0;background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:10px}
-.email-preview{white-space:pre-wrap;font-size:.82rem;line-height:1.65;color:var(--text);max-height:220px;overflow:auto;background:var(--cream-2);border-radius:8px;padding:12px;margin-top:10px}
+.email-reason{font-size:.83rem;line-height:1.55;color:#243450;margin:12px 0;background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:10px}
+.email-preview{white-space:pre-wrap;font-size:.82rem;line-height:1.65;color:var(--navy);max-height:220px;overflow:auto;background:var(--cream-2);border-radius:8px;padding:12px;margin-top:10px}
 .email-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.email-actions button{height:31px;border:1px solid var(--border-2);border-radius:8px;background:var(--cream);color:var(--navy);font-size:.55rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:0 10px;cursor:pointer}.email-actions button.primary{border-color:var(--gold-border);background:var(--gold-dim);color:var(--gold)}
-.rule-list{display:grid;gap:8px}.rule-row{background:white;border:1px solid var(--border);border-radius:8px;padding:12px}.rule-row strong{color:var(--navy)}.rule-row div{font-size:.74rem;color:var(--text-3);margin-top:4px}
+.rule-list{display:grid;gap:8px}.rule-row{background:white;border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--navy)}.rule-row strong{color:var(--navy)}.rule-row div{font-size:.74rem;color:#3E5070;margin-top:4px}
 @media(max-width:820px){.email-overlay{padding:10px;align-items:stretch}.email-modal{height:calc(100dvh - 20px)}.email-body{grid-template-columns:1fr}.email-list{max-height:42dvh;border-right:0;border-bottom:1px solid var(--border)}}
 .social-header{
   padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);
@@ -739,6 +833,29 @@ input[type=file]{display:none}
   .val-lantern{transform:scale(.78)}
 }
 
+/* ── READABLE TYPE SCALE ── */
+html{font-size:18px}
+body{font-size:1rem}
+.tb-logo{font-size:1.7rem}
+.tb-tagline,.actor-btn,.owner-badge,.stext,.tb-clock,.tbtn,.stat-label,.lpanel-title,.lpanel-mode,.scard-label,.scard-sub,.scard-link,.cw-label,.cw-action-label,.alert-kicker,.alert-btn,.exec-workspace-kicker,.task-count-pill,.task-actions button,.detail-breadcrumb,.cmsg-meta,.cmsg-copy-visible,.sys-line,.suggestion-label,.ws-section-label,.ws-item-sub,.ws-item-badge,.ws-footer-status,.rpanel-title,.rpanel-link,.day-head,.day-date-num,.emeta,.ebadge,.email-tabs button,.email-pill,.email-actions button,.val-signal-actions button{font-size:max(0.68rem,12px)}
+.mbtn-mode{font-size:0.8rem}
+.stat-num{font-size:2.15rem}
+.fitem-title,.ws-item-title,.etitle,.cw-action-text,.email-item-subject{font-size:1rem}
+.fitem-meta,.day-empty,.rec-hint,.upload-status,.key-meta,.keys-sub,.email-sub,.email-item-meta,.rule-row div,.task-meta,.task-notes{font-size:0.85rem}
+.scard-val{font-size:1.65rem}
+.cw-title{font-size:2.25rem}
+.cw-sub{font-size:1.08rem}
+.alert-title{font-size:1.15rem}
+.alert-copy,.exec-card p,.exec-card li,.email-reason,.email-preview,.task-empty,.val-signal-copy{font-size:0.95rem}
+.exec-workspace-title{font-size:1.8rem}
+.exec-card h3,.task-column-title,.rec-title,.key-card h3{font-size:1.35rem}
+.task-title{font-size:1.05rem}
+.cmsg-bubble{font-size:1.05rem;line-height:1.7}
+.cmd-ta,.chip,.key-field input,.social-textarea,.social-preview{font-size:1rem}
+.email-title,.keys-title{font-size:1.65rem}
+.email-card h3{font-size:1.55rem}
+.val-signal-title{font-size:1.25rem}
+
 /* Emergency contrast guard: keep light dashboard surfaces readable during demos. */
 :root{
   --text:#111827;
@@ -813,6 +930,10 @@ input[type=file]{display:none}
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg></div>
           <div class="ws-item-text"><div class="ws-item-title">Followups</div><div class="ws-item-sub" id="wsFollowupsSub">Unread messages</div></div>
           <div class="ws-item-badge" id="wsFollowupsBadge" style="display:none">0</div>
+        </div>
+        <div class="ws-item" onclick="openEmailIntelligence()">
+          <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg></div>
+          <div class="ws-item-text"><div class="ws-item-title">Email AI</div><div class="ws-item-sub">Gmail triage and drafts</div></div>
         </div>
         <div class="ws-item" onclick="wsNav('approvals')">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h3.75c.621 0 1.125.504 1.125 1.125v1.5h3.375c.621 0 1.125.504 1.125 1.125v14.625c0 .621-.504 1.125-1.125 1.125H5.625A1.125 1.125 0 014.5 20.625V6c0-.621.504-1.125 1.125-1.125H9v-1.5c0-.621.504-1.125 1.125-1.125z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 13.5l2.25 2.25L15.75 9"/></svg></div>
@@ -894,21 +1015,29 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
       Chat
     </button>
-    <button class="tbtn tbtn-action" onclick="startSocialPost()" title="Create a social media post">
+    <button class="tbtn tbtn-action" onclick="openRelationshipReview()" title="Open contacts and relationship intelligence">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
-      Post
+      Contacts
     </button>
-    <button class="tbtn tbtn-action" onclick="refreshGhlCalendar()" title="Refresh GHL Calendar">
+    <button class="tbtn tbtn-action" onclick="openMeetingBriefing()" title="Open meeting briefing workspace">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0118.75 20.25H5.25a1.5 1.5 0 01-1.5-1.5v-12a1.5 1.5 0 011.5-1.5z"/></svg>
-      Calendar
+      Meetings
     </button>
-    <button class="tbtn tbtn-action" onclick="connectGoogleCalendar()" title="Connect Mark's Google Calendar">
+    <button class="tbtn tbtn-action compact-label" onclick="openEmailIntelligence()" title="Open Email AI for Gmail triage, replies, and follow-up suggestions">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
+      Email AI
+    </button>
+    <button class="tbtn tbtn-action compact-label" onclick="connectGmail()" title="Connect Gmail to activate Email AI">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+      Connect Gmail
+    </button>
+    <button class="tbtn tbtn-action" onclick="openKeysPanel()" title="Open settings and integration keys">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M4.5 8.25h15M6 5.25h12A1.5 1.5 0 0119.5 6.75v11.5A1.5 1.5 0 0118 19.75H6a1.5 1.5 0 01-1.5-1.5V6.75A1.5 1.5 0 016 5.25z"/></svg>
-      Google
+      Settings
     </button>
-    <button class="tbtn tbtn-action" onclick="startLeadResearch()" title="Research and structure a lead for GHL">
+    <button class="tbtn tbtn-action" onclick="closeDetail()" title="Return home">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.63 8.41m5.96 5.96a14.98 14.98 0 01-5.84 2.58m-.12-8.54A6 6 0 002.25 14.25h4.8m2.58-5.84A14.98 14.98 0 002.25 2.25 14.98 14.98 0 0014.37 8.41"/></svg>
-      Lead Scrape
+      Home
     </button>
     <button class="tbtn tbtn-meeting" id="meetingModeBtn" onclick="toggleMeetingMode()" title="Meeting Mode — VAL listens quietly, say 'VAL' to engage">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>
@@ -939,7 +1068,7 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.178-.43.326-.67.442-.745.361-1.451.999-1.451 1.827v.75M12 17.25h.008v.008H12v-.008z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       Guide
     </button>
-    <button class="tbtn" onclick="openKeysPanel()" title="Register integration keys">
+    <button class="tbtn" id="keysTopButton" onclick="openKeysPanel()" title="Register integration keys">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 11.77 2.01l-7.51 7.51H6.75v2.25H4.5v2.25H2.25v-3.18l8.49-8.49a3 3 0 015.01-2.35z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 6h.008v.008H15V6z"/></svg>
       Register Your Keys
     </button>
@@ -1046,57 +1175,45 @@ input[type=file]{display:none}
     <!-- Welcome state -->
     <div class="center-welcome" id="centerWelcome">
       <div class="cw-label">Executive Command Center</div>
-      <div class="cw-title">Command VAL</div>
-      <div class="cw-sub">Your intelligence layer is active. Issue a directive or review signals from the feed.</div>
-      <div class="cw-actions">
-        <div class="cw-action" onclick="ask('Draft a follow up to my most recent lead')">
-          <div class="cw-action-label">Draft</div>
-          <div class="cw-action-text">Follow-up to latest lead</div>
-        </div>
-        <div class="cw-action" onclick="startLeadResearch()">
-          <div class="cw-action-label">GOALL</div>
-          <div class="cw-action-text">Lead Scrape</div>
-        </div>
-        <div class="cw-action" onclick="runValAction('daily_command','Start My Day')">
-          <div class="cw-action-label">Command</div>
-          <div class="cw-action-text">Start my day</div>
-        </div>
-        <div class="cw-action" onclick="runValAction('what_now','What Should I Do Now?')">
-          <div class="cw-action-label">Decide</div>
-          <div class="cw-action-text">What now?</div>
-        </div>
-        <div class="cw-action" onclick="startOnboardingProfile()">
-          <div class="cw-action-label">Profile</div>
-          <div class="cw-action-text">Tell me about yourself</div>
-        </div>
-        <div class="cw-action" onclick="openRelationshipReview()">
-          <div class="cw-action-label">Radar</div>
-          <div class="cw-action-text">Relationship review</div>
-        </div>
-        <div class="cw-action" onclick="runValAction('pre_meeting_brief','Pre-Meeting Brief','Prepare the next meeting with attendee research, relationship context, open promises, and suggested talking points.')">
-          <div class="cw-action-label">Prep</div>
-          <div class="cw-action-text">Next meeting</div>
-        </div>
-        <div class="cw-action" onclick="runValAction('executive_review','Executive Review','Draft all followups first, then prep for the next meeting, then clean up the task list.')">
-          <div class="cw-action-label">Review</div>
-          <div class="cw-action-text">Executive review</div>
-        </div>
-        <div class="cw-action" onclick="openApprovalQueue()">
-          <div class="cw-action-label">Approve</div>
-          <div class="cw-action-text">Draft queue</div>
-        </div>
-        <div class="cw-action" onclick="openEmailIntelligence()">
-          <div class="cw-action-label">Email</div>
-          <div class="cw-action-text">Email intelligence</div>
-        </div>
-        <div class="cw-action" onclick="openIntegrationStatus()">
-          <div class="cw-action-label">Status</div>
-          <div class="cw-action-text">Integration status</div>
-        </div>
-        <div class="cw-action" onclick="runValAction('saved_time_leverage','Use My Saved Time','Suggest the highest-impact things I could do with the time, energy, and cognitive load VAL has saved me.')">
-          <div class="cw-action-label">Leverage</div>
-          <div class="cw-action-text">Use saved time</div>
-        </div>
+      <div class="cw-title">What VAL noticed</div>
+      <div class="cw-sub">Start with the signals that need judgment or action. Open the workspace, let VAL draft the next move, or dismiss what does not matter.</div>
+      <div class="alert-board" id="alertBoard">
+        <section class="alert-section primary">
+          <div class="alert-kicker">Priority Review</div>
+          <div class="alert-title">Your day has open loops across meetings, tasks, relationships, and pipeline.</div>
+          <div class="alert-copy">VAL checked the dashboard context and can turn the scattered signals into a ranked executive action list.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openPriorityReview()">Do It</button><button class="alert-btn" onclick="openPriorityReview()">Show Me</button><button class="alert-btn" onclick="snoozeAlert(this)">Later</button></div>
+        </section>
+        <section class="alert-section">
+          <div class="alert-kicker">Relationship Alert</div>
+          <div class="alert-title">A high-value relationship may need follow-up.</div>
+          <div class="alert-copy">Why it matters: relationship drift creates missed revenue, weak referrals, and forgotten commitments.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openRelationshipReview()">Review</button><button class="alert-btn" onclick="ask('Draft outreach for the highest priority relationship that needs follow-up.')">Draft Message</button><button class="alert-btn" onclick="snoozeAlert(this)">Snooze</button></div>
+        </section>
+        <section class="alert-section">
+          <div class="alert-kicker">Email Alert</div>
+          <div class="alert-title">Messages may need response or tracking.</div>
+          <div class="alert-copy">VAL can separate replies, waiting-on-response threads, draft suggestions, and low-priority noise.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openEmailIntelligence()">Open Email AI</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="dismissAlert(this)">Dismiss</button></div>
+        </section>
+        <section class="alert-section">
+          <div class="alert-kicker">Meeting Alert</div>
+          <div class="alert-title">The next meeting deserves a briefing.</div>
+          <div class="alert-copy">VAL can pull attendees, calendar context, transcripts, emails, open loops, and suggested questions.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openMeetingBriefing()">Prepare Briefing</button><button class="alert-btn" onclick="openMeetingBriefing()">Show Me</button><button class="alert-btn" onclick="snoozeAlert(this)">Later</button></div>
+        </section>
+        <section class="alert-section">
+          <div class="alert-kicker">Commitment Alert</div>
+          <div class="alert-title">Promised follow-ups and tasks should be checked.</div>
+          <div class="alert-copy">VAL can connect tasks to people, meetings, drafts, and overdue commitments so nothing sits passive.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openPriorityReview()">Create Task</button><button class="alert-btn" onclick="askTasks()">Review</button><button class="alert-btn" onclick="dismissAlert(this)">Never Ask Again</button></div>
+        </section>
+        <section class="alert-section">
+          <div class="alert-kicker">Opportunity Alert</div>
+          <div class="alert-title">Pipeline and lead signals may point to hidden revenue.</div>
+          <div class="alert-copy">VAL can inspect stalled opportunities, suggested introductions, lead scrape results, and next best actions.</div>
+          <div class="alert-actions"><button class="alert-btn primary" onclick="openOpportunityIntelligence()">Do It</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="snoozeAlert(this)">Snooze</button></div>
+        </section>
       </div>
     </div>
 
@@ -1114,7 +1231,7 @@ input[type=file]{display:none}
     <!-- Command input (always visible) -->
     <div class="cmd-area">
       <div class="cmd-box">
-        <button class="cbtn" onclick="document.getElementById('fileIn').click()">
+        <button class="cbtn" onclick="openFilePicker()" title="Upload manuscript or document">
           <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13"/></svg>
         </button>
         <button class="cbtn" id="micBtn" onclick="toggleRecording()">
@@ -1125,6 +1242,7 @@ input[type=file]{display:none}
           <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
         </button>
       </div>
+      <div id="uploadStatus" class="upload-status"></div>
     </div>
   </div>
 
@@ -1156,7 +1274,7 @@ input[type=file]{display:none}
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-var VAL_CONFIG = {clientName:'VAL User',clientSlug:'val-core',brandName:'VAL',publicBaseUrl:'',timezone:'America/New_York'};
+var VAL_CONFIG = {clientName:'VAL User',clientSlug:'val-core',brandName:'VAL',publicBaseUrl:'',timezone:'America/New_York',projectName:'',projectType:'',leadProfile:'goall'};
 var ASSISTANT_NAME = 'val-core-transcripts';
 var DG_KEY         = 'c6b3c32aa547322ca7f38809d90b50581f7af294';
 var DG_VOICE       = 'aura-arcas-en';
@@ -1167,14 +1285,16 @@ var CONVERSATION_HOOK = PROXY+'/api/val/conversations';
 var HOOK_MEETINGS = PROXY+'/api/meetings';
 var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
+var HOOK_SIDEBAR_CALENDAR = '/api/calendar/sidebar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
-var keyProviderLabels={openai:'OpenAI',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',rocketreach:'RocketReach'};
+var keyProviderLabels={openai:'OpenAI',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',apollo:'Apollo',rocketreach:'RocketReach'};
 var keyProviderFields={
   openai:[['apiKey','API key','password'],['preferredModel','Preferred model','text']],
   ghl:[['apiKey','GHL API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
   microsoft_oauth:[],
   google_oauth:[],
   outscraper:[['apiKey','API key','password']],
+  apollo:[['apiKey','API key','password']],
   rocketreach:[['apiKey','API key','password']]
 };
 var integrationCredentials=[];
@@ -1198,14 +1318,14 @@ function openKeysPanel(){
   loadKeysPanel();
 }
 function loadKeysPanel(){
-  fetch(PROXY+'/api/integrations/credentials').then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/integrations/credentials').then(function(d){
     integrationCredentials=d.credentials||[];integrationOauth=d.oauth||{};
     renderKeysPanel('');
   }).catch(function(e){renderKeysPanel('Could not load keys: '+e.message);});
 }
 function renderKeysPanel(message){
   var body=document.getElementById('keysBody');if(!body)return;
-  var providers=['openai','ghl','microsoft_oauth','google_oauth','outscraper','rocketreach'];
+  var providers=['openai','ghl','microsoft_oauth','google_oauth','outscraper','apollo','rocketreach'];
   body.innerHTML='<div class="keys-note">'+(message||'Railway variables still work as system fallbacks. Use this area for client-owned keys that should travel with this VAL account.')+'</div>'+providers.map(renderKeyCard).join('');
 }
 function renderKeyCard(provider){
@@ -1224,36 +1344,124 @@ function renderKeyCard(provider){
 function saveProviderKeys(provider){
   var fields={};
   (keyProviderFields[provider]||[]).forEach(function(f){var el=document.getElementById('key_'+provider+'_'+f[0]);if(el&&el.value.trim())fields[f[0]]=el.value.trim();});
-  fetch(PROXY+'/api/integrations/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider,fields:fields})})
-    .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Save failed');return d;});})
+  apiFetch(PROXY+'/api/integrations/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider,fields:fields})})
     .then(function(){loadKeysPanel();addSys('Keys saved securely.');})
     .catch(function(e){renderKeysPanel(e.message);});
 }
 function deleteProviderKeys(provider){
   var rows=(integrationCredentials||[]).filter(function(c){return c.provider===provider;});
-  Promise.all(rows.map(function(c){return fetch(PROXY+'/api/integrations/credentials/'+encodeURIComponent(c.id),{method:'DELETE'});}))
+  Promise.all(rows.map(function(c){return apiFetch(PROXY+'/api/integrations/credentials/'+encodeURIComponent(c.id),{method:'DELETE'});}))
     .then(function(){loadKeysPanel();addSys('Keys reset.');});
 }
 function testProvider(provider){
-  fetch(PROXY+'/api/integrations/test/'+encodeURIComponent(provider),{method:'POST'})
-    .then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
-    .then(function(result){loadKeysPanel();addSys((result.data.message||result.data.error||'Test complete'));})
+  apiFetch(PROXY+'/api/integrations/test/'+encodeURIComponent(provider),{method:'POST'})
+    .then(function(data){loadKeysPanel();addSys((data.message||data.error||'Test complete'));})
     .catch(function(e){renderKeysPanel(e.message);});
 }
 function disconnectOauth(provider){
-  fetch(PROXY+'/api/integrations/oauth/'+encodeURIComponent(provider),{method:'DELETE'})
-    .then(function(){loadKeysPanel();addSys(provider+' disconnected.');});
+  apiFetch(PROXY+'/api/integrations/oauth/'+encodeURIComponent(provider),{method:'DELETE'})
+    .then(function(result){
+      loadKeysPanel();
+      addSys(provider+' disconnected. Removed '+(result.deleted||0)+' saved connection record'+((result.deleted||0)===1?'':'s')+'.');
+    })
+    .catch(function(err){addSys('Could not disconnect '+provider+': '+(err.message||err));});
+}
+function closeExecutiveWorkspace(id){
+  var el=document.getElementById(id||'executiveWorkspaceOverlay');
+  if(el)el.remove();
+}
+function openExecutiveWorkspace(opts){
+  opts=opts||{};
+  var id=opts.id||'executiveWorkspaceOverlay';
+  closeExecutiveWorkspace(id);
+  var overlay=document.createElement('div');
+  overlay.id=id;
+  overlay.className='exec-workspace-overlay';
+  overlay.onclick=function(e){if(e.target===overlay)closeExecutiveWorkspace(id);};
+  overlay.innerHTML='<div class="exec-workspace-modal" role="dialog" aria-modal="true" aria-label="'+docSafe(opts.title||'Workspace')+'">'
+    +'<div class="exec-workspace-head"><div><div class="exec-workspace-kicker">Executive Workspace</div><div class="exec-workspace-title">'+docSafe(opts.title||'Workspace')+'</div></div><button class="exec-workspace-close" onclick="closeExecutiveWorkspace(\''+id+'\')" aria-label="Close">x</button></div>'
+    +'<div class="exec-workspace-body" id="'+id+'Body">'+(opts.body||'')+'</div>'
+    +'<div class="exec-workspace-footer" id="'+id+'Footer">'+(opts.footer||'<button class="alert-btn" onclick="closeExecutiveWorkspace(\''+id+'\')">Close</button>')+'</div>'
+    +'</div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+function execEmptyState(title,message,actions){
+  return '<div class="exec-card" style="max-width:720px"><h3>'+docSafe(title)+'</h3><p>'+docSafe(message)+'</p><div class="alert-actions" style="margin-top:12px">'+(actions||'')+'</div></div>';
+}
+function snoozeAlert(btn){
+  var card=btn&&btn.closest?btn.closest('.alert-section'):null;
+  if(card){card.style.opacity='.45';card.style.order='20';}
+  addSys('Alert snoozed for this session.');
+}
+function dismissAlert(btn){
+  var card=btn&&btn.closest?btn.closest('.alert-section'):null;
+  if(card)card.remove();
+  addSys('Alert dismissed.');
+}
+function openPriorityReview(){
+  var open=valTasks.filter(function(t){return !t.completed;});
+  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<new Date();});
+  var meetings=(dashData.appointments||dashData.calendarEvents||[]).slice(0,5);
+  var opps=(dashData.opportunities||[]).slice(0,5);
+  var drafts=valDocs.filter(function(d){return d.status==='draft';});
+  var body='<div class="exec-workspace-grid">'
+    +'<section class="exec-card"><h3>Top Priorities</h3><p>'+(overdue.length?overdue.length+' overdue task'+(overdue.length===1?'':'s')+' need a decision.':'No overdue tasks found.')+'</p><ul>'+open.slice(0,5).map(function(t){return '<li>'+docSafe(t.title)+'</li>';}).join('')+'</ul></section>'
+    +'<section class="exec-card"><h3>Email Priorities</h3><p>'+(dashData.followups?dashData.followups+' unread conversation'+(dashData.followups===1?'':'s')+' should be triaged.':'No unread communication count is currently available.')+'</p></section>'
+    +'<section class="exec-card"><h3>Relationship Priorities</h3><p>Open Relationship Review to rank cooling, high-leverage, and momentum relationships from recent evidence.</p></section>'
+    +'<section class="exec-card"><h3>Meetings</h3><ul>'+(meetings.length?meetings.map(function(m){return '<li>'+docSafe(eventTitle(m))+'</li>';}).join(''):'<li>No meeting data loaded yet.</li>')+'</ul></section>'
+    +'<section class="exec-card"><h3>Commitments</h3><p>'+(open.length?open.length+' active task'+(open.length===1?'':'s')+' are in memory.':'No remembered tasks yet.')+'</p></section>'
+    +'<section class="exec-card"><h3>Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline opportunities loaded yet.</li>')+'</ul></section>'
+    +'<section class="exec-card"><h3>Recommended Actions</h3><p>Start with the highest-friction item: overdue commitments, next meeting prep, then relationship drift.</p><p>'+drafts.length+' draft'+(drafts.length===1?'':'s')+' waiting for approval.</p></section>'
+    +'</div>';
+  openExecutiveWorkspace({id:'priorityWorkspace',title:'Priority Review',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Email Intelligence</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
+}
+function openLeadIntelligence(){
+  var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Search Controls</h3><p>Use Lead Scrape to search by industry, market, company size, and client lead profile.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Previewed leads will appear in chat before import. VAL will show score, contactability, automation tag, and import actions when data returns.</p></section><section class="exec-card"><h3>Configuration</h3><p>If Level 1, Level 2, or Level 3 checks fail, add or test keys in Register Your Keys.</p></section></div>';
+  openExecutiveWorkspace({id:'leadWorkspace',title:'Lead Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="startLeadResearch()">Do It</button><button class="alert-btn" onclick="openKeysPanel()">Register Your Keys</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'leadWorkspace\')">Close</button>'});
+}
+function openMeetingBriefing(){
+  var meetings=(dashData.appointments||dashData.calendarEvents||[]);
+  var next=meetings.map(function(ev){return {ev:ev,dt:eventStart(ev)};}).filter(function(x){return x.dt&&x.dt>=new Date();}).sort(function(a,b){return a.dt-b.dt;})[0];
+  if(!next){
+    openExecutiveWorkspace({id:'meetingWorkspace',title:'Meeting Briefing',body:execEmptyState('No upcoming meeting found','VAL checked contacts, meetings, transcripts, emails, and memory. Connect a calendar or add a meeting to activate briefing intelligence.'),footer:'<button class="alert-btn primary" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'meetingWorkspace\')">Close</button>'});
+    return;
+  }
+  var ev=next.ev;
+  var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Upcoming Meeting</h3><p>'+docSafe(eventTitle(ev))+'</p><p>'+next.dt.toLocaleString()+'</p></section><section class="exec-card"><h3>Attendee Context</h3><p>Open the full briefing to pull attendee intelligence, past meetings, transcripts, emails, and open loops.</p></section><section class="exec-card"><h3>Suggested Questions</h3><ul><li>What decision needs to happen?</li><li>What promise is still open?</li><li>What would make this conversation high leverage?</li></ul></section></div>';
+  window._valNextBriefingEvent=ev;
+  openExecutiveWorkspace({id:'meetingWorkspace',title:'Meeting Briefing',body:body,footer:'<button class="alert-btn primary" onclick="closeExecutiveWorkspace(\'meetingWorkspace\');openCalendarEvent(window._valNextBriefingEvent)">Prepare Briefing</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'meetingWorkspace\')">Close</button>'});
+}
+function openExecutiveMemory(){
+  openExecutiveWorkspace({id:'memoryWorkspace',title:'Executive Memory',body:'<div class="exec-workspace-grid"><section class="exec-card"><h3>Remembered Commitments</h3><p>'+(valTasks.length?valTasks.length+' task records stored.':'No remembered commitments found yet.')+'</p></section><section class="exec-card"><h3>Relationship Memory</h3><p>Use Relationship Review to inspect relationship memory and evidence.</p></section><section class="exec-card"><h3>Context Search</h3><p>Search transcripts, uploaded files, meeting notes, and decisions.</p></section></div>',footer:'<button class="alert-btn primary" onclick="searchValMemory(prompt(\'Search memory for what?\')||\'\')">Search</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'memoryWorkspace\')">Close</button>'});
+}
+function openContactTimeline(){
+  openExecutiveWorkspace({id:'timelineWorkspace',title:'Contact Timeline',body:execEmptyState('Choose a contact','No relationship context found yet. VAL checked contacts, meetings, transcripts, emails, and memory. Open Relationship Review to select a person and inspect their profile.'),footer:'<button class="alert-btn primary" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'timelineWorkspace\')">Close</button>'});
+}
+function openOpportunityIntelligence(){
+  var opps=(dashData.opportunities||[]).slice(0,8);
+  var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Hidden Opportunities</h3><p>Relationship and pipeline signals can reveal revenue paths that are not explicit deals yet.</p></section><section class="exec-card"><h3>Stalled Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline data loaded yet.</li>')+'</ul></section><section class="exec-card"><h3>Next Best Action</h3><p>Review pipeline, draft follow-up, or create a task tied to the opportunity.</p></section></div>';
+  openExecutiveWorkspace({id:'opportunityWorkspace',title:'Opportunity Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="askPipeline()">Review Pipeline</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'opportunityWorkspace\')">Close</button>'});
 }
 var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null};
 function openEmailIntelligence(){
-  var existing=document.getElementById('emailOverlay');if(existing)existing.remove();
-  var overlay=document.createElement('div');overlay.id='emailOverlay';overlay.className='email-overlay';
-  overlay.innerHTML=`<div class="email-modal"><div class="email-head"><div><div class="email-title">Email Intelligence</div><div class="email-sub">Review first. Automate only after confirmation.</div></div><button class="email-close" onclick="document.getElementById('emailOverlay').remove()">x</button></div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading email intelligence...</div></div><div class="email-detail" id="emailDetail"></div></div></div>`;
-  document.body.appendChild(overlay);
+  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
+function connectGmail(){
+  window.open(PROXY+'/auth/google','_blank','noopener');
+  addSys('Opening Gmail connection. Choose the Google account, approve Gmail permissions, then return here and click Email AI.');
+}
 function loadEmailIntelligence(){
-  fetch(PROXY+'/api/email/intelligence?limit=30').then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/email/intelligence?limit=30').then(function(d){
+    if(!d.ok){
+      emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
+      var msg=(d.errors&&d.errors.length?d.errors.join('<br>'):(d.error||'Connect Gmail to activate Email AI.'));
+      document.getElementById('emailTabs').innerHTML='';
+      document.getElementById('emailList').innerHTML='<div class="email-item active"><div class="email-item-subject">Gmail needs connection</div><div class="email-item-meta">'+docSafe(msg)+'</div></div>';
+      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+      return;
+    }
     emailIntel.emails=d.emails||[];emailIntel.rules=d.rules||[];emailIntel.summary=d.summary||{};
     emailIntel.selected=emailIntel.emails[0]||null;
     renderEmailIntelligence();
@@ -1295,8 +1503,8 @@ function renderEmailDetail(e){
   detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(e.classification||'unknown')}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why VAL flagged it:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>Recommended action:</strong> ${docSafe(e.recommendedAction||'Review this email.')}</div><div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">Draft Reply</button><button onclick="emailAction('forward')">Forward</button><button onclick="confirmIgnoreFuture()">Ignore in Future</button><button onclick="confirmAutoNext()">Do This Automatically Next Time</button><button onclick="emailAction('track_response')">Track Response</button><button onclick="emailAction('task_created')">Add Task</button></div><div class="email-preview">${docSafe(e.bodyPreview||e.snippet||'No preview available.')}</div></div>`;
 }
 function emailAction(action){
-  fetch(PROXY+'/api/email/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actionType:action,email:emailIntel.selected})})
-    .then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/email/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actionType:action,email:emailIntel.selected})})
+    .then(function(d){
       if(d.draft)addMsg('Draft reply prepared:\n\nSubject: '+d.draft.subject+'\n\n'+d.draft.body,false);
       else if(d.forwardDraft)addMsg('Forward draft prepared:\n\nTo: '+(d.forwardDraft.to||'[choose recipient]')+'\nSubject: '+d.forwardDraft.subject+'\n\n'+d.forwardDraft.body,false);
       else if(d.followup)addMsg('Follow-up tracked: '+d.followup.title+' in '+d.followup.dueInBusinessDays+' business days.',false);
@@ -1309,16 +1517,16 @@ function confirmAutoNext(){
   if(/forward/i.test(e.recommendedAction||''))forwardTo=prompt('Forward future emails from '+(e.from?.email||'this sender')+' to which email?')||'';
   var text='Confirm automation rule\\n\\nTrigger:\\nFuture emails from '+(e.from?.email||'this sender')+'\\n\\nAction:\\n'+(e.recommendedAction||'Repeat this recommended action')+'\\n\\nApproval:\\nVAL will do this automatically unless sensitive content is detected.\\n\\nSave this rule?';
   if(!confirm(text))return;
-  fetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,action:e.recommendedAction,forwardTo:forwardTo,approvalMode:'always_auto'})})
-    .then(function(r){return r.json();}).then(function(d){if(d.ok){addSys('Email automation rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed');});
+  apiFetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,action:e.recommendedAction,forwardTo:forwardTo,approvalMode:'always_auto'})})
+    .then(function(d){if(d.ok){addSys('Email automation rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed');});
 }
 function confirmIgnoreFuture(){
   var e=emailIntel.selected;if(!e)return;
   var whole=confirm('Ignore the whole domain?\\n\\nOK = Entire domain\\nCancel = This sender only');
   var mode=whole?'ignore_domain':'ignore_sender';
   if(!confirm('Just to confirm, should VAL move future emails from this '+(whole?'domain':'sender')+' into low priority automatically?'))return;
-  fetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,mode:mode,approvalMode:'always_auto'})})
-    .then(function(r){return r.json();}).then(function(d){if(d.ok){addSys('Ignore rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed');});
+  apiFetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,mode:mode,approvalMode:'always_auto'})})
+    .then(function(d){if(d.ok){addSys('Ignore rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed');});
 }
 function renderEmailRules(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
@@ -1327,26 +1535,23 @@ function renderEmailRules(){
   detail.innerHTML='<div class="email-card"><h3>Saved Rules</h3><div class="rule-list">'+(rules.length?rules.map(function(r){return `<div class="rule-row"><strong>${docSafe(r.ruleName||r.rule_name)}</strong><div>${docSafe(r.ruleType||r.rule_type)} · ${docSafe(r.approvalMode||r.approval_mode)} · ${r.isActive!==false?'Active':'Disabled'}</div><div>Trigger: ${docSafe(JSON.stringify(r.conditions||r.conditions_json||{}))}</div><div>Action: ${docSafe(JSON.stringify(r.actions||r.actions_json||{}))}</div><div class="email-actions"><button onclick="toggleEmailRule('${r.id}',${r.isActive!==false?'false':'true'})">${r.isActive!==false?'Disable Rule':'Enable Rule'}</button></div></div>`;}).join(''):'<div class="email-reason">No saved rules yet.</div>')+'</div></div>';
 }
 function toggleEmailRule(id,isActive){
-  fetch(PROXY+'/api/email/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({isActive:isActive})}).then(loadEmailIntelligence);
+  apiFetch(PROXY+'/api/email/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({isActive:isActive})}).then(loadEmailIntelligence);
 }
 function renderRuleSuggestions(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
   list.innerHTML='<div class="email-item">Rule Suggestions</div>';
-  fetch(PROXY+'/api/email/rule-suggestions/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/email/rule-suggestions/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(d){
     var s=d.suggestions||[];
     detail.innerHTML='<div class="email-card"><h3>Rule Suggestions</h3>'+(s.length?s.map(function(x,i){window._emailSuggestions=window._emailSuggestions||[];window._emailSuggestions[i]=x;return `<div class="rule-row"><strong>${docSafe(x.plainEnglish)}</strong><div>${docSafe(x.confirmationQuestion)}</div><div>Evidence: ${docSafe((x.evidence||[]).join(', '))}</div><div class="email-actions"><button class="primary" onclick="saveSuggestedRule(window._emailSuggestions[${i}])">Save Rule</button></div></div>`;}).join(''):'<div class="email-reason">VAL has not seen enough repeated behavior to suggest rules yet.</div>')+'</div>';
   });
 }
 function saveSuggestedRule(s){
-  fetch(PROXY+'/api/email/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruleName:s.plainEnglish,ruleType:s.suggestedRuleType,conditions:s.conditions,actions:s.actions,approvalMode:'always_auto',createdFrom:'pattern_suggestion'})}).then(function(){addSys('Suggested rule saved.');loadEmailIntelligence();});
+  apiFetch(PROXY+'/api/email/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruleName:s.plainEnglish,ruleType:s.suggestedRuleType,conditions:s.conditions,actions:s.actions,approvalMode:'always_auto',createdFrom:'pattern_suggestion'})}).then(function(){addSys('Suggested rule saved.');loadEmailIntelligence();});
 }
 var relationshipReview={data:null,tab:'top',selected:null};
 function openRelationshipReview(){
-  var existing=document.getElementById('relationshipOverlay');if(existing)existing.remove();
-  var overlay=document.createElement('div');overlay.id='relationshipOverlay';overlay.className='email-overlay';
-  overlay.innerHTML=`<div class="email-modal"><div class="email-head"><div><div class="email-title">Relationship Review</div><div class="email-sub">Who matters, why now, and what should happen next.</div></div><button class="email-close" onclick="document.getElementById('relationshipOverlay').remove()">x</button></div><div class="email-tabs" id="relationshipTabs"></div><div class="email-body"><div class="email-list" id="relationshipList"><div class="email-item">Reviewing relationships...</div></div><div class="email-detail" id="relationshipDetail"></div></div></div>`;
-  document.body.appendChild(overlay);
-  fetch(PROXY+'/api/relationships/review?windowDays=7').then(function(r){return r.json();}).then(function(d){
+  openExecutiveWorkspace({id:'relationshipOverlay',title:'Relationship Review',body:'<div class="email-tabs" id="relationshipTabs"></div><div class="email-body"><div class="email-list" id="relationshipList"><div class="email-item">Reviewing relationships...</div></div><div class="email-detail" id="relationshipDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="relationshipAction(\'draft_message\')">Draft Message</button><button class="alert-btn" onclick="relationshipAction(\'create_task\')">Create Task</button><button class="alert-btn" onclick="openContactTimeline()">Contact Timeline</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'relationshipOverlay\')">Close</button>'});
+  apiFetch(PROXY+'/api/relationships/review?windowDays=7').then(function(d){
     relationshipReview.data=d;relationshipReview.selected=(d.topRelationshipPriorities||[])[0]||null;renderRelationshipReview();
   }).catch(function(e){document.getElementById('relationshipList').innerHTML='<div class="email-item">Relationship Review failed: '+docSafe(e.message)+'</div>';});
 }
@@ -1404,7 +1609,7 @@ function renderRelationshipSpecial(title,rows,mapper){
 }
 function relationshipAction(action){
   var c=relationshipReview.selected;if(!c)return;
-  fetch(PROXY+'/api/relationships/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,contact:c})}).then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/relationships/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,contact:c})}).then(function(d){
     if(d.draft)addMsg('Draft saved to Approval Queue:\n\nSubject: '+d.draft.subject+'\n\n'+d.draft.body,false);
     else if(d.task)addMsg('Task created: '+d.task.title,false);
     else if(d.content)addMsg(d.content,false);
@@ -1419,12 +1624,12 @@ function showRelationshipProfile(){
 function openIntegrationStatus(){
   var existing=document.getElementById('integrationOverlay');if(existing)existing.remove();
   var overlay=document.createElement('div');overlay.id='integrationOverlay';overlay.className='email-overlay';
-  overlay.innerHTML=`<div class="email-modal"><div class="email-head"><div><div class="email-title">Integration Status</div><div class="email-sub">Live diagnostic view for Google, Gmail, Calendar, transcripts, tasks, and drafts.</div></div><button class="email-close" onclick="document.getElementById('integrationOverlay').remove()">x</button></div><div class="email-body"><div class="email-list" id="integrationList"><div class="email-item">Running checks...</div></div><div class="email-detail" id="integrationDetail"></div></div></div>`;
+  overlay.innerHTML=`<div class="email-modal"><div class="email-head"><div><div class="email-title">Integration Status</div><div class="email-sub">Live diagnostic view for Google, Microsoft Outlook, transcripts, tasks, and drafts.</div></div><button class="email-close" onclick="document.getElementById('integrationOverlay').remove()">x</button></div><div class="email-body"><div class="email-list" id="integrationList"><div class="email-item">Running checks...</div></div><div class="email-detail" id="integrationDetail"></div></div></div>`;
   document.body.appendChild(overlay);
   Promise.all([
-    fetch(PROXY+'/api/integrations/health').then(function(r){return r.json();}),
-    fetch(PROXY+'/api/gmail/debug').then(function(r){return r.json();}).catch(function(e){return {ok:false,error:e.message};}),
-    fetch(PROXY+'/api/val/transcripts/webhook').then(function(r){return r.json();}).catch(function(e){return {ok:false,error:e.message};})
+    apiFetch(PROXY+'/api/integrations/health'),
+    apiFetch(PROXY+'/api/gmail/debug').catch(function(e){return {ok:false,error:e.message};}),
+    apiFetch(PROXY+'/api/val/transcripts/webhook').catch(function(e){return {ok:false,error:e.message};})
   ]).then(function(results){renderIntegrationStatus(results[0]||{},results[1]||{},results[2]||{});})
     .catch(function(e){document.getElementById('integrationList').innerHTML='<div class="email-item">Integration check failed: '+docSafe(e.message)+'</div>';});
 }
@@ -1433,31 +1638,47 @@ function statusLine(label,value,good){
 }
 function renderIntegrationStatus(health,gmail,webhook){
   var list=document.getElementById('integrationList'),detail=document.getElementById('integrationDetail');
-  var g=health.google||{}, cal=g.calendar||{}, gm=g.gmail||{}, tr=health.transcripts||{}, ac=health.actions||{};
+  var g=health.google||{}, cal=g.calendar||{}, gm=health.gmail||g.gmail||{}, gd=g.docs||{}, m=health.microsoft||{}, mcal=m.calendar||{}, tr=health.transcripts||{}, ac=health.actions||{};
   list.innerHTML=[
     '<div class="email-item active"><div class="email-item-subject">Google</div><div class="email-item-meta">'+(g.connected?'Connected':'Reconnect required')+'</div></div>',
+    '<div class="email-item"><div class="email-item-subject">Microsoft Outlook</div><div class="email-item-meta">'+(m.connected?'Connected':m.configured?'Connect required':'Not configured')+'</div></div>',
     '<div class="email-item"><div class="email-item-subject">Gmail</div><div class="email-item-meta">'+(gm.enabled?'Enabled':'Missing auth or scopes')+'</div></div>',
-    '<div class="email-item"><div class="email-item-subject">Calendar</div><div class="email-item-meta">'+(cal.next7DaysCount||0)+' events next 7 days</div></div>',
+    '<div class="email-item"><div class="email-item-subject">Google Docs</div><div class="email-item-meta">'+(gd.enabled?'Create/update ready':'Reconnect required')+'</div></div>',
+    '<div class="email-item"><div class="email-item-subject">Sidebar Calendar</div><div class="email-item-meta">'+((cal.next7DaysCount||0)+(mcal.next7DaysCount||0))+' personal events next 7 days</div></div>',
     '<div class="email-item"><div class="email-item-subject">Transcripts</div><div class="email-item-meta">'+(tr.last7DaysCount||0)+' recent, '+(tr.matchedToMeetingsCount||0)+' matched</div></div>',
     '<div class="email-item"><div class="email-item-subject">Webhook URL</div><div class="email-item-meta">'+(webhook.ok?'Ready to copy':'Unavailable')+'</div></div>'
   ].join('');
   var missing=(g.missingScopes||[]).map(function(s){return s.split('/').pop();}).join(', ');
+  var msScopes=(m.scopes||[]).join(', ');
   var errors=(health.errors||[]).concat(gmail.errors||[]).filter(Boolean);
   detail.innerHTML='<div class="email-card"><h3>Connection Checks</h3>'
     +statusLine('Google OAuth',g.connected?'Connected':'Not connected',!!g.connected)
     +statusLine('Refresh token',g.hasRefreshToken?'Stored':'Missing',!!g.hasRefreshToken)
     +statusLine('Token refresh',g.refreshTest||'not tested',g.refreshTest==='passed')
     +statusLine('Missing scopes',missing||'None',!missing)
-    +statusLine('Calendar last 7 days',cal.past7DaysCount||0,true)
-    +statusLine('Calendar next 7 days',cal.next7DaysCount||0,true)
+    +statusLine('Google calendar last 7 days',cal.past7DaysCount||0,true)
+    +statusLine('Google calendar next 7 days',cal.next7DaysCount||0,true)
+    +statusLine('Microsoft configured',m.configured?'Configured':'Not configured',!!m.configured)
+    +statusLine('Microsoft OAuth',m.connected?'Connected':'Not connected',!!m.connected)
+    +statusLine('Microsoft refresh token',m.hasRefreshToken?'Stored':'Missing',!!m.hasRefreshToken)
+    +statusLine('Microsoft token refresh',m.refreshTest||'not tested',m.refreshTest==='passed')
+    +statusLine('Microsoft scopes',msScopes||'None',!!msScopes)
+    +statusLine('Outlook calendar last 7 days',mcal.past7DaysCount||0,!!m.connected)
+    +statusLine('Outlook calendar next 7 days',mcal.next7DaysCount||0,!!m.connected)
     +statusLine('Gmail unread',gm.unreadCount||0,!!gm.enabled)
-    +statusLine('Gmail recent 7 days',gm.recent7DaysCount||0,!!gm.enabled)
+    +statusLine('Gmail recent 7 days',gm.recentInboxCount||gm.recent7DaysCount||0,!!(gm.connected||gm.enabled))
+    +statusLine('Gmail sent 14 days',gm.sentCount||gm.sent14DaysCount||0,!!(gm.connected||gm.enabled))
+    +statusLine('Gmail compose scope',gm.hasComposeScope?'Granted':'Missing',!!gm.hasComposeScope)
     +statusLine('Gmail profile',gmail.profileEmail||gmail.error||'Not available',!!gmail.profileEmail)
+    +statusLine('Google Docs',gd.enabled?'Can create and update Docs':(gd.error||'Reconnect required'),!!gd.enabled)
+    +statusLine('Drive file scope',gd.hasDriveFileScope?'Granted':'Missing',!!gd.hasDriveFileScope)
+    +statusLine('Docs write scope',gd.hasDocumentsScope?'Granted':'Missing',!!gd.hasDocumentsScope)
     +statusLine('Tasks',ac.canCreateTasks?'Can create tasks':'Unavailable',!!ac.canCreateTasks)
     +statusLine('Drafts',ac.canCreateDrafts?'Can create drafts':'Unavailable',!!ac.canCreateDrafts)
+    +statusLine('Google Doc actions',ac.canCreateGoogleDocs?'Ready':'Reconnect Google',!!ac.canCreateGoogleDocs)
     +renderTranscriptWebhook(webhook)
     +(errors.length?'<div class="email-reason"><strong>Errors:</strong><br>'+errors.map(docSafe).join('<br>')+'</div>':'<div class="email-reason">No integration errors reported.</div>')
-    +`<div class="email-actions"><button class="primary" onclick="window.open(PROXY+'/auth/google','_blank','noopener')">Reconnect Google</button><button onclick="openKeysPanel()">Register Your Keys</button></div></div>`;
+    +`<div class="email-actions"><button class="primary" onclick="window.open(PROXY+'/auth/google','_blank','noopener')">Reconnect Google</button><button class="primary" onclick="window.open(PROXY+'/auth/microsoft','_blank','noopener')">Connect Microsoft</button>${VAL_CONFIG.demoMode?'':'<button onclick="openKeysPanel()">Register Your Keys</button>'}</div></div>`;
 }
 function copyText(text,label){
   if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -1480,6 +1701,93 @@ function renderTranscriptWebhook(webhook){
     +'<pre style="white-space:pre-wrap;max-height:190px;overflow:auto;margin-top:10px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;font-size:11px;">'+docSafe(sample)+'</pre></div>';
 }
 
+function isBookEditorMode(){
+  if(!VAL_CONFIG)return false;
+  var identity=[VAL_CONFIG.projectType,VAL_CONFIG.projectName,VAL_CONFIG.clientName,VAL_CONFIG.clientSlug,VAL_CONFIG.brandName].join(' ').toLowerCase();
+  return identity.indexOf('book_editor')>=0 || identity.indexOf('the big trick')>=0 || identity.indexOf('michele')>=0;
+}
+function runBookAction(action,label,query){
+  var project=VAL_CONFIG.projectName||'this book';
+  if(!query&&action==='book_next_steps'){
+    query='Show Michele only the current top priority for '+project+'. Return exactly this compact format and nothing else: Priority: one sentence. Why: one sentence. To-do list: exactly 3 bullet items maximum. Do not mention whether the manuscript is uploaded/readable unless asked. Do not explain the whole strategy. Do not include markdown headings.';
+  }
+  runValAction(action,label,query||('Use all uploaded manuscript, chapter, outline, transcript, and launch-note memory for '+project+'. If no manuscript material is uploaded yet, say that clearly and use labeled sample/demo guidance only.'));
+}
+function setBookCardLabels(){
+  var labels=document.querySelectorAll('.summary-cards .scard-label');
+  var copy=['Book State','Editorial Next Steps','Manuscript Memory','Drafts / Notes','Launch / Platform'];
+  copy.forEach(function(text,i){if(labels[i])labels[i].textContent=text;});
+  var links=document.querySelectorAll('.summary-cards .scard-link');
+  var linkCopy=['Where did we leave off ->','Show priorities ->','Review memory ->','Open notes ->','Show strategy ->'];
+  linkCopy.forEach(function(text,i){if(links[i])links[i].textContent=text;});
+  var cards=document.querySelectorAll('.summary-cards .scard');
+  var clicks=[
+    function(){runBookAction('book_where_left_off','Where We Left Off');},
+    function(){runBookAction('book_next_steps','Editorial Next Steps');},
+    function(){searchValMemory((VAL_CONFIG.projectName||'the book')+' manuscript chapter outline notes');},
+    function(){runBookAction('editorial_next_steps','Drafts / Notes');},
+    function(){runBookAction('podcast_strategy','Launch / Platform Strategy');}
+  ];
+  clicks.forEach(function(fn,i){if(cards[i])cards[i].onclick=fn;});
+}
+function applyBookWorkspaceLabels(){
+  var pairs=[
+    ['wsBriefingSub','Editorial continuity'],
+    ['wsMeetingsSub','Manuscript sessions'],
+    ['wsTasksSub','Editorial next steps'],
+    ['wsPipelineSub','Launch and platform'],
+    ['wsFollowupsSub','Book-network notes'],
+    ['wsApprovalsSub','Drafts and notes']
+  ];
+  pairs.forEach(function(pair){setText(pair[0],pair[1]);});
+  var items=document.querySelectorAll('.ws-item-title');
+  items.forEach(function(el){
+    if(el.textContent==='Daily Briefing')el.textContent='Where We Left Off';
+    else if(el.textContent==='Meetings')el.textContent='Book Sessions';
+    else if(el.textContent==='Tasks')el.textContent='Editorial Tasks';
+    else if(el.textContent==='Pipeline')el.textContent='Launch';
+    else if(el.textContent==='Followups')el.textContent='Book Network';
+    else if(el.textContent==='Approvals')el.textContent='Drafts / Notes';
+  });
+  var footer=document.querySelector('.ws-footer-status');
+  if(footer)footer.textContent='Michele VAL Active - Memoir';
+}
+function applyProjectMode(){
+  if(!isBookEditorMode())return;
+  var project=VAL_CONFIG.projectName||'The Big Trick';
+  document.title=(VAL_CONFIG.brandName||'Michele VAL')+' - '+project+' Editorial Command Center';
+  var label=document.querySelector('#centerWelcome .cw-label');
+  var title=document.querySelector('#centerWelcome .cw-title');
+  var sub=document.querySelector('#centerWelcome .cw-sub');
+  var board=document.getElementById('alertBoard');
+  if(label)label.textContent='The Big Trick Editorial Command Center';
+  if(title)title.textContent='What Michele VAL noticed';
+  if(sub)sub.textContent='Where the book left off, what needs alignment, and the next clean editorial move surface here first.';
+  if(board){
+    board.innerHTML=[
+      ['primary','Continuity','Pick up exactly where the book left off.','VAL can review recent manuscript memory, notes, and tasks, then name the next clean editorial move.','Where Left Off','runBookAction("book_where_left_off","Where We Left Off")'],
+      ['','Next Steps','The next editing session needs a short, doable sequence.','VAL can turn the manuscript state into do-now, next, later, and blocked work.','Next Steps','runBookAction("book_next_steps","Editorial Next Steps")'],
+      ['','Alignment','The book may need stronger through-line alignment.','Check book promise, chapter order, emotional arc, humor, IFS prompts, and reader transformation together.','Alignment Review','runBookAction("book_alignment_review","Book Alignment Review")'],
+      ['','Chapter Flow','A chapter may need structure or transition work.','Open Chapter Map to inspect order, bridges, repeated themes, and reader momentum.','Chapter Map','runBookAction("chapter_map","Chapter Map")'],
+      ['','Voice + Humor','Humor and emotional depth should be checked together.','VAL can run a humor pass without flattening Michele\'s memoir voice.','Humor Pass','runBookAction("humor_pass","Humor + Levity Review")'],
+      ['','Reader Prompts','Reader transformation prompts need clarity and warmth.','VAL can review IFS-informed prompts for usefulness, safety, and embodied action.','IFS Review','runBookAction("ifs_prompt_review","IFS Prompt Review")']
+    ].map(function(a){
+      return '<section class="alert-section '+a[0]+'"><div class="alert-kicker">'+a[1]+'</div><div class="alert-title">'+a[2]+'</div><div class="alert-copy">'+a[3]+'</div><div class="alert-actions"><button class="alert-btn primary" onclick=\''+a[5]+'\'>'+a[4]+'</button><button class="alert-btn" onclick="snoozeAlert(this)">Later</button></div></section>';
+    }).join('');
+  }
+  setBookCardLabels();
+  applyBookWorkspaceLabels();
+  setText('scNextMeetingName',project);
+  setText('scNextMeetingTime','Editing phase');
+  setText('scCommsVal','Memory');
+  setText('scCommsSub','Manuscript, chapters, outlines, notes');
+  setText('scApprovalSub','Editorial drafts and notes');
+  setText('scPipelineVal','Strategy');
+  setText('scPipelineSub','Launch, podcast, and platform');
+  updateDynamicSuggestions();
+  loadBookDashboard();
+}
+
 fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function(cfg){
   if(!cfg)return;
   VAL_CONFIG=Object.assign(VAL_CONFIG,cfg);
@@ -1488,6 +1796,11 @@ fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function
   document.title=(VAL_CONFIG.brandName||'VAL')+' - Executive Command Center';
   document.querySelectorAll('[data-client-name]').forEach(function(el){el.textContent=VAL_CONFIG.clientName||'VAL User';});
   document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
+  if(VAL_CONFIG.demoMode){
+    var keysBtn=document.getElementById('keysTopButton');
+    if(keysBtn)keysBtn.style.display='none';
+  }
+  applyProjectMode();
 }).catch(function(){});
 
 function valTranscriptPayload(type,transcript,extra){
@@ -1498,7 +1811,7 @@ function valTranscriptPayload(type,transcript,extra){
   return payload;
 }
 function valSaveTranscript(type,transcript,extra){
-  return fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(valTranscriptPayload(type,transcript,extra||{}))});
+  return apiFetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(valTranscriptPayload(type,transcript,extra||{}))});
 }
 function valConversationTitle(messages){
   var first=(messages||[]).find(function(m){return m&&m.role==='user'&&m.content;});
@@ -1517,19 +1830,28 @@ function valSaveConversation(extra){
   payload.messages=chatHistory;
   payload.messageCount=chatHistory.length;
   payload.timestamp=payload.timestamp||new Date().toISOString();
-  return fetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
 }
 
 // ── VAL TASK STORE (server-persisted) ─────────────────
 var valTasks = [];
 var TASKS_KEY = 'val_tasks_v1'; // kept for one-time migration only
 var valTasksSyncing = false;
+var taskBoardOpenLimit = 30;
+var taskBoardDoneLimit = 20;
 
 function taskKey(title,contactName){
   return String(title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+'|'+String(contactName||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 }
 function cacheValTasks(){
   try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
+}
+function readCachedValTasks(){
+  try{
+    var raw=localStorage.getItem(TASKS_KEY);
+    var parsed=raw?JSON.parse(raw):[];
+    return Array.isArray(parsed)?parsed:[];
+  }catch(e){ return []; }
 }
 function valTasksSave(){
   cacheValTasks();
@@ -1540,26 +1862,48 @@ function valTaskSaveOne(task){
   valTasksSyncing=true;
   return fetch(PROXY+'/api/val/tasks',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(task)
   }).then(function(r){
-    if(!r.ok) return r.text().then(function(t){throw new Error(t||'Task save failed');});
-    return r.json();
+    return apiTextOrJson(r);
   }).then(function(){valTasksSyncing=false;}).catch(function(e){valTasksSyncing=false;console.warn('Task save failed, kept local cache:',e.message);});
 }
 function valTasksLoad(){
-  fetch(PROXY+'/api/val/tasks')
-  .then(function(r){ if(!r.ok) throw new Error('Task load failed'); return r.json(); })
+  fetch(PROXY+'/api/val/tasks',{credentials:'same-origin'})
+  .then(function(r){ return apiTextOrJson(r); })
   .then(function(serverTasks){
-    valTasks=Array.isArray(serverTasks)?serverTasks:[];
+    serverTasks=Array.isArray(serverTasks)?serverTasks:[];
+    var cachedTasks=readCachedValTasks();
+    var byKey={};
+    serverTasks.forEach(function(t){
+      if(!t||!t.id)return;
+      var key=t.id;
+      if(!byKey[key]) byKey[key]=t;
+    });
+    cachedTasks.forEach(function(t){
+      if(!t||!t.id)return;
+      var openKey=taskKey(t.title,t.contactName);
+      var matchingOpen=Object.keys(byKey).some(function(id){
+        var x=byKey[id];
+        return x&&!x.completed&&!t.completed&&taskKey(x.title,x.contactName)===openKey;
+      });
+      if(!matchingOpen) byKey[t.id]=t;
+    });
+    valTasks=Object.keys(byKey).map(function(id){return byKey[id];});
     cacheValTasks();
     refreshTaskUI();
+    if(cachedTasks.length&&valTasks.length>serverTasks.length){
+      fetch(PROXY+'/api/val/tasks',{
+        method:'PUT',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(valTasks)
+      }).catch(function(e){console.warn('Task restore failed:',e.message);});
+    }
   })
   .catch(function(){
-    try{
-      var raw = localStorage.getItem(TASKS_KEY);
-      if(raw) valTasks = JSON.parse(raw);
-    }catch(e){ valTasks=[]; }
+    valTasks=readCachedValTasks();
     refreshTaskUI();
   });
 }
@@ -1579,9 +1923,40 @@ function valAddTask(title,contactName,dueDate,notes){
   refreshTaskUI();
   return task;
 }
-function valCompleteTask(id){
+function showTaskCompletionToast(task){
+  var old=document.getElementById('taskCompleteToast');
+  if(old)old.remove();
+  var el=document.createElement('div');
+  el.id='taskCompleteToast';
+  el.className='task-complete-toast';
+  el.textContent='Finished: '+(task&&task.title?task.title:'Task complete');
+  document.body.appendChild(el);
+  setTimeout(function(){if(el&&el.parentNode)el.remove();},2600);
+}
+function valCompleteTask(id,quiet){
   var t=valTasks.find(function(t){return t.id===id;});
-  if(t){t.completed=true;valTaskSaveOne(t);refreshTaskUI();}
+  if(t){
+    t.completed=true;
+    t.completedAt=new Date().toISOString();
+    if(!t.details)t.details=[];
+    t.details.push({text:'Marked complete.',ts:t.completedAt});
+    valTaskSaveOne(t);
+    refreshTaskUI();
+    if(!quiet){
+      showTaskCompletionToast(t);
+      valSignalSet('done','One more task finished. That counts.');
+    }
+  }
+}
+function valReopenTask(id){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(t){
+    t.completed=false;
+    if(!t.details)t.details=[];
+    t.details.push({text:'Moved back to To Do.',ts:new Date().toISOString()});
+    valTaskSaveOne(t);
+    refreshTaskUI();
+  }
 }
 function valAddDetail(id, text){
   var t=valTasks.find(function(t){return t.id===id;});
@@ -1598,7 +1973,7 @@ function refreshTaskUI(){
   if(typeof animNum==='function') animNum('statTasks',open.length);
   if(typeof setText==='function'){
     setText('scTasksVal',open.length+' Open');
-    setText('scTasksSub',overdue.length>0?overdue.length+' overdue':'All on track');
+    setText('scTasksSub',overdue.length>0?overdue.length+' overdue':(isBookEditorMode()?'Editorial queue ready':'All on track'));
   }
   var ob=document.getElementById('statOverdueBadge');
   if(ob){
@@ -1608,7 +1983,94 @@ function refreshTaskUI(){
   dashData.openTasks=open.length;
   dashData.overdueTasks=overdue.length;
   dashData.tasks=open;
+  renderTaskBoardIfOpen();
+  if(typeof updateWsSidebar==='function')updateWsSidebar();
   updateDynamicSuggestions();
+}
+
+function taskDateValue(t){
+  var raw=t&&(t.dueDate||t.createdAt||'');
+  var d=raw?new Date(raw):null;
+  return d&&!isNaN(d.getTime())?d.getTime():0;
+}
+function sortTaskList(list,done){
+  return list.slice().sort(function(a,b){
+    if(!done){
+      var ao=a.dueDate&&new Date(a.dueDate)<new Date()?1:0;
+      var bo=b.dueDate&&new Date(b.dueDate)<new Date()?1:0;
+      if(bo!==ao)return bo-ao;
+      if(a.dueDate&&!b.dueDate)return -1;
+      if(!a.dueDate&&b.dueDate)return 1;
+      if(a.dueDate&&b.dueDate)return new Date(a.dueDate)-new Date(b.dueDate);
+    }
+    return taskDateValue(b)-taskDateValue(a);
+  });
+}
+function compactTaskPayload(limit){
+  limit=limit||25;
+  var open=sortTaskList(valTasks.filter(function(t){return !t.completed;}),false);
+  var done=sortTaskList(valTasks.filter(function(t){return t.completed;}),true);
+  return {
+    openCount:open.length,
+    completedCount:done.length,
+    open:open.slice(0,limit).map(function(t){
+      return {id:t.id,title:t.title,contactName:t.contactName||'',dueDate:t.dueDate||null,overdue:!!(t.dueDate&&new Date(t.dueDate)<new Date())};
+    }),
+    completedRecent:done.slice(0,8).map(function(t){return {id:t.id,title:t.title,completedAt:t.completedAt||t.createdAt||null};})
+  };
+}
+function taskContextPreview(t){
+  var notes=String((t&&t.notes)||'').replace(/Auto-created from VAL [\s\S]*?response\.\s*/i,'').trim();
+  notes=notes.replace(/Context:\s*/i,'').replace(/\s+/g,' ').trim();
+  if(!notes&&t&&Array.isArray(t.details)&&t.details.length)notes=String(t.details[0].text||'').replace(/\s+/g,' ').trim();
+  if(notes.length>190)notes=notes.slice(0,190).trim()+'...';
+  return notes;
+}
+function taskCardHtml(t,done){
+  var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'No due date';
+  var overdue=!done&&t.dueDate&&new Date(t.dueDate)<new Date();
+  var context=taskContextPreview(t);
+  var id=docSafe(JSON.stringify(t.id));
+  return '<article class="task-card '+(done?'done':'')+'">'
+    +'<button class="task-check" aria-label="'+(done?'Move back to To Do':'Mark complete')+'" onclick="'+(done?'valReopenTask':'valCompleteTask')+'('+id+')">✓</button>'
+    +'<div>'
+      +'<div class="task-title">'+docSafe(t.title||'Untitled task')+'</div>'
+      +'<div class="task-meta">'+(done?'Completed':'To do')+' · '+docSafe(due)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
+      +(context?'<div class="task-notes">'+docSafe(context)+'</div>':'')
+      +'<div class="task-actions">'
+        +'<button class="primary" onclick="openTaskDetail('+id+')">Context</button>'
+        +(done?'<button onclick="valReopenTask('+id+')">Move To Do</button>':'<button onclick="brainstormTask('+id+')">Plan With VAL</button>')
+      +'</div>'
+    +'</div>'
+  +'</article>';
+}
+function renderTaskBoard(){
+  var body=document.getElementById('taskWorkspaceBody');
+  if(!body)return;
+  var open=sortTaskList(valTasks.filter(function(t){return !t.completed;}),false);
+  var done=sortTaskList(valTasks.filter(function(t){return t.completed;}),true);
+  var visibleOpen=open.slice(0,taskBoardOpenLimit);
+  var visibleDone=done.slice(0,taskBoardDoneLimit);
+  var openMore=open.length>visibleOpen.length?'<button class="alert-btn" onclick="taskBoardOpenLimit+=30;renderTaskBoard()">Show 30 more to-do tasks</button>':'';
+  var doneMore=done.length>visibleDone.length?'<button class="alert-btn" onclick="taskBoardDoneLimit+=20;renderTaskBoard()">Show more done</button>':'';
+  body.innerHTML='<div class="task-board">'
+    +'<section class="task-column"><div class="task-column-head"><div class="task-column-title">'+(isBookEditorMode()?'Editorial To Do':'To Do')+'</div><div class="task-count-pill">'+open.length+' open</div></div>'
+      +'<div class="task-list">'+(open.length?visibleOpen.map(function(t){return taskCardHtml(t,false);}).join('')+(openMore?'<div class="task-empty">Showing '+visibleOpen.length+' of '+open.length+' open tasks. '+openMore+'</div>':''):'<div class="task-empty">No open tasks. Ask Michele VAL what the next clean editorial move is, and it will save each action here.</div>')+'</div></section>'
+    +'<section class="task-column"><div class="task-column-head"><div class="task-column-title">Done</div><div class="task-count-pill">'+done.length+' complete</div></div>'
+      +'<div class="task-list">'+(done.length?visibleDone.map(function(t){return taskCardHtml(t,true);}).join('')+(doneMore?'<div class="task-empty">Showing '+visibleDone.length+' of '+done.length+' completed tasks. '+doneMore+'</div>':''):'<div class="task-empty">Completed tasks will collect here so Michele can see the progress stacking up.</div>')+'</div></section>'
+    +'</div>';
+}
+function renderTaskBoardIfOpen(){
+  if(document.getElementById('taskWorkspaceBody'))renderTaskBoard();
+}
+function openTaskBoard(){
+  openExecutiveWorkspace({
+    id:'taskWorkspace',
+    title:isBookEditorMode()?'Editorial Tasks':'Tasks',
+    body:'<div id="taskWorkspaceBody"></div>',
+    footer:"<button class=\"alert-btn primary\" onclick=\"ask('What should I work on next? Put every action in the to-do list with context.')\">Ask What Next</button><button class=\"alert-btn\" onclick=\"valTasksLoad()\">Refresh</button><button class=\"alert-btn\" onclick=\"closeExecutiveWorkspace('taskWorkspace')\">Close</button>"
+  });
+  renderTaskBoard();
 }
 
 function dynamicSuggestionPromptSafe(v){
@@ -1631,6 +2093,30 @@ function updateDynamicSuggestions(){
   if(!el) return;
   var input=document.getElementById('msgInput');
   var suggestions=[];
+  if(isBookEditorMode()){
+    suggestions=[
+      {label:'Where left off', action:'book_where_left_off', prompt:'Tell me where we left off on '+(VAL_CONFIG.projectName||'the book')+' and what changed or remains unresolved.'},
+      {label:'What next', action:'book_next_steps', prompt:'Choose the next clean editorial moves for '+(VAL_CONFIG.projectName||'the book')+'.'},
+      {label:'Alignment check', action:'book_alignment_review', prompt:'Review where '+(VAL_CONFIG.projectName||'the book')+' needs better alignment.'},
+      {label:'Chapter flow', action:'review_chapter_order', prompt:'Review the chapter order and emotional progression for '+(VAL_CONFIG.projectName||'the book')+'.'},
+      {label:'Upload manuscript', prompt:'Upload Manuscript'}
+    ];
+    el.innerHTML='';
+    suggestions.forEach(function(s){
+      var b=document.createElement('button');
+      b.className='chip';
+      b.type='button';
+      b.textContent=s.label;
+      b.onclick=function(){
+        if(s.label==='Upload manuscript')openFilePicker();
+        else if(s.action)runBookAction(s.action,s.label,s.prompt);
+        else ask(s.prompt);
+      };
+      el.appendChild(b);
+    });
+    if(input&&!addDocState&&!addTaskState)input.placeholder='Where did we leave off? What needs alignment? What should I work on next?';
+    return;
+  }
   var now=new Date();
   var events=(dashData.appointments||[]).concat(dashData.calendarEvents||[]);
   var upcoming=events.map(function(ev){return {ev:ev,dt:eventStart(ev)};})
@@ -1663,7 +2149,10 @@ function updateDynamicSuggestions(){
     b.className='chip';
     b.type='button';
     b.textContent=s.label;
-    b.onclick=function(){ask(s.prompt);};
+    b.onclick=function(){
+      if(/^lead scrape$/i.test(String(s.prompt||''))) startLeadResearch();
+      else ask(s.prompt);
+    };
     el.appendChild(b);
   });
   if(input&&!addDocState&&!addTaskState&&suggestions.length){
@@ -1708,7 +2197,7 @@ function openTaskDetail(id){
       +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
         +'<button class="chip" onclick="saveTaskDetail(\''+id+'\')">+ Add note</button>'
         +'<button class="chip" onclick="brainstormTask(\''+id+'\')">💡 Brainstorm with VAL</button>'
-        +'<button class="chip" onclick="valCompleteTask(\''+id+'\');document.getElementById(\'taskDetailPanel\').remove();addSys(\'Task marked complete.\')">✓ Complete</button>'
+        +'<button class="chip" onclick="valCompleteTask(\''+id+'\');document.getElementById(\'taskDetailPanel\').remove()">✓ Complete</button>'
       +'</div>'
     +'</div>';
   document.body.appendChild(panel);
@@ -1807,6 +2296,8 @@ function openApprovalQueue(){
       +'<div style="font-size:12px;color:var(--cream);opacity:.75;line-height:1.55;margin-top:10px;max-height:72px;overflow:hidden;white-space:pre-wrap;">'+docSafe((d.body||'').slice(0,220))+'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
         +'<button class="chip" onclick="openDocPanel(\''+d.id+'\')">Open</button>'
+        +'<button class="chip" onclick="createGoogleDocFromDoc(\''+d.id+'\')">Create Google Doc</button>'
+        +'<button class="chip" onclick="updateGoogleDocFromDoc(\''+d.id+'\')">Update Google Doc</button>'
         +'<button class="chip" onclick="sendDoc(\''+d.id+'\')">Approve & Send</button>'
         +'<button class="chip" onclick="copyDocBody(\''+d.id+'\')">Copy</button>'
       +'</div>'
@@ -1852,6 +2343,8 @@ function openDocPanel(docId){
           +'<button class="chip" onclick="sendDoc(\''+docId+'\')">✉ Approve & Send</button>'
           +'<button class="chip" onclick="startDocRevise(\''+docId+'\')">✏ Revise</button>'
           +'<button class="chip" onclick="copyDocBody(\''+docId+'\')">⎘ Copy text</button>'
+          +'<button class="chip" onclick="createGoogleDocFromDoc(\''+docId+'\')">Create Google Doc</button>'
+          +'<button class="chip" onclick="updateGoogleDocFromDoc(\''+docId+'\')">Update Google Doc</button>'
           +'</div>'
         :'<div style="font-size:11px;color:#81c784;margin-top:8px;">✓ Sent to '+doc.recipient+'</div>'
       )
@@ -1903,6 +2396,75 @@ function copyDocBody(docId){
   navigator.clipboard.writeText(doc.body).then(function(){
     addSys('Document text copied to clipboard');
   }).catch(function(){addSys('Copy failed — try selecting manually');});
+}
+
+function googleDocError(e){
+  var msg=e&&e.message?e.message:String(e||'Google Doc action failed');
+  addSys('Google Doc action failed: '+msg);
+  if(/reconnect|scope|auth/i.test(msg)){
+    addSys('Reconnect Google and approve the new Drive/Docs permissions.');
+    window.open(PROXY+'/auth/google','_blank','noopener');
+  }
+}
+function createGoogleDocFromText(title,content){
+  title=String(title||'VAL Document').trim()||'VAL Document';
+  content=String(content||'').trim();
+  if(!content){addSys('No document text found.');return;}
+  addSys('Creating Google Doc...');
+  apiFetch(PROXY+'/api/google/docs/create',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title:title,content:content})
+  }).then(function(d){
+    var doc=d.document||{};
+    addMsg('Google Doc created: '+(doc.title||title)+'\n\n'+(doc.url||''),false);
+    if(doc.url) window.open(doc.url,'_blank','noopener');
+  }).catch(googleDocError);
+}
+function updateGoogleDocWithText(documentId,content,mode){
+  content=String(content||'').trim();
+  if(!content){addSys('No document text found.');return;}
+  apiFetch(PROXY+'/api/google/docs/update',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({documentId:documentId,content:content,mode:mode||'append'})
+  }).then(function(d){
+    var doc=d.document||{};
+    addMsg('Google Doc updated: '+(doc.title||'Document')+'\nMode: '+(doc.mode||mode||'append')+'\n\n'+(doc.url||''),false);
+    if(doc.url) window.open(doc.url,'_blank','noopener');
+  }).catch(googleDocError);
+}
+function createGoogleDocFromDoc(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc){addSys('Document not found');return;}
+  createGoogleDocFromText(doc.title||'VAL Document',doc.body||'');
+}
+function updateGoogleDocFromDoc(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc){addSys('Document not found');return;}
+  var target=prompt('Paste the Google Doc URL or document ID to update:');
+  if(!target)return;
+  var mode=(prompt('Update mode: append, replace, or prepend','append')||'append').toLowerCase();
+  if(!/^(append|replace|prepend)$/.test(mode))mode='append';
+  addSys('Updating Google Doc...');
+  updateGoogleDocWithText(target,doc.body||'',mode);
+}
+function createGoogleDocFromLast(){
+  var text=lastAssistantText();
+  if(!text){addSys('No recent VAL response found.');return;}
+  var title=prompt('Google Doc title:','VAL Notes - '+new Date().toLocaleDateString());
+  if(!title)return;
+  createGoogleDocFromText(title,text);
+}
+function updateGoogleDocFromLast(){
+  var text=lastAssistantText();
+  if(!text){addSys('No recent VAL response found.');return;}
+  var target=prompt('Paste the Google Doc URL or document ID to update:');
+  if(!target)return;
+  var mode=(prompt('Update mode: append, replace, or prepend','append')||'append').toLowerCase();
+  if(!/^(append|replace|prepend)$/.test(mode))mode='append';
+  addSys('Updating Google Doc...');
+  updateGoogleDocWithText(target,text,mode);
 }
 
 function generateDoc(s, details){
@@ -1990,6 +2552,7 @@ var HOOK_PROPOSALS= PROXY+'/api/proposals';
 
 var CHAT_URL  = PROXY+'/api/val/chat';
 var FILES_URL = PROXY+'/api/val/files';
+var BOOK_STATE_URL = PROXY+'/api/val/book-state';
 
 var chatHistory=[],selFile=null,voiceOn=false,recording=false,uploadBatchState=null,uploadAudioCtx=null;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
@@ -1998,6 +2561,7 @@ var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=
 var dashData={};
 var leadResearchState=null;
 var pendingLeadImport=null;
+var lastGoallLeadBatchPayload=null;
 var valActor='VAL User';
 
 function setValActor(name){
@@ -2005,7 +2569,9 @@ function setValActor(name){
   if(dashData) dashData.currentActor=valActor;
 }
 function actorContext(){
-  return "Current dashboard user: "+(VAL_CONFIG.clientName||'VAL User')+". Interpret meetings, relationships, pipeline, calls, transcripts, contact notes, appointments, tasks, drafts, and follow-up priorities from this user's executive perspective.";
+  var base="Current dashboard user: "+(VAL_CONFIG.clientName||'VAL User')+". Interpret meetings, relationships, pipeline, calls, transcripts, contact notes, appointments, tasks, drafts, and follow-up priorities from this user's executive perspective.";
+  if(isBookEditorMode())base="Current dashboard user: "+(VAL_CONFIG.clientName||'VAL User')+". This deployment is a book editor dashboard for "+(VAL_CONFIG.projectName||'the book')+". Do not treat this as CRM or relationship management. Treat uploaded documents as manuscript, chapter, outline, transcript, prompt, or launch context and answer through memoir editing, continuity, where Michele left off, next editorial steps, book alignment, humor, IFS prompt quality, chapter flow, reader transformation, and launch strategy.";
+  return base;
 }
 function ownerBadge(owner){
   if(!owner)return '';
@@ -2046,7 +2612,8 @@ function setMode(m,btn){
     if(name&&name!=='—'&&name!=='None today'){
       ask('I\'ve switched to Meeting Mode. My next meeting is '+name+' at '+time+'. Give me a full briefing: who they are, what we\'ve discussed before, what the goal of this meeting should be, and 3 talking points to open strong.');
     } else {
-      fetch(HOOK_CALENDAR).then(r=>r.json()).then(function(d){
+      fetchJSON(HOOK_CALENDAR).then(function(d){
+        d=d||{};
         var events=(d.events||d.appointments||[]);
         var upcoming=events.filter(function(e){return new Date(e.startTime||e.start?.dateTime)>new Date();}).slice(0,1);
         var next=upcoming[0];
@@ -2063,7 +2630,8 @@ function setMode(m,btn){
 
   else if(m==='strategy'){
     // Big picture: pipeline health + growth opportunities
-    fetch(HOOK_PIPELINE).then(r=>r.json()).then(function(d){
+    fetchJSON(HOOK_PIPELINE).then(function(d){
+      d=d||{};
       var opps=d.opportunities||[];
       var detail=opps.map(function(o){
         return o.contactName+' | '+o.stage+(o.value?' | $'+o.value:'')+(o.stalled?' [STALLED]':'');
@@ -2078,7 +2646,8 @@ function setMode(m,btn){
     // Operations: tasks + comms + what needs to be cleared
     var open=valTasks.filter(function(t){return !t.completed;});
     var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<new Date();});
-    fetch(HOOK_COMMS).then(r=>r.json()).then(function(comms){
+    fetchJSON(HOOK_COMMS).then(function(comms){
+      comms=comms||{};
       ask('I\'ve switched to Operations Mode. Here is what needs attention:\n\n'
         +'- Tasks: '+open.length+' open'+(overdue.length?' ('+overdue.length+' overdue)':'')+'\n'
         +'- Unread conversations: '+(comms.total||0)+'\n\n'
@@ -2110,9 +2679,41 @@ function closeDetail(){
 }
 
 // ── DASHBOARD ──────────────────────────────────────────────────────
+var authRedirecting=false;
+function handleAuthExpired(){
+  if(authRedirecting)return;
+  authRedirecting=true;
+  try{addSys('Your VAL session expired. Opening login now...');}catch(_){}
+  setTimeout(function(){
+    window.location.href='/login?next='+encodeURIComponent(location.pathname+location.search);
+  },650);
+}
+function apiTextOrJson(r){
+  if(r.status===401){
+    handleAuthExpired();
+    throw new Error('Session expired. Please log back in.');
+  }
+  if(!r.ok)return r.text().then(function(t){
+    var message=t||('Request failed with status '+r.status);
+    try{
+      var parsed=JSON.parse(t);
+      if(parsed&&parsed.message) message=parsed.message;
+      if(parsed&&parsed.code) message+=' ('+parsed.code+')';
+      if(parsed&&parsed.request_id) message+=' Request '+parsed.request_id+'.';
+    }catch(_){}
+    throw new Error(message);
+  });
+  return r.text().then(function(t){return t&&t.trim()?JSON.parse(t):null;});
+}
+function apiFetch(url,opts){
+  opts=opts||{};
+  opts.credentials=opts.credentials||'same-origin';
+  return fetch(url,opts).then(apiTextOrJson);
+}
 async function fetchJSON(url){
   try{
-    var r=await fetch(url);
+    var r=await fetch(url,{credentials:'same-origin'});
+    if(r.status===401){handleAuthExpired();return null;}
     if(!r.ok)return null;
     var t=await r.text();
     if(!t||t.trim()==='')return null;
@@ -2120,16 +2721,73 @@ async function fetchJSON(url){
   }catch(e){console.warn('fetchJSON error',url,e);return null;}
 }
 
+function renderBookState(state){
+  state=state||{};
+  dashData=Object.assign({},dashData,{bookState:state,projectName:state.project||VAL_CONFIG.projectName||'',openTasks:(state.counts&&state.counts.openTasks)||dashData.openTasks||0});
+  var rtitle=document.querySelector('.rpanel-title');
+  if(rtitle)rtitle.textContent='Book Workspace';
+  var rlink=document.querySelector('.rpanel-link');
+  if(rlink)rlink.textContent='Full View';
+  setBookCardLabels();
+  setText('scNextMeetingName',state.project||VAL_CONFIG.projectName||'The book');
+  setText('scNextMeetingTime',state.lastWorkedOn?'Last: '+state.lastWorkedOn.title:(state.phase||'Needs manuscript context'));
+  setText('scTasksVal',((state.counts&&state.counts.openTasks)||0)+' Open');
+  setText('scTasksSub',(state.nextSteps&&state.nextSteps[0])||'Ask what to work on next');
+  setText('scCommsVal',((state.counts&&state.counts.documents)||0)+' Docs');
+  setText('scCommsSub',state.lastWorkedOn?state.lastWorkedOn.type:'Upload manuscript, chapters, outlines, notes');
+  setText('scApprovalVal',((state.counts&&state.counts.drafts)||0)+' Notes');
+  setText('scApprovalSub','Drafts and editorial notes');
+  setText('scPipelineVal',((state.counts&&state.counts.chapters)||0)+' Chapters');
+  setText('scPipelineSub','Alignment, launch, and platform strategy');
+  if(state.feedItems&&state.feedItems.length)renderFeed(state.feedItems);
+  else renderFeed([
+    {color:'gold',type:'book_state',text:'Upload manuscript or notes to establish book continuity.',time:'Book state'},
+    {color:'navy',type:'next_step',text:'Ask Michele VAL where the book left off.',time:'Next move'}
+  ]);
+  renderBookWorkspacePanel(state);
+  updateDynamicSuggestions();
+  flashLive();
+}
+function renderBookWorkspacePanel(state){
+  var el=document.getElementById('weekScroll');if(!el)return;
+  state=state||{};
+  var counts=state.counts||{};
+  var rows=[
+    {title:'Manuscript Source',meta:state.lastWorkedOn?('Last upload: '+state.lastWorkedOn.title):'Upload the full manuscript DOCX to establish source context.',pip:'epip-gold'},
+    {title:(counts.documents||0)+' Saved Document'+((counts.documents||0)===1?'':'s'),meta:(counts.chapters||0)+' chapter record'+((counts.chapters||0)===1?'':'s')+' detected',pip:'epip-navy'},
+    {title:'Next Editorial Move',meta:(state.nextSteps&&state.nextSteps[0])||'Ask where Michele left off and what needs alignment.',pip:'epip-green'}
+  ];
+  el.innerHTML='';
+  rows.forEach(function(row){
+    var b=document.createElement('div');
+    b.className='day-block';
+    b.innerHTML='<div class="day-head">'+row.title+'<span class="day-date-num">Memoir</span></div>'
+      +'<div class="day-evt"><div class="epip '+row.pip+'"></div><div class="einfo"><div class="etitle">'+row.title+'</div><div class="emeta">'+row.meta+'</div></div></div>';
+    el.appendChild(b);
+  });
+}
+async function loadBookDashboard(){
+  if(!isBookEditorMode())return;
+  refreshTaskUI();
+  try{
+    var state=await fetchJSON(BOOK_STATE_URL);
+    renderBookState(state);
+  }catch(e){
+    renderBookState({ok:false,project:VAL_CONFIG.projectName||'The book',phase:'Needs manuscript context',counts:{documents:0,chapters:0,openTasks:valTasks.filter(function(t){return !t.completed;}).length,drafts:0},nextSteps:['Upload the manuscript, chapter drafts, outline, or latest notes.','Ask where we left off and what the next clean editorial move should be.'],feedItems:[{color:'gold',type:'book_state',text:'Book-state memory is not available yet: '+e.message,time:'Needs context'}]});
+  }
+}
 async function loadDashboard(){
+  if(isBookEditorMode())return loadBookDashboard();
   refreshTaskUI(); // use VAL-managed tasks, no GHL fetch needed
   var [meetings, pipeline, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
-    fetchJSON(HOOK_CALENDAR),
+    fetchJSON(HOOK_SIDEBAR_CALENDAR),
     fetchJSON(HOOK_FEED),
     fetchJSON(HOOK_COMMS),
     fetchJSON(HOOK_PROPOSALS)
   ]);
+  if(isBookEditorMode())return loadBookDashboard();
   meetings  = meetings.status==='fulfilled'?meetings.value:null;
   pipeline  = pipeline.status==='fulfilled'?pipeline.value:null;
   calendar  = calendar.status==='fulfilled'?calendar.value:null;
@@ -2166,6 +2824,7 @@ async function loadDashboard(){
   feed     = parse(feed);
   feed     = parse(feed);
   dashData = Object.assign({}, feed||{}, pipeline||{}, meetings||{}, calendar||{});
+  if(calendar&&Array.isArray(calendar.events)) dashData.calendarEvents=calendar.events;
   if(comms) dashData.followups=comms.total||0;
   if(proposals){
     dashData.proposals=proposals.proposals||[];
@@ -2211,10 +2870,11 @@ async function loadDashboard(){
 
   // CALENDAR
   console.log('Calendar response:', JSON.stringify(calendar).substring(0,400));
-  if(calendar&&calendar.calendarEvents&&calendar.calendarEvents.length){
-    renderWeek(calendar.calendarEvents);
+  if(calendar&&calendar.events&&calendar.events.length){
+    renderWeek(calendar.events);
   } else {
-    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">No upcoming GHL calendar events found.</div>';
+    var calendarMsg=(calendar&&calendar.errors&&calendar.errors[0])||'Connect Google Calendar or Outlook Calendar to show your schedule here.';
+    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">'+calendarMsg+'</div>';
   }
 
   // TASKS — handled by valTasks (refreshTaskUI called separately)
@@ -2293,11 +2953,7 @@ function readThreadAndAsk(convId, label){
   }
   console.log('Fetching thread for convId:', convId);
   addMsg('Reading conversation...',false);
-  fetch(PROXY+'/api/conversation/'+convId)
-  .then(function(r){
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  })
+  apiFetch(PROXY+'/api/conversation/'+convId)
   .then(function(d){
     console.log('Thread response:', JSON.stringify(d).substring(0,500));
     if(d.error) throw new Error(d.error);
@@ -2347,7 +3003,7 @@ function renderWeek(events){
   events.forEach(function(ev){
     // Robust date extraction — never fall back to title
     var raw = ev.startTime || ev.start_time ||
-              (ev.start && (ev.start.dateTime||ev.start.date)) ||
+              (typeof ev.start==='string'?ev.start:(ev.start && (ev.start.dateTime||ev.start.date))) ||
               ev.date || null;
     if(!raw) return; // skip events with no date
     var dt=new Date(raw);
@@ -2376,32 +3032,37 @@ function renderWeek(events){
 
     // Sort events within day by start time
     day.events.sort(function(a,b){
-      var ta=new Date(a.startTime||(a.start&&(a.start.dateTime||a.start.date))||0);
-      var tb=new Date(b.startTime||(b.start&&(b.start.dateTime||b.start.date))||0);
+      var ta=new Date(a.startTime||(typeof a.start==='string'?a.start:(a.start&&(a.start.dateTime||a.start.date)))||0);
+      var tb=new Date(b.startTime||(typeof b.start==='string'?b.start:(b.start&&(b.start.dateTime||b.start.date)))||0);
       return ta-tb;
     });
 
     var evtsHtml='';
     day.events.forEach(function(ev,ei){
       var title=ev.summary||ev.title||ev.name||'Event';
-      var rawStart=ev.startTime||(ev.start&&(ev.start.dateTime||ev.start.date));
-      var rawEnd=ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date));
+      var rawStart=ev.startTime||(typeof ev.start==='string'?ev.start:(ev.start&&(ev.start.dateTime||ev.start.date)));
+      var rawEnd=ev.endTime||(typeof ev.end==='string'?ev.end:(ev.end&&(ev.end.dateTime||ev.end.date)));
       var timeStr=rawStart?new Date(rawStart).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
       if(rawEnd) timeStr+=' – '+new Date(rawEnd).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-      var source=ev.source||'ghl';
+      var source=ev.source||'calendar';
+      var sourceLabel={google:'Google',outlook:'Outlook',demo:'Demo'}[source]||'Calendar';
       var pip='epip-navy';
       var status=ev.status||ev.appointmentStatus||'';
       var badge=status==='unconfirmed'||status==='needs_confirmation'?'<span class="ebadge">Needs confirmation</span>':'';
       var contact=ev.contactName||ev.contact?.name||'';
       var desc=ev.description||ev.notes||'';
       var attendees=ev.attendees||[];
+      var organizer=ev.organizer||{};
+      var visiblePerson=contact||organizer.name||organizer.email||(attendees[0]&&(attendees[0].name||attendees[0].email))||'';
+      var place=ev.location||ev.meetingLink||'';
+      var meta=[timeStr,visiblePerson,place,sourceLabel].filter(Boolean).join(' · ');
       // Encode event data as JSON in data attribute for click handler
       var owner=ev.owner||ev.assignedToName||ev.assignedUserName||'';
-      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source,startTime:rawStart,endTime:rawEnd,id:ev.id||ev.eventId||ev.appointmentId||'',attendees:attendees,owner:owner});
+      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source,startTime:rawStart,endTime:rawEnd,id:ev.id||ev.eventId||ev.appointmentId||'',attendees:attendees,owner:owner,organizer:organizer,location:ev.location||'',meetingLink:ev.meetingLink||''});
       evtsHtml+='<div class="day-evt" style="cursor:pointer" data-ev=\''+evData.replace(/'/g,'&apos;')+'\' onclick="onEventClick(this)">'
         +'<div class="epip '+pip+'"></div>'
         +'<div class="einfo"><div class="etitle">'+title+ownerBadge(owner)+'</div>'
-        +'<div class="emeta">'+timeStr+' · GHL</div></div>'
+        +'<div class="emeta">'+meta+'</div></div>'
         +badge+'</div>';
     });
     block.innerHTML=headHtml+evtsHtml;
@@ -2422,12 +3083,12 @@ function openCalendarFullView(){
   var c=document.getElementById('chatScroll');
   c.innerHTML='';
   if(!events.length){
-    addMsg('No GHL calendar events loaded yet.\n\nTap the Calendar button at the top to refresh the connected GHL calendar.',false);
+    addMsg('Connect Google Calendar or Outlook Calendar to show your schedule here.',false);
     return;
   }
   var grouped={};
   events.forEach(function(ev){
-    var raw=ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date;
+    var raw=ev.startTime||ev.start_time||(typeof ev.start==='string'?ev.start:(ev.start&&(ev.start.dateTime||ev.start.date)))||ev.date;
     if(!raw)return;
     var d=new Date(raw);
     if(isNaN(d))return;
@@ -2440,12 +3101,15 @@ function openCalendarFullView(){
     block.className='cmsg assistant';
     var html='<div class="cmsg-bubble"><p><strong>'+day+'</strong></p>';
     grouped[day].forEach(function(ev){
-      var raw=ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date;
+      var raw=ev.startTime||ev.start_time||(typeof ev.start==='string'?ev.start:(ev.start&&(ev.start.dateTime||ev.start.date)))||ev.date;
       var t=raw?new Date(raw).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
       var title=ev.summary||ev.title||ev.name||'Event';
       var owner=ev.owner||ev.assignedToName||ev.assignedUserName||'';
-      var payload=JSON.stringify({title:title,timeStr:t,dateLabel:day,contact:ev.contactName||'',desc:ev.description||ev.notes||'',source:ev.source||'',startTime:raw,endTime:ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date))||'',id:ev.id||ev.eventId||ev.appointmentId||'',attendees:ev.attendees||[],owner:owner}).replace(/'/g,'&apos;');
-      html+='<button class="chip" style="margin:4px 4px 4px 0" data-ev=\''+payload+'\' onclick="onEventClick(this)">'+t+' · '+title+(owner?' · '+owner:'')+'</button>';
+      var sourceLabel={google:'Google',outlook:'Outlook',demo:'Demo'}[ev.source]||'Calendar';
+      var organizer=ev.organizer||{};
+      var person=owner||organizer.name||organizer.email||'';
+      var payload=JSON.stringify({title:title,timeStr:t,dateLabel:day,contact:ev.contactName||'',desc:ev.description||ev.notes||'',source:ev.source||'',startTime:raw,endTime:ev.endTime||(typeof ev.end==='string'?ev.end:(ev.end&&(ev.end.dateTime||ev.end.date)))||'',id:ev.id||ev.eventId||ev.appointmentId||'',attendees:ev.attendees||[],owner:owner,organizer:organizer,location:ev.location||'',meetingLink:ev.meetingLink||''}).replace(/'/g,'&apos;');
+      html+='<button class="chip" style="margin:4px 4px 4px 0" data-ev=\''+payload+'\' onclick="onEventClick(this)">'+t+' · '+title+(person?' · '+person:'')+' · '+sourceLabel+'</button>';
     });
     html+='</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
     block.innerHTML=html;
@@ -2454,7 +3118,7 @@ function openCalendarFullView(){
 }
 
 function refreshGhlCalendar(){
-  addSys('Refreshing connected GHL calendar...');
+  addSys('Refreshing connected Google or Outlook calendar...');
   loadDashboard();
 }
 
@@ -2468,13 +3132,14 @@ function openCalendarEvent(ev){
   var c=document.getElementById('chatScroll');
   c.innerHTML='';
   var past=ev.startTime&&new Date(ev.startTime)<new Date();
-  var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(ev.owner?'\nGHL owner: '+ev.owner:'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.desc?'\nDetails: '+ev.desc:'');
+  var organizer=ev.organizer&&(ev.organizer.name||ev.organizer.email)?(ev.organizer.name||ev.organizer.email):'';
+  var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(organizer?'\nOrganizer: '+organizer:'')+(ev.owner?'\nOwner: '+ev.owner:'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.location?'\nLocation: '+ev.location:'')+(ev.meetingLink?'\nMeeting link: '+ev.meetingLink:'')+(ev.desc?'\nDetails: '+ev.desc:'');
   addMsg(header,false);
   showTyping();
   var q=[ev.title,ev.contact,ev.dateLabel,'meeting transcript notes tasks decisions follow-up'].filter(Boolean).join(' ');
   Promise.all([
-    fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q)+'&limit=8').then(function(r){return r.json();}),
-    fetch(PROXY+'/api/val/meeting-intel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:ev})}).then(function(r){return r.json();}).catch(function(e){return {error:e.message,attendees:[]};})
+    fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q)+'&limit=8',{credentials:'same-origin'}).then(apiTextOrJson),
+    fetch(PROXY+'/api/val/meeting-intel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:ev})}).then(apiTextOrJson).catch(function(e){return {error:e.message,attendees:[]};})
   ])
   .then(function(parts){
     removeTyping();
@@ -2536,24 +3201,12 @@ function renderWeekFallback(){
 valTasksLoad();
 valDocsLoad();
 loadWsThreads();
+document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">Loading...</div>';
 loadDashboard();
 setInterval(loadDashboard,5*60*1000);
-// No fallback — show loading state until real data arrives
-document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">Loading calendar...</div>';
 
 // ── MORNING BRIEFING ───────────────────────────────────
-(function morningBriefing(){
-  var now=new Date();
-  var hour=now.getHours();
-  var lastBriefKey='val_last_brief_'+now.toDateString();
-  if(hour>=5&&hour<11&&!localStorage.getItem(lastBriefKey)){
-    localStorage.setItem(lastBriefKey,'1');
-    setTimeout(function(){
-      // Wait for dashboard data then deliver briefing
-      setTimeout(deliverMorningBriefing, 3500);
-    }, 1500);
-  }
-})();
+// Briefings are user-initiated so the opening command view stays stable.
 
 function deliverMorningBriefing(){
   var now=new Date();
@@ -2585,9 +3238,12 @@ function deliverMorningBriefing(){
     return d.getTime()===today.getTime();
   });
   if(openTasks.length){
+    var overdueNames=overdueTasks.slice(0,10).map(function(t){return t.title;}).join(', ');
+    var todayNames=dueTodayTasks.slice(0,10).map(function(t){return t.title;}).join(', ');
     ctx.push('TASKS: '+openTasks.length+' open'
-      +(overdueTasks.length?' | '+overdueTasks.length+' OVERDUE: '+overdueTasks.map(function(t){return t.title;}).join(', '):'')
-      +(dueTodayTasks.length?' | Due today: '+dueTodayTasks.map(function(t){return t.title;}).join(', '):''));
+      +(overdueTasks.length?' | '+overdueTasks.length+' OVERDUE'+(overdueNames?': '+overdueNames:'')+(overdueTasks.length>10?' ...':''):'')
+      +(dueTodayTasks.length?' | Due today'+(todayNames?': '+todayNames:'')+(dueTodayTasks.length>10?' ...':''):'')
+      +' | Full task board is stored separately; do not repeat all tasks in chat.');
   } else {
     ctx.push('No open tasks.');
   }
@@ -2774,8 +3430,8 @@ function createContactFromMessage(msg){
   addMsg(msg,true);
   chatHistory.push({role:'user',content:msg});
   showTyping();
-  fetch(PROXY+'/api/val/contacts/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(contact)})
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  fetch(PROXY+'/api/val/contacts/create',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(contact)})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var c=d.contact||{};
     var name=c.contactName||c.name||[c.firstName,c.lastName].filter(Boolean).join(' ')||contact.name||contact.email;
@@ -2797,6 +3453,26 @@ function extractRequestedLeadLimit(text){
 
 function extractRequestedOrganizationType(text){
   var raw=String(text||'').toLowerCase();
+  if(currentLeadProfile()==='westwood' && /\bwestwood|leadership development|team effectiveness|executive growth|private businesses|leadership team|idaho\b/.test(raw)) return 'Westwood priority industries';
+  if(/\b(all|priority|higher.?income|goall.?fit|businesses|companies)\b/.test(raw)&&/\b(arizona|az|goall)\b/.test(raw)) return 'GOALL priority industries';
+  var industries=[];
+  [
+    [/truck|freight|logistics/,'trucking companies'],
+    [/plumb/,'plumbing companies'],
+    [/electric/,'electrical contractors'],
+    [/\bhvac\b|heating|air conditioning/,'HVAC companies'],
+    [/roof/,'roofing companies'],
+    [/weld/,'welding companies'],
+    [/construction|contractor/,'construction companies'],
+    [/law|attorney/,'law offices'],
+    [/chiropract/,'chiropractic offices'],
+    [/medical|clinic/,'medical practices'],
+    [/dental/,'dental offices'],
+    [/manufactur|industrial/,'manufacturing companies'],
+    [/staffing/,'staffing agencies'],
+    [/home care/,'home care agencies']
+  ].forEach(function(pair){if(pair[0].test(raw))industries.push(pair[1]);});
+  if(industries.length)return industries.filter(function(v,i,a){return a.indexOf(v)===i;}).join(', ');
   if(/\broof|hvac|plumb|electric|contractor|home service\b/.test(raw)) return 'home services companies';
   if(/\bclinic|health|medical|dental|doctor|wellness\b/.test(raw)) return 'healthcare clinics';
   if(/\bmanufactur|industrial|warehouse|logistics\b/.test(raw)) return 'manufacturing and logistics companies';
@@ -2808,23 +3484,110 @@ function extractRequestedOrganizationType(text){
   return '';
 }
 
+function currentLeadProfile(){
+  var explicit=String((VAL_CONFIG&&VAL_CONFIG.leadProfile)||'').toLowerCase();
+  if(explicit==='westwood'||explicit==='goall')return explicit;
+  var identity=VAL_CONFIG?[VAL_CONFIG.clientName,VAL_CONFIG.clientSlug,VAL_CONFIG.brandName,VAL_CONFIG.projectName,VAL_CONFIG.projectType].join(' '):'';
+  return /\bwestwood\b/i.test(identity)?'westwood':'goall';
+}
+
+function defaultGoallLeadScrapePayload(){
+  return {
+    organizationType:'HVAC companies',
+    employeeMinimum:'10',
+    market:'Phoenix, Arizona',
+    tag:'GOALL HVAC',
+    criteria:'HVAC companies with at least 10 employees in Phoenix, Arizona',
+    limit:8,
+    leadProfile:'goall',
+    fastSearch:true,
+    rocketReachMode:'defer',
+    goallBatchIndex:0
+  };
+}
+
+var GOALL_LEAD_BATCH_SEQUENCE=[
+  ['HVAC companies','Phoenix, Arizona','GOALL HVAC'],
+  ['plumbing companies','Phoenix, Arizona','GOALL Plumbing'],
+  ['electrical contractors','Phoenix, Arizona','GOALL Electrical'],
+  ['HVAC companies','Tucson, Arizona','GOALL HVAC'],
+  ['plumbing companies','Tucson, Arizona','GOALL Plumbing'],
+  ['electrical contractors','Tucson, Arizona','GOALL Electrical'],
+  ['HVAC companies','Mesa, Arizona','GOALL HVAC'],
+  ['plumbing companies','Mesa, Arizona','GOALL Plumbing'],
+  ['electrical contractors','Mesa, Arizona','GOALL Electrical'],
+  ['HVAC companies','Scottsdale, Arizona','GOALL HVAC'],
+  ['plumbing companies','Scottsdale, Arizona','GOALL Plumbing'],
+  ['electrical contractors','Scottsdale, Arizona','GOALL Electrical'],
+  ['roofing companies','Phoenix, Arizona','GOALL Roofing'],
+  ['construction companies','Phoenix, Arizona','GOALL Construction'],
+  ['manufacturing companies','Phoenix, Arizona','GOALL Manufacturing']
+];
+
+function goallLeadBatchPayload(index){
+  var i=Math.max(0,Number(index)||0);
+  var row=GOALL_LEAD_BATCH_SEQUENCE[i%GOALL_LEAD_BATCH_SEQUENCE.length];
+  return {
+    organizationType:row[0],
+    employeeMinimum:'10',
+    market:row[1],
+    tag:row[2],
+    criteria:row[0]+' with at least 10 employees in '+row[1],
+    limit:8,
+    leadProfile:'goall',
+    fastSearch:true,
+    rocketReachMode:'defer',
+    goallBatchIndex:i
+  };
+}
+
+function nextGoallLeadBatchPayload(seed){
+  var source=seed||lastGoallLeadBatchPayload||defaultGoallLeadScrapePayload();
+  var current=Number(source.goallBatchIndex);
+  if(!Number.isFinite(current)) current=Number(localStorage.getItem('goallLeadBatchIndex')||0);
+  var next=current+1;
+  localStorage.setItem('goallLeadBatchIndex',String(next));
+  return goallLeadBatchPayload(next);
+}
+
+function shouldAutoRunGoallLeadScrape(seedText){
+  var raw=String(seedText||'').trim();
+  return currentLeadProfile()==='goall' && (!raw || /^(goall\s+)?lead\s*scrape$/i.test(raw));
+}
+
+function defaultCompanyEmployeeMinimum(){
+  return currentLeadProfile()==='westwood'?'25':'10';
+}
+
 function startLeadResearch(seedText){
+  if(shouldAutoRunGoallLeadScrape(seedText)){
+    var autoPayload=defaultGoallLeadScrapePayload();
+    openDetailWithTitle('Lead Scrape');
+    addMsg('Lead Scrape\n\nRunning a focused GOALL test batch now.\n\nSearch: HVAC companies\nLocation: Phoenix, Arizona\nCompany size filter: 10+ employees\nPreview count: 8 leads\nPipeline target: 300 people/prospects minimum\n\nI will run Level 1 business discovery first and show the leads quickly. Deeper contact verification can run after the leads are visible, so the preview does not stall.',false);
+    runLeadDiscoveryImport(autoPayload,autoPayload.market,false);
+    return;
+  }
+  var isWestwood=currentLeadProfile()==='westwood';
   leadResearchState={
     step:'type',
     organizationType:extractRequestedOrganizationType(seedText),
     employeeMinimum:'',
-    location:'',
-    limit:extractRequestedLeadLimit(seedText)
+    location:/\bidaho|id\b/i.test(String(seedText||''))?'Idaho, US':(/\barizona|az\b/i.test(String(seedText||''))?'Arizona':''),
+    limit:extractRequestedLeadLimit(seedText),
+    leadProfile:isWestwood?'westwood':'goall'
   };
   openDetailWithTitle('Lead Scrape');
   var inp=document.getElementById('msgInput');
   if(leadResearchState.organizationType){
     leadResearchState.step='employees';
-    addMsg('Lead Scrape\n\nGot it: '+leadResearchState.organizationType+(leadResearchState.limit?' | '+leadResearchState.limit+' businesses':'')+'.\n\nHow many employees should they have at minimum?\n\nIf you are not sure, use 300.',false);
-    inp.placeholder='Example: 300';
+    addMsg('Lead Scrape\n\nGot it: '+leadResearchState.organizationType+(leadResearchState.limit?' | '+leadResearchState.limit+' viable leads':'')+(leadResearchState.location?' | '+leadResearchState.location:'')+'.\n\nHow many employees should they have at minimum?\n\nIf you are not sure, use '+defaultCompanyEmployeeMinimum()+'.',false);
+    inp.placeholder='Example: '+defaultCompanyEmployeeMinimum();
   }else{
-    addMsg('Lead Scrape\n\nWhat kind of businesses should I look for?\n\nExamples: home services, healthcare clinics, roofing companies, manufacturers, restaurants, franchises, agencies, gyms, dental offices, or any niche Mark wants.',false);
-    inp.placeholder='Example: roofing companies, dental offices, manufacturers...';
+    var examples=isWestwood
+      ? 'Westwood priority industries in Idaho, private manufacturing companies, leadership development fit businesses, family-owned businesses, technology companies, or professional service firms.'
+      : 'all GOALL priority industries in Arizona, plumbers, electricians and HVAC, law offices, manufacturers, staffing agencies, roofing companies, or solar installers.';
+    addMsg('Lead Scrape\n\nWhat kind of businesses should I look for?\n\nExamples: '+examples,false);
+    inp.placeholder=isWestwood?'Example: Westwood priority industries in Idaho...':'Example: all GOALL priority industries in Arizona...';
   }
   inp.focus();
 }
@@ -2857,10 +3620,11 @@ function runLeadDiscovery(query,market,showUser){
   showTyping();
   fetch(PROXY+'/api/val/leads/discover',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({criteria:query,market:market||'',limit:12})
+    body:JSON.stringify({criteria:query,market:market||'',limit:12,leadProfile:currentLeadProfile()})
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var content=d.content||'No prospect discovery returned.';
     chatHistory.push({role:'assistant',content:content});
@@ -2872,23 +3636,36 @@ function runLeadDiscovery(query,market,showUser){
 function runLeadDiscoveryImport(query,market,showUser){
   openDetailWithTitle('Lead Scrape');
   if(showUser)addMsg(query,true);
-  addMsg('I am scraping leads with Outscraper and checking public website contact data first. For larger batches, RocketReach waits until review so we only use it where it can actually verify a person.',false);
+  addMsg('I am running Level 1 business discovery and checking public contact data first. Larger batches can use Level 3 verification after review so we only verify leads worth pursuing.',false);
   showTyping();
   var payload=typeof query==='object'?query:{criteria:query,market:market||'',limit:12};
+  payload.leadProfile=payload.leadProfile||currentLeadProfile();
+  if(payload.leadProfile==='goall') lastGoallLeadBatchPayload=Object.assign({},payload);
   fetch(PROXY+'/api/val/leads/discover-preview',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(payload)
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
-    pendingLeadImport=d;
     var content=d.content||'No lead preview returned.';
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
+    if(d.ok===false||!(d.leads&&d.leads.length)){
+      pendingLeadImport=null;
+      return;
+    }
+    if(payload.leadProfile==='goall') d._sourcePayload=Object.assign({},payload);
+    pendingLeadImport=d;
     addLeadImportApprovalControls();
   })
-  .catch(function(e){removeTyping();addSys('Lead scrape failed: '+e.message);});
+  .catch(function(e){
+    removeTyping();
+    var msg='Lead scrape could not complete.\n\nWhat happened: '+(e.message||'upstream error')+'\n\nTry a smaller, specific search like "HVAC companies in Phoenix" or open Register Your Keys and test Outscraper/OpenAI.';
+    chatHistory.push({role:'assistant',content:msg});
+    addMsg(msg,false);
+  });
 }
 
 function htmlEscape(v){
@@ -2901,59 +3678,96 @@ function addLeadImportApprovalControls(){
   d.className='cmsg assistant';
   var count=(pendingLeadImport&&pendingLeadImport.leads&&pendingLeadImport.leads.length)||0;
   var rrNeeded=pendingLeadImport&&pendingLeadImport.rocketReachMode==='defer';
-  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' enriched lead'+(count===1?'':'s')+' are ready. Importing will create GHL contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Enrich with RocketReach</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button><button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  var isGoall=pendingLeadImport&&((pendingLeadImport.searchPlan&&pendingLeadImport.searchPlan.leadProfile==='goall')||pendingLeadImport.leadProfile==='goall'||pendingLeadImport._sourcePayload);
+  var batchNote=isGoall?'<p><strong>Batch note:</strong> This is one focused batch, not the full GOALL pipeline. Use the next-batch button after import to keep building toward 300 prospects without timing out.</p>':'';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' reviewed lead'+(count===1?'':'s')+' are ready. Importing will create GHL contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p>'+batchNote+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Run Level 3 verification</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button>'+(isGoall?'<button class="chip" onclick="approveLeadImportThenNextBatch()">Import and find next batch</button>':'')+'<button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);
   c.scrollTop=c.scrollHeight;
 }
 
 function enrichPendingLeadsWithRocketReach(){
   if(!pendingLeadImport||!pendingLeadImport.leads||!pendingLeadImport.leads.length){
-    addSys('No reviewed leads are waiting for RocketReach enrichment.');
+    addSys('No reviewed leads are waiting for Level 3 verification.');
     return;
   }
-  openDetailWithTitle('RocketReach Enrichment');
-  addMsg('Enrich with RocketReach',true);
-  addMsg('I am running RocketReach only where there is enough person-level data, one lookup at a time, so we do not waste calls on vague company-only searches.',false);
+  openDetailWithTitle('Level 3 Verification');
+  addMsg('Run Level 3 verification',true);
+  addMsg('I am verifying contact details only where there is enough person-level data, one lookup at a time, so we do not waste checks on vague company-only matches.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/rocketreach-enrich',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(pendingLeadImport)
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
+    var source=pendingLeadImport._sourcePayload||lastGoallLeadBatchPayload;
     pendingLeadImport=d;
-    var content=d.content||'RocketReach enrichment finished.';
+    if(source) pendingLeadImport._sourcePayload=source;
+    var content=d.content||'Level 3 verification finished.';
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
     addLeadImportApprovalControls();
   })
-  .catch(function(e){removeTyping();addSys('RocketReach enrichment failed: '+e.message);});
+  .catch(function(e){removeTyping();addSys('Level 3 verification failed: '+e.message);});
 }
 
-function approveLeadImport(){
+function addGoallNextBatchControls(seed){
+  if(currentLeadProfile()!=='goall') return;
+  var c=document.getElementById('chatScroll');
+  var d=document.createElement('div');
+  d.className='cmsg assistant';
+  var next=nextGoallLeadBatchPayload(seed||lastGoallLeadBatchPayload);
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Next GOALL batch</strong></p><p>Batch '+((Number(next.goallBatchIndex)||0)+1)+': '+htmlEscape(next.organizationType)+' in '+htmlEscape(next.market)+'. This keeps the pipeline growing in focused batches instead of one timeout-prone scrape.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="chip" onclick="runGoallLeadBatch('+Number(next.goallBatchIndex)+')">Find next 8 leads</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(d);
+  c.scrollTop=c.scrollHeight;
+}
+
+function runGoallLeadBatch(index){
+  var payload=goallLeadBatchPayload(index);
+  lastGoallLeadBatchPayload=Object.assign({},payload);
+  openDetailWithTitle('Lead Scrape');
+  addMsg('Find next GOALL batch',true);
+  addMsg('Running Batch '+((Number(index)||0)+1)+': '+payload.organizationType+' in '+payload.market+'. I will show the preview before anything imports.',false);
+  runLeadDiscoveryImport(payload,payload.market,false);
+}
+
+function approveLeadImport(findNext){
   if(!pendingLeadImport||!pendingLeadImport.leads||!pendingLeadImport.leads.length){
     addSys('No reviewed leads are waiting for import.');
     return;
   }
+  var batchSeed=pendingLeadImport._sourcePayload||lastGoallLeadBatchPayload;
   openDetailWithTitle('Lead Import');
   addMsg('Import approved leads',true);
   addMsg('Importing approved leads to GHL now. I will report exactly what was created and what failed.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/import-approved',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(pendingLeadImport)
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     pendingLeadImport=null;
     var content=d.content||'Import finished.';
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
     loadDashboard();
+    if(findNext){
+      var next=nextGoallLeadBatchPayload(batchSeed);
+      setTimeout(function(){runGoallLeadBatch(next.goallBatchIndex);},350);
+    }else{
+      addGoallNextBatchControls(batchSeed);
+    }
   })
   .catch(function(e){removeTyping();addSys('Lead import failed: '+e.message);});
+}
+
+function approveLeadImportThenNextBatch(){
+  approveLeadImport(true);
 }
 
 function cancelLeadImport(){
@@ -2968,10 +3782,11 @@ function runCurrentLeadEnrichment(msg){
   showTyping();
   fetch(PROXY+'/api/val/leads/enrich-current',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({exclude:['aric','jessa'],limit:12})
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var content=d.content||'No enrichment returned.';
     chatHistory.push({role:'assistant',content:content});
@@ -2987,12 +3802,27 @@ function handleLeadResearchInput(text){
   if(leadResearchState.step==='type'){
     leadResearchState.organizationType=text;
     leadResearchState.step='employees';
-    addMsg('How many employees should they have at minimum?\n\nIf you are not sure, use 300.',false);
-    document.getElementById('msgInput').placeholder='Example: 300';
+    addMsg('How many employees should they have at minimum?\n\nIf you are not sure, use '+defaultCompanyEmployeeMinimum()+'.',false);
+    document.getElementById('msgInput').placeholder='Example: '+defaultCompanyEmployeeMinimum();
     return;
   }
   if(leadResearchState.step==='employees'){
     leadResearchState.employeeMinimum=text.replace(/[^0-9]/g,'')||'300';
+    if(leadResearchState.limit&&leadResearchState.location){
+      var payloadNow={
+        organizationType:leadResearchState.organizationType,
+        employeeMinimum:leadResearchState.employeeMinimum,
+        market:leadResearchState.location,
+        tag:leadResearchState.organizationType,
+        criteria:leadResearchState.organizationType+' with at least '+leadResearchState.employeeMinimum+' employees',
+        limit:parseInt(leadResearchState.limit,10)||12
+      };
+      payloadNow.leadProfile=leadResearchState.leadProfile;
+      leadResearchState=null;
+      document.getElementById('msgInput').placeholder='Message VAL...';
+      runLeadDiscoveryImport(payloadNow,payloadNow.market,false);
+      return;
+    }
     leadResearchState.step=leadResearchState.limit?'location':'count';
     addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 100 for a larger scrape.',false);
     document.getElementById('msgInput').placeholder=leadResearchState.limit?'Example: Texas, Dallas TX, United States...':'Example: 25, 50, 100';
@@ -3000,6 +3830,21 @@ function handleLeadResearchInput(text){
   }
   if(leadResearchState.step==='count'){
     leadResearchState.limit=text.replace(/[^0-9]/g,'')||'12';
+    if(leadResearchState.location){
+      var payloadCount={
+        organizationType:leadResearchState.organizationType,
+        employeeMinimum:leadResearchState.employeeMinimum,
+        market:leadResearchState.location,
+        tag:leadResearchState.organizationType,
+        criteria:leadResearchState.organizationType+' with at least '+leadResearchState.employeeMinimum+' employees',
+        limit:parseInt(leadResearchState.limit,10)||12
+      };
+      payloadCount.leadProfile=leadResearchState.leadProfile;
+      leadResearchState=null;
+      document.getElementById('msgInput').placeholder='Message VAL...';
+      runLeadDiscoveryImport(payloadCount,payloadCount.market,false);
+      return;
+    }
     leadResearchState.step='location';
     addMsg('What location should I search?',false);
     document.getElementById('msgInput').placeholder='Example: Texas, Dallas TX, United States...';
@@ -3015,6 +3860,7 @@ function handleLeadResearchInput(text){
       criteria:leadResearchState.organizationType+' with at least '+leadResearchState.employeeMinimum+' employees',
       limit:parseInt(leadResearchState.limit,10)||12
     };
+    payload.leadProfile=leadResearchState.leadProfile;
     leadResearchState=null;
     document.getElementById('msgInput').placeholder='Message VAL...';
     runLeadDiscoveryImport(payload,payload.market,false);
@@ -3066,10 +3912,11 @@ function runLeadResearch(state){
   showTyping();
   fetch(PROXY+'/api/val/leads/research',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(state)
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var content=d.content||'No lead intelligence returned.';
     chatHistory.push({role:'assistant',content:content});
@@ -3087,7 +3934,31 @@ function startOnboardingProfile(){
 }
 
 // ── COPY ───────────────────────────────────────────────
-function copyMsg(text,btn){navigator.clipboard.writeText(text).then(function(){btn.style.opacity='1';setTimeout(function(){btn.style.opacity='';},1600);}).catch(function(){});}
+function copyMsg(text,btn){
+  function done(){
+    if(btn){
+      var old=btn.textContent;
+      btn.style.opacity='1';
+      if(btn.classList&&btn.classList.contains('cmsg-copy-visible'))btn.textContent='Copied';
+      setTimeout(function(){btn.style.opacity='';if(old)btn.textContent=old;},1600);
+    }
+    addSys('Copied to clipboard.');
+  }
+  function fallback(){
+    var ta=document.createElement('textarea');
+    ta.value=text;
+    ta.setAttribute('readonly','');
+    ta.style.position='fixed';
+    ta.style.left='-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try{document.execCommand('copy');done();}
+    catch(e){addSys('Copy failed. Select the text and copy manually.');}
+    ta.remove();
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(fallback);
+  else fallback();
+}
 
 // ── FILE ───────────────────────────────────────────────
 function isImageUpload(f){
@@ -3146,10 +4017,27 @@ function finishUploadItem(success){
   }
 }
 
+function openFilePicker(){
+  var input=document.getElementById('fileIn');
+  if(!input){addSys('Upload control is not available yet. Refresh and try again.');return;}
+  try{input.value='';}catch(e){}
+  input.click();
+}
+
+function setUploadStatus(text,state){
+  var el=document.getElementById('uploadStatus');
+  if(!el)return;
+  el.textContent=text||'';
+  el.className='upload-status'+(text?' on':'')+(state?' '+state:'');
+}
+
 function onFile(e){
   var files=Array.prototype.slice.call(e.target.files||[]);
   e.target.value='';
   if(!files.length){return;}
+  setUploadStatus('Selected '+files.length+' file'+(files.length===1?'':'s')+'. Uploading automatically now. No submit button needed.','');
+  openDetailWithTitle('Uploads');
+  addSys('Selected '+files.length+' file'+(files.length===1?'':'s')+' for upload.');
   var docs=[],images=[],tooLarge=[],unsupported=[];
   files.forEach(function(f){
     if(f.size>25*1024*1024){tooLarge.push(f.name);return;}
@@ -3164,6 +4052,7 @@ function onFile(e){
   else if(images.length>1){addSys('Image review is one file at a time. Please choose one image for analysis.');}
   if(docs.length>1){addSys('Uploading '+docs.length+' documents to VAL memory...');}
   if(docs.length){beginUploadBatch(docs.length);}
+  if(docs.length){setUploadStatus('Uploading '+docs.length+' document'+(docs.length===1?'':'s')+' to VAL memory automatically...','');}
   docs.forEach(function(f){uploadFileToVAL(f);});
 }
 
@@ -3174,12 +4063,11 @@ function generateImage(prompt){
   d.innerHTML='<div class="cmsg-bubble"><p>🎨 Generating image: <em>'+prompt+'</em>...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);c.scrollTop=c.scrollHeight;
 
-  fetch(PROXY+'/api/generate-image',{
+  apiFetch(PROXY+'/api/generate-image',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt:prompt,size:'1024x1024',quality:'standard'})
   })
-  .then(function(r){return r.json();})
   .then(function(data){
     if(data.error) throw new Error(data.error);
     var revised=data.revisedPrompt?'<p style="font-size:0.75rem;color:#888;margin-top:6px"><em>Prompt used: '+data.revisedPrompt+'</em></p>':'';
@@ -3238,12 +4126,11 @@ function runImageAnalysis(filename, mode){
     var base64=ev.target.result.split(',')[1];
     var mediaType=f.type||'image/jpeg';
 
-    fetch(PROXY+'/api/analyze-image',{
+    apiFetch(PROXY+'/api/analyze-image',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({base64:base64,mediaType:mediaType,prompt:prompts[mode]||prompts.general})
     })
-    .then(function(r){return r.json();})
     .then(function(data){
       if(data.error) throw new Error(data.error);
       var reply=data.reply||'No response.';
@@ -3261,29 +4148,46 @@ function runImageAnalysis(filename, mode){
 
 function uploadFileToVAL(f){
   var msgEl=null;
+  openDetailWithTitle('Uploads');
   // Show uploading state in chat
   var c=document.getElementById('chatScroll');
   var d=document.createElement('div');
   d.className='cmsg assistant';
-  d.innerHTML='<div class="cmsg-bubble"><p>📎 Uploading <strong>'+f.name+'</strong> to VAL memory...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  var isLargeBook=isBookEditorMode()&&f.size>1024*1024;
+  setUploadStatus('Uploading '+f.name+' automatically...'+(isLargeBook?' Large manuscript processing can take 10-30 seconds.':''),'');
+  d.innerHTML='<div class="cmsg-bubble"><p>📎 Uploading <strong>'+f.name+'</strong> to VAL memory...</p>'
+    +(isLargeBook?'<p style="font-size:0.78rem;color:#666;margin-top:4px">Large manuscript detected. This can take 10-30 seconds while VAL extracts and saves the text.</p>':'')
+    +'</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);c.scrollTop=c.scrollHeight;
   msgEl=d;
 
   var fd=new FormData();
   fd.append('file',f,f.name);
+  if(isBookEditorMode()){
+    var lower=(f.name||'').toLowerCase();
+    var docType='manuscript';
+    if(/\bchapter\b/.test(lower))docType='chapter';
+    else if(/\boutline|map|structure\b/.test(lower))docType='outline';
+    else if(/\btranscript|meeting|call\b/.test(lower))docType='transcript';
+    else if(/\bpodcast|launch|promo|marketing\b/.test(lower))docType='launch_notes';
+    else if(/\bprompt|ifs|reflection\b/.test(lower))docType='prompt_notes';
+    var chapterMatch=lower.match(/chapter[\s_-]*(\d+)/i);
+    fd.append('project',VAL_CONFIG.projectName||'The Big Trick');
+    fd.append('client',VAL_CONFIG.clientName||'Michele Julian');
+    fd.append('docType',docType);
+    if(chapterMatch)fd.append('chapterNumber',chapterMatch[1]);
+    fd.append('chapterTitle',f.name.replace(/\.[^.]+$/,''));
+  }
 
-  fetch(FILES_URL,{
+  apiFetch(FILES_URL,{
     method:'POST',
     body:fd
-  })
-  .then(function(r){
-    if(!r.ok) return r.text().then(function(t){throw new Error(t||'Upload failed ('+r.status+')');});
-    return r.json();
   })
   .then(function(data){
     msgEl.querySelector('.cmsg-bubble').innerHTML=
       '<p>✅ <strong>'+f.name+'</strong> saved to VAL memory.</p>'
       +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Extracted '+(data.chars||0)+' characters. VAL can now answer questions about this document.</p>';
+    setUploadStatus('Saved '+f.name+' to VAL memory. VAL can now read it.','success');
     chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to VAL memory. You can now ask me questions about it.'});
     finishUploadItem(true);
   })
@@ -3291,6 +4195,7 @@ function uploadFileToVAL(f){
     msgEl.querySelector('.cmsg-bubble').innerHTML=
       '<p>❌ Upload failed: '+err.message+'</p>'
       +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Check that the file is a supported format and under 25MB.</p>';
+    setUploadStatus('Upload failed: '+err.message,'error');
     console.error('VAL upload error:',err);
     finishUploadItem(false);
   });
@@ -3369,8 +4274,42 @@ function sendMessage(){
     startAddDoc(typeMatch?typeMatch[0].toLowerCase():'document');
     return;
   }
+  if(/\b(who should i follow up with|relationship review|relationships? need|follow up with)\b/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    openDetailWithTitle('Relationship Review');
+    addMsg(msg,true);
+    addMsg('Relationship Review can show who matters, why now, and the next best action.',false);
+    addWorkspaceChatButton('Open Relationship Review',openRelationshipReview);
+    return;
+  }
+  if(/\b(what emails need attention|emails? need|email intelligence|inbox attention)\b/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    openDetailWithTitle('Email Intelligence');
+    addMsg(msg,true);
+    addMsg('Email Intelligence can separate needs-reply, waiting-on-response, drafts, forwarding suggestions, and low-priority messages.',false);
+    addWorkspaceChatButton('Open Email Intelligence',openEmailIntelligence);
+    return;
+  }
+  if(/\b(what should i do today|start my day|priority review|what should i do now)\b/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    openDetailWithTitle('Priority Review');
+    addMsg(msg,true);
+    addMsg('Priority Review can rank meetings, tasks, commitments, opportunities, and recommended actions in one workspace.',false);
+    addWorkspaceChatButton('Open Priority Review',openPriorityReview);
+    return;
+  }
   document.getElementById('sendBtn').disabled=true;
   chat(msg,inp);
+}
+
+function addWorkspaceChatButton(label,fn){
+  var c=document.getElementById('chatScroll');if(!c)return;
+  var row=document.createElement('div');
+  row.className='cmsg assistant';
+  row.innerHTML='<div class="cmsg-bubble"><button class="chip">'+docSafe(label)+'</button></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  row.querySelector('button').onclick=fn;
+  c.appendChild(row);
+  c.scrollTop=c.scrollHeight;
 }
 
 
@@ -3393,7 +4332,7 @@ function chat(msg,inp){
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Pipeline ownership:\n';
     dashData.opportunities.slice(0,15).forEach(function(o){
-      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.owner?' | GHL owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
+      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
       if(o.notes&&o.notes.length){
         ctx+='    GHL notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
       }
@@ -3401,11 +4340,13 @@ function chat(msg,inp){
   }
   if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
   if(dashData.tasks&&dashData.tasks.length){
-    ctx+='Task list:\n';
-    dashData.tasks.forEach(function(t){
+    var taskPreview=dashData.tasks.slice(0,12);
+    ctx+='Task preview (first '+taskPreview.length+' of '+dashData.tasks.length+', not the full list):\n';
+    taskPreview.forEach(function(t){
       var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'no due date';
       ctx+='  - '+(t.title||'Untitled task')+' | Contact: '+(t.contactName||'unknown')+' | Due: '+due+(t.overdue?' [OVERDUE]':'')+'.\n';
     });
+    if(dashData.tasks.length>taskPreview.length)ctx+='  ... '+(dashData.tasks.length-taskPreview.length)+' more tasks are in the task board. Do not list them all unless the user explicitly asks.\n';
   }
   if(dashData.followups!==undefined) ctx+='Unread conversations: '+dashData.followups+'.\n';
   if(dashData.conversations&&dashData.conversations.length){
@@ -3416,9 +4357,9 @@ function chat(msg,inp){
   }
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
-  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
+  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
@@ -3429,26 +4370,40 @@ function chatSilent(msg){
   var ctx=buildContext();
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
-  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
+  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
 
 // ── CHAT RENDERING ─────────────────────────────────────
 function ftime(){return new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}
+function isLeadOutput(content){
+  var t=String(content||'').trim();
+  return /^(Found and enriched|Imported \d+|Level 3 verification|Lead scrape|Search: .*employees|Review these first)/i.test(t)
+    || /\n\s*\d+\.\s+[^\n]+\n\s+Industry:/i.test(t)
+    || /\n\s+Lead Score:/i.test(t);
+}
 function addMsg(content,isUser){
   var c=document.getElementById('chatScroll');
   var d=document.createElement('div');d.className='cmsg '+(isUser?'user':'assistant');
   var fmt=isUser?String(content):String(content).replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
-  if(!isUser)fmt='<p>'+fmt+'</p>';
+  if(!isUser){
+    if(isLeadOutput(content)){
+      fmt='<div class="lead-preview-output">'+htmlEscape(content)+'</div>';
+    }else{
+      fmt='<p>'+fmt+'</p>';
+    }
+  }
   if(!isUser&&VAL_CONFIG&&VAL_CONFIG.demoMode){
     fmt+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><a class="chip" href="'+(VAL_CONFIG.signupUrl||'https://graceintelligence.com/val')+'" target="_blank" rel="noopener">Get your VAL now</a><button class="chip" onclick="resetDemoMode()">Reset demo</button></div>';
   }
   var esc=String(content).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
   var actions=!isUser
-    ?'<button class="cmsg-action" onclick="copyMsg(\''+esc+'\',this)"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg></button>'
+    ?'<button class="cmsg-copy-visible" onclick="copyMsg(\''+esc+'\',this)">Copy</button>'
+    +'<button class="cmsg-action" title="Copy" onclick="copyMsg(\''+esc+'\',this)"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg></button>'
+    +'<button class="cmsg-action" title="Create Google Doc from latest VAL response" onclick="createGoogleDocFromLast()"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-.988-2.387l-4.5-4.5A3.375 3.375 0 0011.625 3.75H8.25A2.25 2.25 0 006 6v12a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 18v-2.25m-7.5-9v4.5h4.5"/></svg></button>'
     +'<button class="cmsg-action" onclick="speak(\''+esc+'\',this)"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"/></svg></button>'
     :'';
   d.innerHTML='<div class="cmsg-bubble">'+fmt+'</div><div class="cmsg-meta"><span>'+ftime()+'</span>'+actions+'</div>';
@@ -3495,14 +4450,19 @@ function runValAction(action,label,query){
   showTyping();
   fetch(PROXY+'/api/val/intelligence',{
     method:'POST',
+    credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:action,query:query||'',dashboard:dashData,tasks:valTasks})
+    body:JSON.stringify({action:action,query:query||'',dashboard:Object.assign({},dashData,{tasks:(dashData.tasks||[]).slice(0,12)}),tasks:compactTaskPayload(25)})
   })
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var text=d.content||'I could not generate that yet.';
     chatHistory.push({role:'assistant',content:text});
     addMsg(text,false);
+    if(d.createdTasks&&d.createdTasks.length){
+      addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');
+      valTasksLoad();
+    }
     savedChat=false;autoSave();
   })
   .catch(function(e){removeTyping();addSys('VAL action failed: '+e.message);});
@@ -3514,8 +4474,8 @@ function searchValMemory(q){
   openDetailWithTitle('Memory Search');
   addMsg('Search memory: '+q,true);
   showTyping();
-  fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q))
-  .then(function(r){removeTyping();return r.json();})
+  fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q),{credentials:'same-origin'})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var results=d.results||[];
     if(!results.length){addMsg('No matching memory found.',false);return;}
@@ -3557,6 +4517,7 @@ function updateWsSidebar(){
     var tb = document.getElementById('wsTasksBadge');
     if(ts) ts.textContent = dashData.openTasks + ' open' + (dashData.overdueTasks?' · '+dashData.overdueTasks+' overdue':'');
     if(tb && dashData.overdueTasks > 0){ tb.textContent = dashData.overdueTasks; tb.style.display=''; }
+    else if(tb){ tb.style.display='none'; }
   }
   if(dashData.pipelineActive !== undefined){
     var ps = document.getElementById('wsPipelineSub');
@@ -3586,8 +4547,7 @@ function wsThreadTime(raw){
 }
 
 function loadWsThreads(){
-  return fetch(CONVERSATION_HOOK+'?limit=25')
-    .then(function(r){if(!r.ok)throw new Error('threads unavailable');return r.json();})
+  return apiFetch(CONVERSATION_HOOK+'?limit=25')
     .then(function(d){
       var rows=Array.isArray(d)?d:(d.conversations||d.items||d.data||[]);
       wsThreads=rows.map(function(c){
@@ -3605,6 +4565,7 @@ function loadWsThreads(){
 function renderWsThreads(){
   var container = document.getElementById('wsRecentThreads');
   if(!container) return;
+  if(!Array.isArray(wsThreads)) wsThreads=[];
   if(!wsThreads.length){
     container.innerHTML = '<div class="ws-item" style="opacity:0.35;pointer-events:none"><div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg></div><div class="ws-item-text"><div class="ws-item-title">Start a session</div><div class="ws-item-sub">Threads appear here</div></div></div>';
     return;
@@ -3663,7 +4624,7 @@ function gchatBubble(text,isUser){
   if(!isUser)fmt='<p>'+fmt+'</p>';
   d.style.cssText='max-width:86%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.65;margin-bottom:4px;word-break:break-word;'
     +(isUser?'background:var(--navy);color:white;align-self:flex-end;border-bottom-right-radius:3px;'
-            :'background:white;color:var(--text);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px;');
+            :'background:white;color:#16233a;border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px;');
   d.innerHTML=fmt;
   c.appendChild(d);c.scrollTop=c.scrollHeight;
 }
@@ -3675,7 +4636,7 @@ function gchatSend(){
   gchatHistory.push({role:'user',content:msg});
   var typing=document.createElement('div');
   typing.id='gchatTyping';
-  typing.style.cssText='padding:10px 14px;border-radius:12px;background:white;border:1px solid var(--border);align-self:flex-start;font-size:12px;color:var(--text-3);font-family:var(--mono);';
+  typing.style.cssText='padding:10px 14px;border-radius:12px;background:white;border:1px solid var(--border);align-self:flex-start;font-size:12px;color:#64748b;font-family:var(--mono);';
   typing.textContent='VAL is thinking...';
   document.getElementById('gchatMessages').appendChild(typing);
   document.getElementById('gchatMessages').scrollTop=99999;
@@ -3828,8 +4789,7 @@ function copySocialPost(){
 // ── CONTACT LOOKUP ─────────────────────────────────────
 function lookupContact(name, callback){
   // Search GHL contacts by name — runs before asking user for email
-  fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
-  .then(function(r){return r.json();})
+  apiFetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
   .then(function(d){
     var contacts=d.contacts||[];
     if(contacts.length&&contacts[0].email){callback(contacts[0]);}
@@ -4021,21 +4981,10 @@ function addSuggestedTasksFromLastResponse(userMsg){
 
 function askTasks(){
   var all=valTasks.filter(function(t){return !t.completed;});
-  all.sort(function(a,b){
-    var aOver=a.dueDate&&new Date(a.dueDate)<new Date()?1:0;
-    var bOver=b.dueDate&&new Date(b.dueDate)<new Date()?1:0;
-    if(bOver!==aOver) return bOver-aOver;
-    if(!a.dueDate) return 1;
-    if(!b.dueDate) return -1;
-    return new Date(a.dueDate)-new Date(b.dueDate);
-  });
+  openTaskBoard();
   if(!all.length){
-    ask('I have no open tasks right now. Based on my pipeline, recent conversations, and meetings, what should I be working on? Suggest 3 specific action items.');
-    return;
+    ask(isBookEditorMode()?'Based on the uploaded manuscript and book memory, what should Michele work on next? Put every action in the to-do list with context.':'I have no open tasks right now. Based on my pipeline, recent conversations, and meetings, what should I be working on? Suggest 3 specific action items.');
   }
-  taskQueue=all;
-  taskIndex=0;
-  presentTask();
 }
 
 function presentTask(){
@@ -4089,8 +5038,8 @@ function sendToVAL(prompt, onComplete){
   var ctx=buildContext();
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context]\n'+ctx},{role:'assistant',content:'Got it.'}].concat(msgs);
-  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
-  .then(function(r){removeTyping();return r.json();})
+  fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  .then(function(r){removeTyping();return apiTextOrJson(r);})
   .then(function(d){
     var m=(d.message&&d.message.content)||d.message||'Could not process.';
     chatHistory.push({role:'assistant',content:m});
@@ -4109,13 +5058,14 @@ function buildContext(){
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Visible lead ownership:\n';
-    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
+    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
   }
   return ctx;
 }
 
 function askProposals(){
-  fetch(HOOK_PROPOSALS).then(r=>r.json()).then(function(d){
+  fetchJSON(HOOK_PROPOSALS).then(function(d){
+    d=d||{};
     var all=d.proposals||[];
     if(!all.length){
       ask('I have no proposals in the system right now. Should I follow up with anyone about sending a proposal?');
@@ -4180,7 +5130,7 @@ function presentUnreadTriageItem(){
   var item=unreadTriageQueue[unreadTriageIndex];
   var total=unreadTriageQueue.length;
   addMsg('Loading unread conversation '+(unreadTriageIndex+1)+' of '+total+'...',false);
-  fetch(PROXY+'/api/conversation/'+(item.id||item.conversationId)).then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/conversation/'+(item.id||item.conversationId)).then(function(d){
     var threadText='Unread conversation '+(unreadTriageIndex+1)+' of '+total+'\n\nFrom: '+(d.contactName||item.label||'Contact')+'\nUnread: '+(d.unreadCount||item.unreadCount||'')+'\n\n'+formatThread(d);
     addMsg(threadText,false);
     addUnreadTriageControls(item,threadText);
@@ -4192,7 +5142,8 @@ function presentUnreadTriageItem(){
 }
 function startUnreadTriage(emptyPrompt){
   openDetailWithTitle('Unread Triage');
-  fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
+  fetchJSON(HOOK_COMMS).then(function(d){
+    d=d||{};
     var items=(d.items||[]).filter(function(i){return !unreadDismissed.includes(unreadKey(i));});
     if(!items.length){ask(emptyPrompt||'My communications queue is clear. Who should I proactively reach out to today?');return;}
     unreadTriageQueue=items;
@@ -4260,6 +5211,7 @@ function pipelineOpportunityPrompt(o){
   if(!o)return '';
   return [
     'Name: '+pipelineDisplayName(o),
+    o.accountLabel?'GHL account: '+o.accountLabel:'',
     o.owner?'GHL owner: '+o.owner:'',
     o.stage?'Stage: '+o.stage:'',
     o.value?'Value: $'+o.value:'',
@@ -4277,6 +5229,7 @@ function addPipelineCard(o){
   var task=ensurePipelineTask(o);
   o.valTaskId=task&&task.id;
   var bits=[
+    o.accountLabel?'Account: '+docSafe(o.accountLabel):'',
     o.stage?'Stage: '+docSafe(o.stage):'Stage unclear',
     o.value?'Value: $'+docSafe(o.value):'',
     o.daysInStage?'Days in stage: '+docSafe(o.daysInStage):'',
@@ -4337,7 +5290,8 @@ function pipelineCreateTask(){
 }
 function pipelineNext(){pipelineTriageIndex++;presentPipelineItem();}
 function askPipeline(){
-  fetch(HOOK_PIPELINE).then(r=>r.json()).then(function(d){
+  fetchJSON(HOOK_PIPELINE).then(function(d){
+    d=d||{};
     var opps=(d.opportunities||[]).slice().sort(function(a,b){return (b.stalled?1:0)-(a.stalled?1:0)||(b.daysInStage||0)-(a.daysInStage||0);});
     if(!opps.length){
       var debug=d._debug&&d._debug.error?'\n\nPipeline connection detail: '+d._debug.error:'';
@@ -4364,7 +5318,7 @@ function wsNav(view){
     if(view==='dashboard'){ closeDetail(); }
     else if(view==='briefing'){ deliverMorningBriefing(); }
     else if(view==='meetings'){ ask('Show me all my meetings today and this week with any prep notes.'); }
-    else if(view==='tasks'){ ask('Show my overdue tasks and tell me what to do first.'); }
+    else if(view==='tasks'){ openTaskBoard(); }
     else if(view==='pipeline'){ askPipeline(); }
     else if(view==='followups'){ askFollowups(); }
     else if(view==='approvals'){ openApprovalQueue(); }
@@ -4391,8 +5345,7 @@ function wsLoadThread(id){
     addSys('Loading saved thread...');
     openDetail('thread-'+id);
     document.getElementById('detailBreadcrumb').innerHTML = 'VAL / <strong>'+wsEsc(thread.title)+'</strong>';
-    fetch(CONVERSATION_HOOK+'/'+encodeURIComponent(id)+'/messages')
-      .then(function(r){if(!r.ok)throw new Error('Thread unavailable');return r.json();})
+    apiFetch(CONVERSATION_HOOK+'/'+encodeURIComponent(id)+'/messages')
       .then(function(d){
         var rows=Array.isArray(d)?d:(d.messages||d.items||d.data||[]);
         chatHistory=rows.map(function(m){return {role:m.role||'assistant',content:m.content||m.text||''};}).filter(function(m){return !!m.content;});
@@ -4444,8 +5397,10 @@ var _origAutoSave = typeof autoSave === 'function' ? autoSave : function(){};
   function animRing(){rx+=(mx-rx)*0.12;ry+=(my-ry)*0.12;ring.style.left=rx+"px";ring.style.top=ry+"px";requestAnimationFrame(animRing);}
   animRing();
   function bindHover(el){el.addEventListener("mouseenter",function(){cur.style.transform="translate(-50%,-50%) scale(2.5)";cur.style.background="rgba(196,150,58,0.9)";ring.style.width="48px";ring.style.height="48px";ring.style.opacity="0.3";});el.addEventListener("mouseleave",function(){cur.style.transform="translate(-50%,-50%) scale(1)";cur.style.background="var(--gold)";ring.style.width="32px";ring.style.height="32px";ring.style.opacity="1";});}
+  function bindTextCursor(el){el.addEventListener("mouseenter",function(){cur.style.opacity="0";ring.style.opacity="0";});el.addEventListener("mouseleave",function(){cur.style.opacity="1";ring.style.opacity="1";});el.addEventListener("focus",function(){cur.style.opacity="0";ring.style.opacity="0";});el.addEventListener("blur",function(){cur.style.opacity="1";ring.style.opacity="1";});}
   document.querySelectorAll("a,button,.fitem,.scard,.stat,.cw-action,.day-evt,.ws-item").forEach(bindHover);
-  var obs=new MutationObserver(function(){document.querySelectorAll("a,button,.fitem,.scard,.stat,.cw-action,.day-evt,.ws-item").forEach(bindHover);});
+  document.querySelectorAll("input,textarea,[contenteditable='true']").forEach(bindTextCursor);
+  var obs=new MutationObserver(function(){document.querySelectorAll("a,button,.fitem,.scard,.stat,.cw-action,.day-evt,.ws-item").forEach(bindHover);document.querySelectorAll("input,textarea,[contenteditable='true']").forEach(bindTextCursor);});
   obs.observe(document.body,{childList:true,subtree:true});
 })();
 

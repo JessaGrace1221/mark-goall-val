@@ -50,8 +50,18 @@ function createGhlMcpService({
     };
   }
 
-  async function headers(){
-    const c=await credentials();
+  function credentialsFromAccount(account={}){
+    return {
+      apiKey:account.apiKey||account.key||'',
+      locationId:account.locationId||account.location_id||'',
+      mcpUrl:account.mcpUrl||account.mcp_url||'',
+      user:getCurrentUser ? getCurrentUser() : null,
+      tenantId:getTenantId ? getTenantId() : '',
+      account
+    };
+  }
+
+  function headersForCredentials(c={}){
     return {
       Authorization:`Bearer ${c.apiKey||''}`,
       Version:apiVersion,
@@ -59,36 +69,58 @@ function createGhlMcpService({
     };
   }
 
-  async function prepare(path,body){
-    const c=await credentials();
-    const loc=c.locationId;
+  async function headers(){
+    return headersForCredentials(await credentials());
+  }
+
+  function prepareWithCredentials(path,body,c={}){
+    const loc=c.locationId||'';
     let nextPath=String(path||'');
     if(loc){
       const enc=encodeURIComponent(loc);
       nextPath=nextPath
+        .replace(/([?&]locationId=)[^&]*/g,`$1${enc}`)
+        .replace(/([?&]location_id=)[^&]*/g,`$1${enc}`)
         .replace(/locationId=(&|$)/g,`locationId=${enc}$1`)
         .replace(/location_id=(&|$)/g,`location_id=${enc}$1`)
+        .replace(/\/locations\/[^/?#]+/g,`/locations/${enc}`)
+        .replace(/\/location\/[^/?#]+/g,`/location/${enc}`)
+        .replace(/\/oauth\/[^/?#]+/g,`/oauth/${enc}`)
         .replace(/\/location\/(?=\/|$)/g,`/location/${enc}`)
         .replace(/\/locations\/(?=\/|$)/g,`/locations/${enc}/`);
     }
     let nextBody=body;
     if(loc&&body&&typeof body==='object'&&!Array.isArray(body)){
       nextBody={...body};
-      if('locationId' in nextBody&&!nextBody.locationId) nextBody.locationId=loc;
-      if('location_id' in nextBody&&!nextBody.location_id) nextBody.location_id=loc;
+      if('locationId' in nextBody) nextBody.locationId=loc;
+      if('location_id' in nextBody) nextBody.location_id=loc;
     }
     return {path:nextPath,body:nextBody,credentials:c};
   }
 
+  async function prepare(path,body){
+    return prepareWithCredentials(path,body,await credentials());
+  }
+
+  function prepareForAccount(path,body,account){
+    return prepareWithCredentials(path,body,credentialsFromAccount(account));
+  }
+
   async function request(method,path,body){
     const prepared=await prepare(path,body);
-    const r=await fetch(baseUrl+prepared.path,{method,headers:await headers(),body:prepared.body?JSON.stringify(prepared.body):undefined});
+    const r=await fetch(baseUrl+prepared.path,{method,headers:headersForCredentials(prepared.credentials),body:prepared.body?JSON.stringify(prepared.body):undefined});
+    return readJsonResponse(r);
+  }
+
+  async function requestForAccount(account,method,path,body){
+    const prepared=prepareForAccount(path,body,account);
+    const r=await fetch(baseUrl+prepared.path,{method,headers:headersForCredentials(prepared.credentials),body:prepared.body?JSON.stringify(prepared.body):undefined});
     return readJsonResponse(r);
   }
 
   async function requestStrict(method,path,body){
     const prepared=await prepare(path,body);
-    const r=await fetch(baseUrl+prepared.path,{method,headers:await headers(),body:prepared.body?JSON.stringify(prepared.body):undefined});
+    const r=await fetch(baseUrl+prepared.path,{method,headers:headersForCredentials(prepared.credentials),body:prepared.body?JSON.stringify(prepared.body):undefined});
     const data=await readJsonResponse(r);
     if(!r.ok){
       const detail=data.message||data.error||data.errorMessage||data.raw||JSON.stringify(data).slice(0,500);
@@ -99,20 +131,21 @@ function createGhlMcpService({
 
   async function requestTry(method,path,body){
     const prepared=await prepare(path,body);
-    const r=await fetch(baseUrl+prepared.path,{method,headers:await headers(),body:prepared.body?JSON.stringify(prepared.body):undefined});
+    const r=await fetch(baseUrl+prepared.path,{method,headers:headersForCredentials(prepared.credentials),body:prepared.body?JSON.stringify(prepared.body):undefined});
     const data=await readJsonResponse(r);
     return {ok:r.ok,status:r.status,path:prepared.path,data};
+  }
+
+  async function requestTryForAccount(account,method,path,body){
+    const prepared=prepareForAccount(path,body,account);
+    const r=await fetch(baseUrl+prepared.path,{method,headers:headersForCredentials(prepared.credentials),body:prepared.body?JSON.stringify(prepared.body):undefined});
+    const data=await readJsonResponse(r);
+    return {ok:r.ok,status:r.status,path:prepared.path,data,account};
   }
 
   async function isConfigured(){
     const c=await credentials();
     return !!(c.apiKey&&c.locationId);
-  }
-
-  async function getLocation(){
-    const c=await credentials();
-    if(!c.locationId) throw new Error('GHL location ID is missing');
-    return request('GET',`/locations/${encodeURIComponent(c.locationId)}`);
   }
 
   async function searchContacts({query='',limit=20,sortBy='date_added',sortDirection='desc'}={}){
@@ -150,10 +183,6 @@ function createGhlMcpService({
     return extractItems(data,'tasks').slice(0,limit);
   }
 
-  async function createContactTask(id,task){
-    return request('POST',`/contacts/${encodeURIComponent(id)}/tasks`,task);
-  }
-
   async function getConversations({query='',limit=20,status=''}={}){
     const c=await credentials();
     const qs=new URLSearchParams({locationId:c.locationId||'',limit:String(limit)});
@@ -163,15 +192,16 @@ function createGhlMcpService({
     return extractItems(data,'conversations');
   }
 
-  async function getConversationMessages(id,{limit=20}={}){
-    if(!id) return [];
-    const data=await request('GET',`/conversations/${encodeURIComponent(id)}/messages?limit=${limit}`);
-    const container=data.messages||data;
-    return Array.isArray(container) ? container : extractItems(container,'messages');
-  }
-
   async function findOpenOpportunities({status='open',limit=100}={}){
     const c=await credentials();
+    return findOpenOpportunitiesForCredentials(c,{status,limit});
+  }
+
+  async function findOpenOpportunitiesForAccount(account,{status='open',limit=100}={}){
+    return findOpenOpportunitiesForCredentials(credentialsFromAccount(account),{status,limit});
+  }
+
+  async function findOpenOpportunitiesForCredentials(c,{status='open',limit=100}={}){
     const encodedLoc=encodeURIComponent(c.locationId||'');
     const encodedStatus=encodeURIComponent(status);
     const attempts=[
@@ -182,52 +212,52 @@ function createGhlMcpService({
     ];
     const results=[];
     for(const path of attempts){
-      const r=await requestTry('GET',path);
-      const opportunities=extractItems(r.data,'opportunities');
-      results.push({path:r.path,status:r.status,ok:r.ok,count:opportunities.length,error:r.ok?'':(r.data?.message||r.data?.error||r.data?.raw||'')});
+      const prepared=prepareWithCredentials(path,undefined,c);
+      const r=await fetch(baseUrl+prepared.path,{method:'GET',headers:headersForCredentials(c)});
+      const data=await readJsonResponse(r);
+      const opportunities=extractItems(data,'opportunities');
+      results.push({path:prepared.path,status:r.status,ok:r.ok,count:opportunities.length,error:r.ok?'':(data?.message||data?.error||data?.raw||'')});
       if(r.ok&&opportunities.length){
-        let data=r.data;
+        let nextData=data;
         if(!path.includes('status=')){
           const open=opportunities.filter(o=>String(o.status||'').toLowerCase()==='open');
-          if(open.length) data={...data,opportunities:open,meta:{...(data.meta||{}),total:open.length}};
+          if(open.length) nextData={...data,opportunities:open,meta:{...(data.meta||{}),total:open.length}};
         }
-        return {path:r.path,data,attempts:results};
+        return {path:prepared.path,data:nextData,attempts:results,account:c.account};
       }
     }
     const firstOk=results.find(r=>r.ok);
     if(firstOk){
-      const r=await requestTry('GET',firstOk.path);
-      return {path:firstOk.path,data:r.data||{},attempts:results};
+      const prepared=prepareWithCredentials(firstOk.path,undefined,c);
+      const r=await fetch(baseUrl+prepared.path,{method:'GET',headers:headersForCredentials(c)});
+      return {path:firstOk.path,data:await readJsonResponse(r),attempts:results,account:c.account};
     }
     throw new Error('GHL opportunities search failed: '+results.map(r=>`${r.status} ${r.path}`).join(' | '));
   }
 
-  async function getPipelines(){
-    const c=await credentials();
-    return request('GET',`/opportunities/pipelines?locationId=${encodeURIComponent(c.locationId||'')}`);
-  }
-
-  async function listCalendars(){
-    const c=await credentials();
-    const data=await request('GET',`/calendars/?locationId=${encodeURIComponent(c.locationId||'')}`);
-    return extractItems(data,'calendars');
-  }
-
   async function getCalendarEvents(start,end,{selectedCalendarIds=calendarIds}={}){
     const c=await credentials();
+    return getCalendarEventsForCredentials(c,start,end,{selectedCalendarIds});
+  }
+
+  async function getCalendarEventsForAccount(account,start,end,{selectedCalendarIds=account?.calendarIds||[]}={}){
+    return getCalendarEventsForCredentials(credentialsFromAccount(account),start,end,{selectedCalendarIds});
+  }
+
+  async function getCalendarEventsForCredentials(c,start,end,{selectedCalendarIds=[]}={}){
     const calendarMap=new Map();
     let ids=(selectedCalendarIds||[]).slice();
     if(!ids.length){
       try{
-        const calendars=await listCalendars();
-        calendars.forEach(cal=>{ if(cal.id){ calendarMap.set(String(cal.id),cal.name||cal.title||'GHL Calendar'); ids.push(String(cal.id)); } });
+        const data=await requestForAccount(c.account||c,'GET',`/calendars/?locationId=${encodeURIComponent(c.locationId||'')}`);
+        extractItems(data,'calendars').forEach(cal=>{ if(cal.id){ calendarMap.set(String(cal.id),cal.name||cal.title||'GHL Calendar'); ids.push(String(cal.id)); } });
       }catch(e){ logger.error?.('GHL calendar list error:',e.message); }
     }
     ids=Array.from(new Set(ids));
     const range=`locationId=${encodeURIComponent(c.locationId||'')}&startTime=${start.getTime()}&endTime=${end.getTime()}`;
     const calls=ids.length
-      ? ids.map(id=>request('GET',`/calendars/events?${range}&calendarId=${encodeURIComponent(id)}`).then(data=>({id,data})))
-      : [request('GET',`/calendars/events?${range}`).then(data=>({id:'all',data}))];
+      ? ids.map(id=>requestForAccount(c.account||c,'GET',`/calendars/events?${range}&calendarId=${encodeURIComponent(id)}`).then(data=>({id,data})))
+      : [requestForAccount(c.account||c,'GET',`/calendars/events?${range}`).then(data=>({id:'all',data}))];
     const results=await Promise.allSettled(calls);
     const seen=new Set();
     const events=[];
@@ -236,7 +266,7 @@ function createGhlMcpService({
       const calendarId=result.value.id;
       const list=extractItems(result.value.data,'events','appointments');
       list.forEach(ev=>{
-        const key=`${ev.id||ev.appointmentId||ev.startTime||ev.start}-${calendarId}`;
+        const key=`${ev.id||ev.appointmentId||ev.startTime||ev.start}-${calendarId}-${c.locationId}`;
         if(seen.has(key)) return;
         seen.add(key);
         events.push({
@@ -252,17 +282,13 @@ function createGhlMcpService({
           owner:inferOwner(ev),
           calendarId,
           calendarName:calendarMap.get(String(calendarId))||ev.calendarName||'GHL Calendar',
+          accountSlug:c.account?.slug||'default',
+          accountLabel:c.account?.label||'GHL',
           raw:ev
         });
       });
     });
     return events;
-  }
-
-  async function getProposalsByStatuses(statuses,{limit=20,skip=0}={}){
-    const c=await credentials();
-    const statusParams=(statuses||[]).map(s=>`status[]=${encodeURIComponent(s)}`).join('&');
-    return request('GET',`/proposals/document?locationId=${encodeURIComponent(c.locationId||'')}&${statusParams}&skip=${skip}&limit=${limit}`);
   }
 
   async function buildContext(query='',opts={}){
@@ -271,9 +297,9 @@ function createGhlMcpService({
     const limit=opts.limit||8;
     const errors=[];
     const [contactsRes,oppsRes,convosRes]=await Promise.allSettled([
-      searchContacts({query:text,limit}).catch(e=>{throw e;}),
-      findOpenOpportunities({status:'open',limit:opts.opportunityLimit||25}).catch(e=>{throw e;}),
-      getConversations({query:text,limit:opts.conversationLimit||8}).catch(e=>{throw e;})
+      searchContacts({query:text,limit}),
+      findOpenOpportunities({status:'open',limit:opts.opportunityLimit||25}),
+      getConversations({query:text,limit:opts.conversationLimit||8})
     ]);
     if(contactsRes.status==='rejected') errors.push('contacts: '+contactsRes.reason.message);
     if(oppsRes.status==='rejected') errors.push('opportunities: '+oppsRes.reason.message);
@@ -310,25 +336,26 @@ function createGhlMcpService({
 
   return {
     credentials,
+    credentialsFromAccount,
     headers,
+    headersForCredentials,
     prepare,
+    prepareForAccount,
     request,
+    requestForAccount,
     requestStrict,
     requestTry,
+    requestTryForAccount,
     isConfigured,
-    getLocation,
     searchContacts,
     getContact,
     getContactNotes,
     getContactTasks,
-    createContactTask,
     getConversations,
-    getConversationMessages,
     findOpenOpportunities,
-    getPipelines,
-    listCalendars,
+    findOpenOpportunitiesForAccount,
     getCalendarEvents,
-    getProposalsByStatuses,
+    getCalendarEventsForAccount,
     buildContext
   };
 }
