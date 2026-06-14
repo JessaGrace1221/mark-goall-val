@@ -91,6 +91,30 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .tbtn:active{transform:scale(0.96)}
 .tbtn.on{background:rgba(196,150,58,0.2);border-color:rgba(196,150,58,0.3);color:var(--gold-2)}
 .tbtn svg{width:11px;height:11px}
+.quick-actions{display:flex;gap:4px;margin-left:8px;align-items:center}
+.actions-menu-wrap{position:relative}
+.actions-menu{
+  position:absolute;top:calc(100% + 8px);right:0;z-index:3000;
+  width:240px;padding:8px;border-radius:10px;
+  background:#132037;border:1px solid rgba(255,255,255,0.12);
+  box-shadow:0 18px 50px rgba(0,0,0,0.38);
+  display:none;max-height:calc(100dvh - 82px);overflow-y:auto;overflow-x:hidden;
+}
+.actions-menu::-webkit-scrollbar{width:3px}
+.actions-menu::-webkit-scrollbar-thumb{background:rgba(199,146,43,0.34);border-radius:999px}
+.actions-menu.open{display:block;animation:fadeIn 0.14s ease-out}
+.actions-menu button{
+  width:100%;border:0;background:transparent;color:rgba(255,255,255,0.78);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 11px;border-radius:7px;
+  font-family:var(--body);font-size:0.72rem;font-weight:750;letter-spacing:0.08em;text-transform:uppercase;
+  text-align:left;
+}
+.actions-menu button:hover{background:rgba(255,255,255,0.08);color:#fff}
+.actions-menu button.primary{background:rgba(196,150,58,0.18);color:var(--gold-2)}
+.actions-menu button.primary:hover{background:rgba(196,150,58,0.26)}
+.actions-menu .menu-sep{height:1px;background:rgba(255,255,255,0.08);margin:6px 4px}
+.actions-menu .menu-hint{font-family:var(--mono);font-size:0.56rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.32);padding:7px 11px 5px}
 
 /* ── STAT BAR ── */
 .statbar{
@@ -179,16 +203,21 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .fitem-meta{font-size:0.5625rem;color:var(--text-3);margin-top:2px;font-family:'DM Mono',monospace}
 
 /* bottom summary cards */
-.summary-cards{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0}
+.summary-cards{
+  display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid rgba(255,255,255,0.08);
+  flex:0 1 auto;max-height:46%;overflow-y:auto;overflow-x:hidden;background:#101a2a;
+}
+.summary-cards::-webkit-scrollbar{width:3px}
+.summary-cards::-webkit-scrollbar-thumb{background:rgba(199,146,43,0.34);border-radius:999px}
 .scard{
-  padding:0.75rem 1rem;border-right:1px solid rgba(255,255,255,0.08);
+  padding:0.68rem 0.95rem;border-right:1px solid rgba(255,255,255,0.08);
   cursor:pointer;transition:background 0.2s;
 }
 .scard:nth-child(even){border-right:none}
 .scard:nth-child(3),.scard:nth-child(4){border-top:1px solid rgba(255,255,255,0.08)}
 .scard:hover{background:rgba(255,255,255,0.05)}
 .scard-label{font-size:0.4375rem;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-4);margin-bottom:3px}
-.scard-val{font-family:var(--serif);font-size:1.375rem;font-weight:600;color:var(--val-white);line-height:1}
+.scard-val{font-family:var(--serif);font-size:1.25rem;font-weight:600;color:var(--val-white);line-height:1.08;overflow-wrap:anywhere}
 .scard-sub{font-size:0.5625rem;color:var(--text-3);margin-top:2px}
 .scard-link{font-size:0.5rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-top:5px;display:block;transition:color 0.2s}
 .scard:hover .scard-link{color:var(--gold-2)}
@@ -392,9 +421,18 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
   transition:all 0.2s var(--ease);letter-spacing:0.03em;
 }
 .chip:hover{border-color:var(--gold-border);background:var(--gold-dim);color:var(--navy);transform:translateY(-1px)}
-.suggestion-label{font-size:0.5625rem;font-weight:700;color:#3E5070;letter-spacing:0.12em;text-transform:uppercase;margin-top:0.75rem;margin-bottom:0.375rem}
-.dynamic-suggestions{display:flex;flex-direction:column;gap:0.375rem;margin-top:0;flex-wrap:nowrap;overflow:visible;padding-bottom:2px}
-.dynamic-suggestions .chip{background:var(--val-white);color:var(--navy);border-color:rgba(27,43,69,0.14)}
+.suggestion-label{grid-column:1/-1;font-size:0.5625rem;font-weight:800;color:rgba(248,245,238,0.46);letter-spacing:0.14em;text-transform:uppercase;padding:0.72rem 0.95rem 0.35rem;border-top:1px solid rgba(255,255,255,0.08)}
+.dynamic-suggestions{grid-column:1/-1;display:flex;flex-direction:column;gap:0.25rem;margin:0;padding:0 0.55rem 0.7rem;overflow:visible}
+.prompt-row{
+  width:100%;min-height:34px;border:1px solid rgba(255,255,255,0.08);border-radius:7px;
+  background:rgba(255,255,255,0.035);color:rgba(248,245,238,0.82);
+  font:750 0.68rem var(--body);letter-spacing:0.06em;text-transform:none;
+  text-align:left;padding:0.45rem 0.55rem;line-height:1.25;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  transition:background 0.18s,border-color 0.18s,color 0.18s;
+}
+.prompt-row::after{content:'›';color:var(--gold);font-size:0.95rem;line-height:1;opacity:0.75}
+.prompt-row:hover{background:rgba(199,146,43,0.12);border-color:rgba(199,146,43,0.26);color:#fff}
 
 /* ── WORKSPACE SIDEBAR OVERLAY ── */
 .ws-overlay{
@@ -561,8 +599,9 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
   .actor-btn{height:28px;padding:0 0.65rem}
   .mode-btns{order:4;width:100%;margin-left:0;overflow-x:auto;padding-bottom:2px}
   .mbtn-mode{height:28px;padding:0 0.65rem;flex-shrink:0}
-  .quick-actions{order:5;width:100%;margin-left:0!important;overflow-x:auto;padding-bottom:2px}
+  .quick-actions{order:5;width:auto;margin-left:0!important;overflow:visible;padding-bottom:2px;flex-wrap:wrap}
   .quick-actions .tbtn{flex-shrink:0}
+  .actions-menu{right:auto;left:0;width:min(240px,calc(100vw - 24px))}
   .tb-right{gap:0.35rem}
   .tbtn{height:28px;padding:0 0.55rem;font-size:0.5rem}
   .statbar{height:auto;min-height:0;overflow-x:auto;overflow-y:hidden}
@@ -878,6 +917,9 @@ body{font-size:1rem}
 .lpanel *, .topbar *, .statbar *, .ws-sidebar *, .gchat-modal *, .exec-workspace-modal *, .val-signal-panel *{color:inherit}
 .lpanel .fitem-title,.lpanel .scard-val,.topbar .tb-logo,.statbar .stat-num,.ws-sidebar .ws-logo,.ws-sidebar .ws-item-title,.gchat-modal .gchat-title,.exec-workspace-title,.exec-card h3,.task-column-title{color:var(--val-white)!important}
 .lpanel .fitem-meta,.lpanel .scard-label,.lpanel .scard-sub,.topbar .tb-tagline,.topbar .stext,.topbar .tb-clock,.statbar .stat-label,.ws-sidebar .ws-item-sub,.exec-card p,.exec-card li,.task-meta,.task-notes{color:var(--val-muted-white)!important}
+.lpanel .suggestion-label{color:rgba(248,245,238,0.46)!important}
+.lpanel .prompt-row{color:rgba(248,245,238,0.82)!important}
+.lpanel .prompt-row:hover{color:#fff!important}
 
 </style>
 </head>
@@ -1010,35 +1052,36 @@ body{font-size:1rem}
   </div>
 
   <!-- Quick action buttons -->
-  <div class="quick-actions" style="display:flex;gap:4px;margin-left:8px;">
+  <div class="quick-actions">
     <button class="tbtn tbtn-action" onclick="openGeneralChat()" title="Open a clean, distraction-free chat">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
       Chat
     </button>
-    <button class="tbtn tbtn-action" onclick="openRelationshipReview()" title="Open contacts and relationship intelligence">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
-      Contacts
-    </button>
-    <button class="tbtn tbtn-action" onclick="openMeetingBriefing()" title="Open meeting briefing workspace">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0118.75 20.25H5.25a1.5 1.5 0 01-1.5-1.5v-12a1.5 1.5 0 011.5-1.5z"/></svg>
-      Meetings
-    </button>
-    <button class="tbtn tbtn-action compact-label" onclick="openEmailIntelligence()" title="Open Email AI for Gmail triage, replies, and follow-up suggestions">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
-      Email AI
-    </button>
-    <button class="tbtn tbtn-action compact-label" onclick="connectGmail()" title="Connect Gmail to activate Email AI">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
-      Connect Gmail
-    </button>
-    <button class="tbtn tbtn-action" onclick="openKeysPanel()" title="Open settings and integration keys">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M4.5 8.25h15M6 5.25h12A1.5 1.5 0 0119.5 6.75v11.5A1.5 1.5 0 0118 19.75H6a1.5 1.5 0 01-1.5-1.5V6.75A1.5 1.5 0 016 5.25z"/></svg>
-      Settings
-    </button>
-    <button class="tbtn tbtn-action" onclick="closeDetail()" title="Return home">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.63 8.41m5.96 5.96a14.98 14.98 0 01-5.84 2.58m-.12-8.54A6 6 0 002.25 14.25h4.8m2.58-5.84A14.98 14.98 0 002.25 2.25 14.98 14.98 0 0014.37 8.41"/></svg>
-      Home
-    </button>
+    <div class="actions-menu-wrap">
+      <button class="tbtn tbtn-action" id="actionsMenuBtn" onclick="toggleActionsMenu(event)" title="Open dashboard actions">
+        Actions
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div class="actions-menu" id="actionsMenu">
+        <div class="menu-hint">Create</div>
+        <button class="primary" onclick="closeActionsMenu();startSocialPost()">Post <span>Social</span></button>
+        <button onclick="closeActionsMenu();openMeetingBriefing()">Meeting Briefing <span>Prep</span></button>
+        <button onclick="closeActionsMenu();openApprovalQueue()">Drafts <span>Review</span></button>
+        <div class="menu-sep"></div>
+        <div class="menu-hint">Workspaces</div>
+        <button onclick="closeActionsMenu();openRelationshipReview()">Contacts <span>Radar</span></button>
+        <button onclick="closeActionsMenu();openEmailIntelligence()">Email AI <span>Triage</span></button>
+        <button onclick="closeActionsMenu();closeDetail()">Home <span>Reset View</span></button>
+        <div class="menu-sep"></div>
+        <div class="menu-hint">Utilities</div>
+        <button onclick="closeActionsMenu();sendLast()">Send Last <span>Make</span></button>
+        <button onclick="closeActionsMenu();saveChat()">Save Chat <span>Archive</span></button>
+        <button onclick="closeActionsMenu();connectGmail()">Connect Gmail <span>OAuth</span></button>
+        <button onclick="closeActionsMenu();openKeysPanel()">Settings <span>Keys</span></button>
+        <button onclick="closeActionsMenu();window.open(PROXY + '/guide','_blank')">Guide <span>Help</span></button>
+        <button onclick="closeActionsMenu();toggleVoice()">Voice <span>Mic</span></button>
+      </div>
+    </div>
     <button class="tbtn tbtn-meeting" id="meetingModeBtn" onclick="toggleMeetingMode()" title="Meeting Mode — VAL listens quietly, say 'VAL' to engage">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>
       <span id="meetingModeBtnLabel">Meeting Mode</span>
@@ -1052,30 +1095,6 @@ body{font-size:1rem}
 
   <div class="tb-right">
     <span class="tb-clock" id="tbClock"></span>
-    <button class="tbtn" onclick="saveChat()">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/></svg>
-      Save
-    </button>
-    <button class="tbtn" onclick="sendLast()">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
-      Send
-    </button>
-    <button class="tbtn" onclick="openApprovalQueue()" title="Open drafts waiting for approval">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h3.75c.621 0 1.125.504 1.125 1.125v1.5h3.375c.621 0 1.125.504 1.125 1.125v14.625c0 .621-.504 1.125-1.125 1.125H5.625A1.125 1.125 0 014.5 20.625V6c0-.621.504-1.125 1.125-1.125H9v-1.5c0-.621.504-1.125 1.125-1.125z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 13.5l2.25 2.25L15.75 9"/></svg>
-      Drafts
-    </button>
-    <button class="tbtn" onclick="window.open(PROXY + '/guide','_blank')" title="Open the VAL user guide">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.178-.43.326-.67.442-.745.361-1.451.999-1.451 1.827v.75M12 17.25h.008v.008H12v-.008z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      Guide
-    </button>
-    <button class="tbtn" id="keysTopButton" onclick="openKeysPanel()" title="Register integration keys">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 11.77 2.01l-7.51 7.51H6.75v2.25H4.5v2.25H2.25v-3.18l8.49-8.49a3 3 0 015.01-2.35z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 6h.008v.008H15V6z"/></svg>
-      Register Your Keys
-    </button>
-    <button class="tbtn" id="voiceBtn" onclick="toggleVoice()">
-      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>
-      Voice
-    </button>
   </div>
 </div>
 
@@ -2104,7 +2123,7 @@ function updateDynamicSuggestions(){
     el.innerHTML='';
     suggestions.forEach(function(s){
       var b=document.createElement('button');
-      b.className='chip';
+      b.className='prompt-row';
       b.type='button';
       b.textContent=s.label;
       b.onclick=function(){
@@ -2146,7 +2165,7 @@ function updateDynamicSuggestions(){
   el.innerHTML='';
   suggestions.forEach(function(s){
     var b=document.createElement('button');
-    b.className='chip';
+    b.className='prompt-row';
     b.type='button';
     b.textContent=s.label;
     b.onclick=function(){
@@ -2583,6 +2602,24 @@ function ownerBadge(owner){
 function clock(){var el=document.getElementById('tbClock');if(el)el.textContent=new Date().toLocaleTimeString([],{weekday:'short',hour:'numeric',minute:'2-digit'});}
 clock();setInterval(clock,10000);
 setTimeout(function(){setValActor(valActor);},0);
+
+// ── ACTIONS MENU ──────────────────────────────────────
+function toggleActionsMenu(event){
+  if(event)event.stopPropagation();
+  var menu=document.getElementById('actionsMenu');
+  if(menu)menu.classList.toggle('open');
+}
+function closeActionsMenu(){
+  var menu=document.getElementById('actionsMenu');
+  if(menu)menu.classList.remove('open');
+}
+document.addEventListener('click',function(event){
+  var wrap=document.querySelector('.actions-menu-wrap');
+  if(wrap&&!wrap.contains(event.target))closeActionsMenu();
+});
+document.addEventListener('keydown',function(event){
+  if(event.key==='Escape')closeActionsMenu();
+});
 
 // ── MODE ───────────────────────────────────────────────
 var currentMode='focus';
@@ -4750,9 +4787,12 @@ function generateSocialPost(){
   document.getElementById('socialActions').innerHTML='<span style="font-size:12px;color:rgba(255,255,255,0.4);padding:4px 0;font-family:var(--mono);">Writing post...</span>';
   var sys='You are VAL, ghostwriting social media content for GOALL. Their brand is warm, direct, authoritative, and emotionally intelligent. They speak to driven executives and entrepreneurs. Write in first person for GOALL. No em dashes. No generic motivational clichés. No AI polish. Sound like a real founder with lived experience and a point of view.';
   var prompt='Write a '+tone.toLowerCase()+' social media post for: '+platforms+'.\n\nContent/topic: '+topic.trim()+'\n\nPlatform guidelines:\n- LinkedIn: 150-280 words, professional, max 3 hashtags, end with a question or call to action\n- Instagram: engaging, vivid, 3-5 targeted hashtags at the end, 100-200 words\n- X/Twitter: punchy, under 280 chars, can use 1-2 hashtags\n- Facebook: conversational, 100-180 words\n- Threads: casual-smart, 150-250 chars\n\nReturn only the post text. No explanation, no labels. Do not use em dashes.';
-  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys,messages:[{role:'user',content:prompt}]})})
-  .then(function(r){return r.json();}).then(function(d){
-    var text=(d.content||[]).map(function(b){return b.text||'';}).join('').trim();
+  apiFetch(PROXY+'/api/val/chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({messages:[{role:'user',content:sys+'\n\n'+prompt}],dashboard:dashData||{}})
+  }).then(function(d){
+    var text=((d.message&&d.message.content)||d.content||'').trim();
     var wrap=document.getElementById('socialDraftWrap');
     var draftEl=document.getElementById('socialDraft');
     if(wrap)wrap.style.display='block';

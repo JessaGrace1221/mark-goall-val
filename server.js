@@ -282,7 +282,23 @@ const GHL_LEAD_FIELD_IDS = {
   raw_industry: process.env.GHL_FIELD_RAW_INDUSTRY || '',
   tag_confidence: process.env.GHL_FIELD_TAG_CONFIDENCE || '',
   needs_new_automation: process.env.GHL_FIELD_NEEDS_NEW_AUTOMATION || '',
-  suggested_new_automation_tag: process.env.GHL_FIELD_SUGGESTED_NEW_AUTOMATION_TAG || ''
+  suggested_new_automation_tag: process.env.GHL_FIELD_SUGGESTED_NEW_AUTOMATION_TAG || '',
+  estimated_employee_count: process.env.GHL_FIELD_ESTIMATED_EMPLOYEE_COUNT || '',
+  employee_count_confidence: process.env.GHL_FIELD_EMPLOYEE_COUNT_CONFIDENCE || '',
+  employee_count_note: process.env.GHL_FIELD_EMPLOYEE_COUNT_NOTE || '',
+  growth_signals: process.env.GHL_FIELD_GROWTH_SIGNALS || '',
+  leadership_signals: process.env.GHL_FIELD_LEADERSHIP_SIGNALS || '',
+  workforce_pain_signals: process.env.GHL_FIELD_WORKFORCE_PAIN_SIGNALS || '',
+  engagement_activity_signals: process.env.GHL_FIELD_ENGAGEMENT_ACTIVITY_SIGNALS || '',
+  decision_maker_name: process.env.GHL_FIELD_DECISION_MAKER_NAME || '',
+  decision_maker_title: process.env.GHL_FIELD_DECISION_MAKER_TITLE || '',
+  decision_maker_email: process.env.GHL_FIELD_DECISION_MAKER_EMAIL || '',
+  decision_maker_phone: process.env.GHL_FIELD_DECISION_MAKER_PHONE || '',
+  decision_maker_linkedin: process.env.GHL_FIELD_DECISION_MAKER_LINKEDIN || '',
+  company_linkedin: process.env.GHL_FIELD_COMPANY_LINKEDIN || '',
+  goall_intelligence_note: process.env.GHL_FIELD_GOALL_INTELLIGENCE_NOTE || '',
+  recommended_first_call_angle: process.env.GHL_FIELD_RECOMMENDED_FIRST_CALL_ANGLE || '',
+  missing_data: process.env.GHL_FIELD_MISSING_DATA || ''
 };
 const GHL_LEAD_FIELD_KEYS = {
   lead_source_system:'contact.lead_source_system',
@@ -388,7 +404,23 @@ const GHL_LEAD_FIELD_KEYS = {
   raw_industry:'contact.raw_industry',
   tag_confidence:'contact.tag_confidence',
   needs_new_automation:'contact.needs_new_automation',
-  suggested_new_automation_tag:'contact.suggested_new_automation_tag'
+  suggested_new_automation_tag:'contact.suggested_new_automation_tag',
+  estimated_employee_count:'contact.estimated_employee_count',
+  employee_count_confidence:'contact.employee_count_confidence',
+  employee_count_note:'contact.employee_count_note',
+  growth_signals:'contact.growth_signals',
+  leadership_signals:'contact.leadership_signals',
+  workforce_pain_signals:'contact.workforce_pain_signals',
+  engagement_activity_signals:'contact.engagement_activity_signals',
+  decision_maker_name:'contact.decision_maker_name',
+  decision_maker_title:'contact.decision_maker_title',
+  decision_maker_email:'contact.decision_maker_email',
+  decision_maker_phone:'contact.decision_maker_phone',
+  decision_maker_linkedin:'contact.decision_maker_linkedin',
+  company_linkedin:'contact.company_linkedin',
+  goall_intelligence_note:'contact.goall_intelligence_note',
+  recommended_first_call_angle:'contact.recommended_first_call_angle',
+  missing_data:'contact.missing_data'
 };
 const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_source_system:['lead source system','lead_source_system'],
@@ -428,6 +460,22 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   linkedin_current_title:['linkedin current title','linkedin_current_title'],
   linkedin_profile_location:['linkedin profile location','linkedin_profile_location'],
   signals_summary:['signals summary','signals_summary'],
+  estimated_employee_count:['estimated employee count','estimated_employee_count','employee count estimate','employee estimate'],
+  employee_count_confidence:['employee count confidence','employee_count_confidence','employee confidence'],
+  employee_count_note:['employee count note','employee_count_note','employee count explanation','employee estimate note'],
+  growth_signals:['growth signals','growth_signals','growth signal','expansion signals'],
+  leadership_signals:['leadership signals','leadership_signals','leadership signal'],
+  workforce_pain_signals:['workforce pain signals','workforce_pain_signals','workforce signals','hiring pain signals'],
+  engagement_activity_signals:['engagement activity signals','engagement_activity_signals','activity signals','company activity signals'],
+  decision_maker_name:['decision maker name','decision_maker_name','decision-maker name'],
+  decision_maker_title:['decision maker title','decision_maker_title','decision-maker title'],
+  decision_maker_email:['decision maker email','decision_maker_email','decision-maker email'],
+  decision_maker_phone:['decision maker phone','decision_maker_phone','decision-maker phone'],
+  decision_maker_linkedin:['decision maker linkedin','decision_maker_linkedin','decision-maker linkedin','decision maker linkedin profile'],
+  company_linkedin:['company linkedin','company_linkedin','company linkedin page'],
+  goall_intelligence_note:['goall intelligence note','goall_intelligence_note','lead intelligence summary','lead intelligence note','caller intelligence summary'],
+  recommended_first_call_angle:['recommended first call angle','recommended_first_call_angle','first call angle','opening line'],
+  missing_data:['missing data','missing_data','missing data note'],
   signals_positive_count:['signals positive count','signals_positive_count'],
   signals_top_indicators:['signals top indicators','signals_top_indicators'],
   signals_confidence:['signals confidence','signals_confidence'],
@@ -834,6 +882,26 @@ function demoIntelligenceResponse(action,query,state){
 }
 function demoChatResponse(lastUser,state){
   const q=String(lastUser||'').toLowerCase();
+  if(/ghostwriting social media content|social media post|write a .* post|platform guidelines/i.test(String(lastUser||''))){
+    return [
+      'The part of leadership no one warns you about is how many important things become invisible.',
+      '',
+      'The meeting note you meant to revisit.',
+      'The relationship that went quiet.',
+      'The follow-up that mattered, but got buried under the next urgent thing.',
+      '',
+      'That is the work VAL is built for.',
+      '',
+      'Not to make executives busier. To help them close the loops that protect trust, revenue, and momentum.',
+      '',
+      'In today\'s demo, VAL is watching the commitments, meetings, transcripts, emails, pipeline movement, and relationship signals. Then it turns the mess into the next usable action: draft this, prep that meeting, send the follow-up, slow down here.',
+      '',
+      'The win is not more automation.',
+      'The win is fewer dropped promises.',
+      '',
+      'What relationship or commitment would you want your assistant to catch before it slips?'
+    ].join('\n');
+  }
   if(/meeting|prep|calendar|today|next|transcript|notes/i.test(q)){
     return withDemoCta('VAL has saved meeting notes and transcripts in this demo.\n\nFor Marcus, it remembers procurement and onboarding are the friction points. For Elena, it remembers she needs a clearer first-30-days scope. For Priya, it remembers the renewal risk is team fatigue, not lack of belief.\n\nThe useful part is what happens next: VAL can prep the meeting, draft the recap, create the tasks, and keep the relationship context attached so the user does not have to reconstruct it later.');
   }
@@ -3723,8 +3791,8 @@ function validPhone(phone){
 }
 
 function leadContactability(lead={}){
-  const rawEmail=lead.email||lead.verifiedEmail||'';
-  const rawPhone=lead.phone||lead.verifiedPhone||'';
+  const rawEmail=lead.email||lead.verifiedEmail||lead.decisionMakerEmail||lead.decision_maker_email||'';
+  const rawPhone=lead.phone||lead.verifiedPhone||lead.decisionMakerPhone||lead.decision_maker_phone||'';
   const hasEmail=validEmail(rawEmail);
   const hasPhone=validPhone(rawPhone);
   let contactabilityStatus='not_contactable';
@@ -3740,8 +3808,8 @@ function leadContactability(lead={}){
     initialEmailSent:hasEmail,
     email:hasEmail?String(rawEmail).trim():'',
     phone:hasPhone?String(rawPhone).trim():'',
-    importable:true,
-    rejectionReason:''
+    importable:hasEmail||hasPhone,
+    rejectionReason:hasEmail||hasPhone?'':'missing_email_and_phone'
   };
 }
 
@@ -3749,7 +3817,7 @@ function leadContactabilityNote(c){
   if(c.contactabilityStatus==='full_contactability') return 'Email and phone available. Lead eligible for automated email, SMS, AI calling, and manual outreach.';
   if(c.contactabilityStatus==='email_only') return 'Email available. No valid phone number found. Lead eligible for automated email and manual email outreach.';
   if(c.contactabilityStatus==='phone_only') return 'No email address found. Lead did not receive the initial automated email sequence. Lead should enter phone-first outreach workflows and is eligible for AI calling, SMS outreach, and manual calling.';
-  return 'No email or phone number was found. Lead imported for visibility, but it is not eligible for automated email, SMS, AI calling, or manual contact until a contact method is added.';
+  return 'No email or phone number was found. Do not create an outreach-ready contact unless company intelligence is strong enough for manual review routing.';
 }
 
 function normalizeRocketReachPerson(data){
@@ -4962,7 +5030,7 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
     ].join('\n\n');
     const user=[
       'Audit these current GOALL business leads.',
-      'Goal: check whether phone number, email/contact route, and actual decision-maker look correct.',
+      'Goal: check whether phone number, email/contact route, actual decision-maker, employee count, growth signal, workforce signal, and first-call angle look correct.',
       'Exclude internal test contacts when obvious. Flag unclear or weak data.',
       '',
       JSON.stringify(leads,null,2),
@@ -4976,7 +5044,16 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
       'Likely decision-maker:',
       'Decision-maker title:',
       'Decision-maker LinkedIn if public:',
+      'Estimated employee count:',
+      'Employee count confidence:',
+      'Growth signals:',
+      'Leadership signals:',
+      'Workforce or hiring signals:',
+      'Engagement/activity signals:',
+      'Lead Intelligence Summary:',
+      'Recommended First Call Angle:',
       'What needs correction:',
+      'Missing data:',
       'Confidence:'
     ].join('\n');
     const content=await callOpenAIWebResearch({system,user,maxTokens:5000,temperature:0.15});
@@ -6405,6 +6482,13 @@ Primary lead target:
 - Businesses showing hiring, growth, expansion, or activity signals
 - Decision-makers such as founders, owners, CEOs, operations leaders, HR leaders, benefits leaders, sales leaders, and partnership leaders
 
+GOALL caller intelligence objective:
+- The scraper is not merely finding leads. It is preparing a caller to have a relevant business conversation.
+- Every GOALL lead should make it clear why the company is worth contacting, what appears to be happening inside the business now, why leadership may care about retention, hiring, workforce stability, benefits, or growth, and what opening line the caller should use.
+- Always produce a concise Lead Intelligence Summary in plain English.
+- Always produce a Recommended First Call Angle that a caller can read directly or lightly personalize.
+- The recommended angle should reference a real signal when available, such as expansion, hiring, employee count, leadership signal, active LinkedIn/company activity, job postings, reviews, or operational growth.
+
 GOALL Arizona priority industries:
 ${GOALL_PRIORITY_INDUSTRIES_ARIZONA.map(v=>`- ${v}`).join('\n')}
 
@@ -6495,6 +6579,8 @@ For each lead, collect and structure:
 4. Public presence: website, LinkedIn, Google
 5. Indicators of operational complexity
 6. Best available decision-maker contact path
+7. Plain-English caller intelligence summary
+8. Specific first-call opening angle
 
 SEARCH PROCESS - follow in order:
 1. Search company name + city/state
@@ -6504,14 +6590,17 @@ SEARCH PROCESS - follow in order:
 5. Search LinkedIn people / likely decision-makers
 6. Check Google Business
 7. Scan for news, hiring, activity, expansion, funding, operations, and growth signals
-8. Compile structured outputs
+8. Check hiring pages, public job postings, directories, business listings, and credible public sources for employee count or employee range
+9. Check for workforce pain signals such as recruiting-heavy language, staffing difficulty, turnover, short-staffed reviews, burnout, scheduling issues, or heavy technician/crew hiring
+10. Compile structured outputs
 
 Source priority:
 1. Official website
 2. LinkedIn company page
 3. Google Business listing
 4. News / press mentions
-5. Secondary directories
+5. Hiring pages / job postings
+6. Secondary directories and business listings
 
 Accuracy rules:
 - Only include information that is directly observed, clearly stated, or strongly supported by multiple signals.
@@ -6560,10 +6649,58 @@ linkedin_personal_url:
 
 linkedin_company_url:
 [company LinkedIn URL or fallback text]
+
+estimated_employee_count:
+[exact count or conservative range; blank only when no reasonable estimate exists]
+
+employee_count_confidence:
+[high / medium / low / unknown]
+
+employee_count_note:
+[brief note explaining source or why unknown]
+
+growth_signals:
+[new offices, expansion, services, markets, contracts, hiring surges, awards, or "No specific growth signal found yet."]
+
+leadership_signals:
+[current/recent CEO, COO, President, Owner, GM, VP Ops, HR Director, Benefits Manager, Sales Director, Office Manager, or "No named leadership signal found yet."]
+
+workforce_pain_signals:
+[hiring difficulty, recruiting, staffing pressure, reviews, burnout, scheduling, retention/benefits relevance, or "No clear workforce pain signal found yet."]
+
+engagement_activity_signals:
+[LinkedIn activity, website/news/community/company activity, recent announcements, or "Limited public engagement/activity signal found."]
+
+decision_maker_name:
+[name or blank]
+
+decision_maker_title:
+[title or blank]
+
+decision_maker_email:
+[email or blank]
+
+decision_maker_phone:
+[phone or blank]
+
+decision_maker_linkedin:
+[LinkedIn profile or blank]
+
+company_linkedin:
+[LinkedIn company page or blank]
+
+goall_intelligence_note:
+[concise plain-English Lead Intelligence Summary covering company overview, employee estimate, growth, leadership, workforce/hiring signals, why GOALL may be relevant, missing data, and first-call approach]
+
+recommended_first_call_angle:
+[one specific opening line the caller can use naturally]
+
+missing_data:
+[caller-critical missing data, or "No major caller-critical gaps."]
 `.trim();
 
 function parseLeadFieldOutputs(text){
-  const fields=['company_payload','company_google_raw','company_signals_raw','company_news_raw','linkedin_personal_url','linkedin_company_url'];
+  const fields=['company_payload','company_google_raw','company_signals_raw','company_news_raw','linkedin_personal_url','linkedin_company_url','estimated_employee_count','employee_count_confidence','employee_count_note','growth_signals','leadership_signals','workforce_pain_signals','engagement_activity_signals','decision_maker_name','decision_maker_title','decision_maker_email','decision_maker_phone','decision_maker_linkedin','company_linkedin','goall_intelligence_note','recommended_first_call_angle','missing_data'];
   const out={};
   fields.forEach((field,idx)=>{
     const next=fields[idx+1];
@@ -7101,6 +7238,8 @@ function reviewCountFromLead(p={}){
 function scoreGoallFit(p={}){
   const industry=String(p.aiExactIndustry||p.industry||p.organizationType||p.cause||'').toLowerCase();
   const text=[industry,p.organizationType,p.primaryService,p.operationalIndicators,p.donorEstimateBasis,p.employeeEstimateBasis,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ').toLowerCase();
+  const intel=buildGoallIntelligenceProfile(p,industry||'business');
+  const signalText=[text,intel.signals.growth,intel.signals.workforce,intel.signals.engagement,intel.employee.note].join(' ').toLowerCase();
   let score=45;
   const preferred=/trucking|construction|electrical|hvac|plumbing|law|chiropractic|medical|manufactur|staffing|professional|home care|roof|weld|logistics|dental|insurance|accounting/.test(text);
   if(preferred) score+=18;
@@ -7108,7 +7247,11 @@ function scoreGoallFit(p={}){
   if(validEmail(p.email)) score+=8;
   if(validPhone(p.phone)) score+=8;
   if(p.decisionMakerName||p.decisionMakerTitle) score+=8;
-  if(/multiple|locations|fleet|dispatch|crew|staff|team|hiring|careers|warehouse|service teams|employees/.test(text)) score+=10;
+  if(/multiple|locations|fleet|dispatch|crew|staff|team|hiring|careers|warehouse|service teams|employees/.test(signalText)) score+=10;
+  if(intel.employee.count) score+=8;
+  if(/hiring|job postings?|careers|technicians?|recruit|staffing|short.?staffed|turnover|burnout|scheduling|overwhelmed/.test(signalText)) score+=8;
+  if(/expanded|expansion|new location|opened|opening|new office|new market|contract|award|fastest growing|best places to work/.test(signalText)) score+=8;
+  if(/linkedin|post|announcement|community|news|active website|google reviews?/.test(signalText)) score+=5;
   const reviews=reviewCountFromLead(p);
   if(reviews>=100) score+=8;
   else if(reviews>=25) score+=5;
@@ -7118,6 +7261,9 @@ function scoreGoallFit(p={}){
     preferred?'priority GOALL industry':'general business fit',
     p.website?'active website':'website unclear',
     validEmail(p.email)||validPhone(p.phone)?'reachable contact path':'no reachable contact path',
+    intel.employee.count?`employee estimate ${intel.employee.count}`:'employee count unclear',
+    intel.signals.growth && !/^No specific/i.test(intel.signals.growth)?'growth signal found':'',
+    intel.signals.workforce && !/^No clear/i.test(intel.signals.workforce)?'workforce signal found':'',
     reviews?`${reviews} Google reviews`:'',
     p.decisionMakerName||p.decisionMakerTitle?'decision-maker signal':''
   ].filter(Boolean).join('; ');
@@ -7129,25 +7275,27 @@ function leadScoreFromGoallFit(p={}){
   const c=leadContactability(p);
   const industryText=String([p.aiExactIndustry,p.industry,p.organizationType,p.primaryService,p.cause].filter(Boolean).join(' ')).toLowerCase();
   const signalText=String([p.operationalIndicators,p.donorEstimateBasis,p.employeeEstimateBasis,p.growthActivity,p.hiringActivity,p.careersPage,p.goallFitReason,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ')).toLowerCase();
+  const intel=buildGoallIntelligenceProfile(p,industryText||'business');
+  const employeeCount=donorValue(intel.employee.numeric)||employeeEstimateMinimum(intel.employee.count);
   const highestIndustries=/trucking|hvac|plumbing|electrical|welding|construction|roofing|manufactur|law office|chiropractic|medical|dental|staffing|home care|logistics|commercial cleaning|security|fire protection/.test(industryText);
   const alignedIndustries=highestIndustries || /accounting|insurance|wealth|engineering|architecture|property management|auto repair|collision|equipment rental|physical therapy|behavioral health|veterinary/.test(industryText);
-  const employeeSignals=/10\+|employees|staff|team|crew|fleet|dispatch|payroll|benefit|multiple locations|hiring|careers|warehouse|commercial|field teams|service teams/.test(signalText);
+  const employeeSignals=!!intel.employee.count || /10\+|employees|staff|team|crew|fleet|dispatch|payroll|benefit|multiple locations|hiring|careers|warehouse|commercial|field teams|service teams/.test(signalText);
   const decisionMakerFound=!!(p.decisionMakerName||p.linkedinPersonalUrl);
   const strongContact=c.contactabilityStatus==='full_contactability';
   const reachable=!!(c.hasEmail||c.hasPhone);
-  const strongActivity=employeeSignals || reviewCountFromLead(p)>=100 || /multiple locations|hiring|careers|commercial|fleet|dispatch|crew|team/.test(signalText);
+  const strongActivity=employeeSignals || reviewCountFromLead(p)>=100 || /multiple locations|hiring|careers|commercial|fleet|dispatch|crew|team/.test(signalText) || !/^No specific/i.test(intel.signals.growth) || !/^No clear/i.test(intel.signals.workforce);
   const weakSignals=/solo|sole proprietor|one person|very small|weak|unclear|missing website|no website|low-fit|low fit/.test(signalText);
   let leadScore=3;
   let leadScoreReason='Score 3 because the business appears relevant, but decision-maker, employee-size, or contact evidence is incomplete.';
-  if(highestIndustries && decisionMakerFound && strongContact && strongActivity && fit>=78){
+  if(highestIndustries && decisionMakerFound && strongContact && strongActivity && fit>=78 && (employeeSignals || employeeCount>=10)){
     leadScore=1;
-    leadScoreReason='Score 1 because the business is strongly GOALL-aligned, has a verified decision-maker signal, full contactability, and meaningful activity or employee-size evidence.';
+    leadScoreReason='Score 1 because the business is strongly GOALL-aligned, has a verified decision-maker signal, full contactability, and meaningful employee, growth, hiring, or workforce evidence.';
   }else if(highestIndustries && reachable && fit>=65){
     leadScore=2;
-    leadScoreReason='Score 2 because the business is strongly aligned and reachable, but decision-maker or employee-size evidence still needs confirmation.';
+    leadScoreReason='Score 2 because the business is strongly aligned and reachable, but decision-maker, employee-size, or workforce evidence still needs confirmation.';
   }else if(alignedIndustries && reachable && fit>=58){
     leadScore=2;
-    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but full contactability, decision-maker, or employee-size evidence is not fully verified.';
+    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but full contactability, decision-maker, employee-size, or workforce evidence is not fully verified.';
   }else if(fit>=48 && !weakSignals){
     leadScore=3;
     leadScoreReason='Score 3 because the business may fit GOALL, but the current evidence is incomplete.';
@@ -7331,6 +7479,217 @@ function leadDomain(value){
   }
 }
 
+function leadArrayText(value){
+  if(Array.isArray(value)) return value.filter(Boolean).map(v=>String(v).trim()).filter(Boolean).join('; ');
+  return String(value||'').trim();
+}
+
+function firstLeadValue(...values){
+  for(const value of values){
+    const text=leadArrayText(value);
+    if(text && !/^(unknown|unclear|none|null|undefined|n\/a)$/i.test(text)) return text;
+  }
+  return '';
+}
+
+function employeeCountBand(n){
+  const value=Number(n)||0;
+  if(value>=500) return '500+';
+  if(value>=250) return '250-499';
+  if(value>=100) return '100-249';
+  if(value>=50) return '50-99';
+  if(value>=25) return '25-49';
+  if(value>=10) return '10-24';
+  if(value>0) return '1-9';
+  return '';
+}
+
+function employeeEstimateMinimum(value){
+  const raw=String(value||'');
+  const range=raw.match(/\b(\d{1,5})\s*(?:-|to|–)\s*(\d{1,5})\b/);
+  if(range) return Number(range[1])||0;
+  const plus=raw.match(/\b(\d{1,5})\s*\+\b/);
+  if(plus) return Number(plus[1])||0;
+  return donorValue(raw);
+}
+
+function goallEmployeeEstimate(p={}){
+  const rawEmployeeValue=firstLeadValue(
+    p.estimatedEmployeeCount,
+    p.estimated_employee_count,
+    p.scrapedNumberOfEmployees,
+    p.scraped_number_of_employees,
+    p.employeeCount,
+    p.employees,
+    p.linkedinEmployeeCount,
+    p.linkedin_employee_count,
+    p.linkedinCompanyEmployeeCount,
+    p.approximateDonors,
+    p.estimatedDonors,
+    p.donorCount
+  );
+  const rangeMatch=String(rawEmployeeValue||'').match(/\b(\d{1,5})\s*(?:-|to|–)\s*(\d{1,5})\b|\b(\d{1,5})\s*\+\b/);
+  const band=firstLeadValue(
+    p.linkedinCompanySizeBand,
+    p.linkedin_company_size_band,
+    p.employeeCountRange,
+    p.employee_count_range,
+    p.companySizeBand
+  ) || (rangeMatch?rangeMatch[0]:'');
+  const exact=rangeMatch?0:donorValue(rawEmployeeValue);
+  const basis=firstLeadValue(
+    p.employeeCountNote,
+    p.employee_count_note,
+    p.employeeEstimateBasis,
+    p.donorEstimateBasis,
+    p.linkedinMatchNotes,
+    p.linkedin_match_notes,
+    Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):p.evidenceSignals,
+    p.googleRaw
+  );
+  if(exact){
+    return {
+      count:String(exact),
+      confidence:firstLeadValue(p.employeeCountConfidence,p.employee_count_confidence) || (p.linkedinEmployeeCount||p.linkedin_employee_count?'high':'medium'),
+      note:basis || 'Employee count estimate came from public scrape/enrichment signals.',
+      numeric:exact
+    };
+  }
+  if(band){
+    return {
+      count:band,
+      confidence:firstLeadValue(p.employeeCountConfidence,p.employee_count_confidence) || 'medium',
+      note:basis || 'Exact employee count was not found, so the available public company-size band is stored.',
+      numeric:0
+    };
+  }
+  const signalText=String([p.organizationType,p.industry,p.operationalIndicators,p.hiringActivity,p.careersPage,leadArrayText(p.evidenceSignals)].filter(Boolean).join(' ')).toLowerCase();
+  let inferred='';
+  if(/\bfleet|warehouse|multiple locations|dispatch|crews?|technicians?|commercial|manufacturing|staffing|logistics|trucking\b/.test(signalText)) inferred='10-49';
+  if(/\bmultiple locations|branch|branches|regional|large fleet|distribution|factory|plant\b/.test(signalText)) inferred='25-99';
+  if(inferred){
+    return {
+      count:inferred,
+      confidence:'low',
+      note:'Exact employee count was not public. Range is inferred from public operating signals such as crews, locations, fleet, hiring, or commercial operations.',
+      numeric:0
+    };
+  }
+  return {
+    count:'',
+    confidence:'unknown',
+    note:'No reasonable employee count estimate was found from website, listing, LinkedIn, hiring, or public source signals.',
+    numeric:0
+  };
+}
+
+function goallLeadSignals(p={},employee={}){
+  const evidence=leadArrayText(p.evidenceSignals);
+  const growth=firstLeadValue(
+    p.growthSignals,
+    p.growth_signals,
+    p.growthActivity,
+    p.operationalActivity,
+    p.eventsOrCampaigns,
+    p.newsRaw,
+    p.news_raw_last_60_days
+  );
+  const leadership=firstLeadValue(
+    p.leadershipSignals,
+    p.leadership_signals,
+    p.leadershipChangeSummary,
+    p.leadership_change_summary,
+    p.decisionMakerName?`${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`:'',
+    p.linkedinCurrentTitle
+  );
+  const workforce=firstLeadValue(
+    p.workforcePainSignals,
+    p.workforce_pain_signals,
+    p.workforceStabilitySignal,
+    p.workforce_stability_signal,
+    p.hiringActivity,
+    p.careersPage,
+    p.reviewSentimentTrend,
+    p.operationalIndicators
+  );
+  const engagement=firstLeadValue(
+    p.engagementActivitySignals,
+    p.engagement_activity_signals,
+    p.socialActivity,
+    p.linkedinNotes,
+    p.linkedin_notes,
+    p.linkedinCompanyDescription,
+    p.googleReviewCount||p.google_rating?`${p.googleReviewCount||''} Google reviews${p.googleRating?' / '+p.googleRating+' rating':''}`:'',
+    p.website?'Active website found':''
+  );
+  const missing=[
+    employee.count?'':'employee count estimate',
+    p.decisionMakerName?'':'decision-maker name',
+    validEmail(p.email)?'':'decision-maker or company email',
+    validPhone(p.phone)?'':'phone',
+    p.linkedinCompanyUrl||p.linkedinOrganizationUrl?'':'company LinkedIn page',
+    growth?'':'recent growth signal'
+  ].filter(Boolean);
+  return {
+    growth:growth || 'No specific growth event found yet.',
+    leadership:leadership || 'No named leadership signal found yet.',
+    workforce:workforce || 'No clear hiring, retention, or workforce pain signal found yet.',
+    engagement:engagement || 'Limited public engagement/activity signal found.',
+    evidence:evidence || '',
+    missing
+  };
+}
+
+function buildGoallFirstCallAngle(p={},employee={},signals={}){
+  const name=p.organizationName||p.name||'the company';
+  const growth=signals.growth && !/^No specific/i.test(signals.growth) ? signals.growth : '';
+  const workforce=signals.workforce && !/^No clear/i.test(signals.workforce) ? signals.workforce : '';
+  const employeePhrase=employee.count ? `${employee.count} employees` : 'an employee base';
+  if(p.recommendedFirstCallAngle||p.recommended_first_call_angle) return p.recommendedFirstCallAngle||p.recommended_first_call_angle;
+  if(growth || workforce){
+    const hook=growth || workforce;
+    return `I noticed ${name} appears to have ${employeePhrase} and ${hook}. We work with growing employers that are trying to retain good people while controlling benefits and workforce costs.`;
+  }
+  return `I was looking at ${name} and saw enough employee-base and operating activity to think retention, hiring, benefits costs, or workforce stability may be relevant. We help employers make that easier to manage.`;
+}
+
+function buildGoallIntelligenceProfile(p={},exactIndustry='business'){
+  const employee=goallEmployeeEstimate(p);
+  const signals=goallLeadSignals(p,employee);
+  const contactability=leadContactability(p);
+  const company=p.organizationName||p.name||'Unnamed company';
+  const overview=`${company} is a ${exactIndustry||p.industry||p.organizationType||'business'}${p.location?' in '+p.location:''}.`;
+  const firstCall=buildGoallFirstCallAngle(p,employee,signals);
+  const missing=signals.missing.length?signals.missing.join(', '):'No major caller-critical gaps.';
+  const relevance=[
+    employee.count?`employee base estimated at ${employee.count}`:'employee count not yet verified',
+    signals.growth && !/^No specific/i.test(signals.growth)?'growth/activity signal found':'growth signal weak',
+    signals.workforce && !/^No clear/i.test(signals.workforce)?'workforce or hiring signal found':'workforce pain unclear',
+    contactability.contactabilityStatus.replace(/_/g,' ')
+  ].join('; ');
+  const note=[
+    `Company overview: ${overview}`,
+    `Employee count estimate: ${employee.count||'unknown'} (${employee.confidence}). ${employee.note}`,
+    `Growth signals discovered: ${signals.growth}`,
+    `Leadership signals discovered: ${signals.leadership}`,
+    `Workforce or hiring signals discovered: ${signals.workforce}`,
+    `Engagement/activity signals: ${signals.engagement}`,
+    `Why GOALL may be relevant: ${relevance}.`,
+    `Recommended first-call approach: ${firstCall}`,
+    `Missing data: ${missing}`
+  ].join('\n');
+  return {employee,signals,firstCall,missing,note,overview};
+}
+
+function strongGoallManualReviewLead(p={},intel=buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.industry||p.organizationType||'business')){
+  const hasGrowth=intel.signals.growth && !/^No specific/i.test(intel.signals.growth);
+  const hasWorkforce=intel.signals.workforce && !/^No clear/i.test(intel.signals.workforce);
+  const hasLeadership=intel.signals.leadership && !/^No named/i.test(intel.signals.leadership);
+  const hasEmployees=!!intel.employee.count && intel.employee.confidence!=='unknown';
+  const hasPublicFootprint=!!(p.website||p.googleMapsUrl||p.googleRaw||p.linkedinCompanyUrl||p.linkedinOrganizationUrl);
+  return hasPublicFootprint && hasEmployees && (hasGrowth || hasWorkforce || hasLeadership);
+}
+
 function leadCompanySummary(p,exactIndustry,contactability){
   const name=p.organizationName||p.name||'Unnamed business';
   const location=p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear';
@@ -7349,8 +7708,19 @@ function leadCustomFieldsFromProspect(p){
   const name=p.organizationName||p.name||'';
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
   const exactIndustry=String(p.aiExactIndustry||p.ai_exact_industry||p.exactIndustry||p.industry||p.cause||p.primaryService||'unclear').trim()||'unclear';
-  const automation=(p.leadProfile||'').toLowerCase()==='westwood'?{}:mapGoallAutomationTag(p);
+  const isGoall=(p.leadProfile||'').toLowerCase()!=='westwood';
+  const automation=isGoall?mapGoallAutomationTag(p):{};
+  const normalizedProspect={
+    ...p,
+    email:p.email||p.decisionMakerEmail||p.decision_maker_email||'',
+    phone:p.phone||p.decisionMakerPhone||p.decision_maker_phone||'',
+    linkedinPersonalUrl:p.linkedinPersonalUrl||p.decisionMakerLinkedin||p.decisionMakerLinkedIn||p.decision_maker_linkedin||'',
+    linkedinCompanyUrl:p.linkedinCompanyUrl||p.companyLinkedin||p.companyLinkedIn||p.company_linkedin||''
+  };
+  p=normalizedProspect;
   const contactability=leadContactability(p);
+  const goallIntel=isGoall?buildGoallIntelligenceProfile(p,exactIndustry):null;
+  const manualReviewOnly=isGoall && !contactability.importable && strongGoallManualReviewLead(p,goallIntel);
   const now=new Date().toISOString();
   const processedAt=p.leadLastProcessedAt||p.lead_last_processed_at||now;
   const ingestedAt=p.leadIngestedAt||p.lead_ingested_at||processedAt;
@@ -7378,7 +7748,7 @@ function leadCustomFieldsFromProspect(p){
   ].filter(Boolean);
   const signalSummary=positiveSignals.length?positiveSignals.join('; '):'Limited public signals found.';
   const topIndicators=positiveSignals.slice(0,5).join('\n');
-  const salesAngle=p.nextOutreachAngle||p.recommendedOutreachAngle||'Position GOALL around growth, follow-up, employee-base complexity, and turning missed opportunities into pipeline.';
+  const salesAngle=goallIntel?.firstCall||p.nextOutreachAngle||p.recommendedOutreachAngle||'Position GOALL around growth, follow-up, employee-base complexity, and turning missed opportunities into pipeline.';
   const contactPayload=[
     `Decision maker: ${p.decisionMakerName||'not verified'}`,
     `Title: ${p.decisionMakerTitle||p.linkedinCurrentTitle||'unclear'}`,
@@ -7417,15 +7787,19 @@ function leadCustomFieldsFromProspect(p){
     `GOALL fit reason: ${p.goallFitReason||'unclear'}`,
     `Email source: ${p.emailSource||'unclear'} (${p.emailQuality||classifyEmail(p.email)})`,
     `RocketReach: ${p.rocketReachStatus||p.rocketReach?.error||p.rocketReach?.data?.rawPreview||'not available'}`,
-    `Employee estimate basis: ${p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
-    `Next outreach angle: ${p.nextOutreachAngle||'unclear'}`,
+    `Employee estimate: ${goallIntel?.employee?.count||p.estimatedEmployeeCount||p.estimated_employee_count||'unclear'}`,
+    `Employee estimate confidence: ${goallIntel?.employee?.confidence||p.employeeCountConfidence||p.employee_count_confidence||'unclear'}`,
+    `Employee estimate basis: ${goallIntel?.employee?.note||p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
+    `Growth signals: ${goallIntel?.signals?.growth||p.growthSignals||p.growth_signals||p.growthActivity||'unclear'}`,
+    `Workforce pain signals: ${goallIntel?.signals?.workforce||p.workforcePainSignals||p.workforce_pain_signals||p.workforceStabilitySignal||'unclear'}`,
+    `Recommended first call angle: ${goallIntel?.firstCall||p.nextOutreachAngle||'unclear'}`,
     `Confidence: ${p.confidence||'unclear'}`
   ].filter(Boolean).join('\n');
-  return {
+  const fields = {
     lead_source_system:'Grace Intelligence',
     lead_ingested_at:ingestedAt,
     lead_ingestion_id:enrichmentRunId,
-    lead_processing_status:contactability.importable?'ready_for_import':'rejected',
+    lead_processing_status:contactability.importable?'ready_for_import':(manualReviewOnly?'manual_review':'rejected'),
     painpoint:p.painpoint||p.painPoint||salesAngle,
     call_transcript:p.callTranscript||p.call_transcript||'',
     lead_dedupe_key:dedupeKey,
@@ -7464,7 +7838,7 @@ function leadCustomFieldsFromProspect(p){
     lead_score:String(p.leadScore||p.lead_score||''),
     lead_score_reason:p.leadScoreReason||p.lead_score_reason||'',
     lead_scored_at:p.leadScoredAt||p.lead_scored_at||processedAt,
-    lead_rejected_reason:contactability.importable?'':(contactability.rejectionReason||'missing_email_and_phone'),
+    lead_rejected_reason:contactability.importable||manualReviewOnly?'':(contactability.rejectionReason||'missing_email_and_phone'),
     lead_scoring_version:p.leadScoringVersion||p.lead_scoring_version||'goall-v2-contactability-company-person',
     approximat_donor_count:donorCount?String(donorCount):'unclear',
     linkedin_personal:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
@@ -7549,6 +7923,27 @@ function leadCustomFieldsFromProspect(p){
     needs_new_automation:automation.automationTag?String(!!automation.needsNewAutomation):'',
     suggested_new_automation_tag:automation.suggestedNewAutomationTag||''
   };
+  if(isGoall && goallIntel){
+    Object.assign(fields,{
+      estimated_employee_count:goallIntel.employee.count||'',
+      employee_count_confidence:goallIntel.employee.confidence||'unknown',
+      employee_count_note:goallIntel.employee.note||'',
+      growth_signals:goallIntel.signals.growth,
+      leadership_signals:goallIntel.signals.leadership,
+      workforce_pain_signals:goallIntel.signals.workforce,
+      engagement_activity_signals:goallIntel.signals.engagement,
+      decision_maker_name:p.decisionMakerName||'',
+      decision_maker_title:p.decisionMakerTitle||p.linkedinCurrentTitle||'',
+      decision_maker_email:contactability.email||'',
+      decision_maker_phone:contactability.phone||'',
+      decision_maker_linkedin:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
+      company_linkedin:p.linkedinCompanyUrl||p.linkedinOrganizationUrl||'',
+      goall_intelligence_note:goallIntel.note,
+      recommended_first_call_angle:goallIntel.firstCall,
+      missing_data:goallIntel.missing
+    });
+  }
+  return fields;
 }
 
 async function getOpportunityTarget(){
@@ -7951,7 +8346,7 @@ async function discoverHbsLeadProspects(body={}){
         'Do not reject a prospect solely because email, phone, or decision-maker name is missing.',
         '',
         'Return JSON with this exact shape:',
-        '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
+        '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"estimatedEmployeeCount":"","employeeCountConfidence":"","employeeCountNote":"","donorEstimateBasis":"","evidenceSignals":[""],"growthSignals":"","leadershipSignals":"","workforcePainSignals":"","engagementActivitySignals":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerEmail":"","decisionMakerPhone":"","decisionMakerLinkedin":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","companyLinkedin":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","goallIntelligenceNote":"","recommendedFirstCallAngle":"","missingData":"","nextOutreachAngle":"","confidence":""}]}'
       ].join('\n');
       try{
         raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
@@ -8098,11 +8493,13 @@ function leadPreviewText(discovered){
       const automation=brand==='GOALL'?mapGoallAutomationTag(p):{};
       const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
       const contactability=leadContactability(p);
+      const goallIntel=brand==='GOALL'?buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'business'):null;
       return [
         `${i+1}. ${p.organizationName||p.name||'Unnamed organization'}`,
         `   Industry: ${p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear'}`,
         `   Lead Score: ${p.leadScore} (${p.leadScore===1?'Highest Priority':p.leadScore===2?'Strong Fit':p.leadScore===3?'Possible Fit':'Low Fit'})`,
         `   Lead Score Reason: ${p.leadScoreReason}`,
+        goallIntel?`   Recommended First Call Angle: ${goallIntel.firstCall}`:'',
         automation.automationTag?`   Automation Tag: ${automation.automationTag}`:'',
         automation.tagConfidence?`   Tag Confidence: ${automation.tagConfidence}`:'',
         automation.automationTag?`   Needs New Automation: ${automation.needsNewAutomation?'yes':'no'}`:'',
@@ -8114,7 +8511,11 @@ function leadPreviewText(discovered){
         `   Contactability: ${contactability.contactabilityStatus}`,
         `   Outreach: ${leadContactabilityNote(contactability)}`,
         `   Decision maker: ${p.decisionMakerName||'unclear'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`,
-        `   Employee estimate: ${donorCount||'unclear'}`,
+        `   Employee estimate: ${goallIntel?.employee?.count||donorCount||'unclear'}${goallIntel?.employee?.confidence?' ('+goallIntel.employee.confidence+')':''}`,
+        goallIntel?`   Growth signals: ${goallIntel.signals.growth}`:'',
+        goallIntel?`   Workforce signals: ${goallIntel.signals.workforce}`:'',
+        goallIntel?`   Leadership signals: ${goallIntel.signals.leadership}`:'',
+        goallIntel?`   Lead Intelligence Summary: ${goallIntel.note.replace(/\n/g,' | ')}`:'',
         `   ${brand} fit: ${p.goallFitScore||'unclear'}${p.goallFitReason?' - '+p.goallFitReason:''}`,
         `   Evidence: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.slice(0,4).join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
         `   Level 1: ${level1Status(p)}`,
@@ -8238,6 +8639,12 @@ async function importApprovedHbsLeads(discovered){
       skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:'missing_automation_tag'});
       continue;
     }
+    const contactability=leadContactability(lead);
+    const goallIntel=brand==='GOALL'?buildGoallIntelligenceProfile(lead,lead.aiExactIndustry||lead.ai_exact_industry||lead.industry||lead.organizationType||'business'):null;
+    if(brand==='GOALL' && !contactability.importable && !strongGoallManualReviewLead(lead,goallIntel)){
+      skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:'missing_email_and_phone'});
+      continue;
+    }
     try{
       const duplicate=await findExistingGhlLeadDuplicate(lead);
       if(duplicate){
@@ -8283,7 +8690,7 @@ async function importApprovedHbsLeads(discovered){
     failed.length?`Failed: ${failed.length}`:'',
     '',
     created.map(c=>`- ${c.name} | Lead Score: ${c.leadScore} | Contactability: ${c.contactabilityStatus}${c.contactabilityStatus==='phone_only'?' | Imported contact with phone only. No email was found, so the initial automated email sequence was not sent.':''} | Exact industry: ${c.aiExactIndustry||'unclear'}${c.automationTag?' | Automation: '+c.automationTag+' ('+c.tagConfidence+')':''} | Tags: ${(c.tags||[]).join(', ')} | Contact: ${c.contactId} | Opportunity value: $${c.value}${c.pipelineName||c.stageName?' | '+[c.pipelineName,c.stageName].filter(Boolean).join(' / '):''}${c.pipelineId?' | Pipeline ID: '+c.pipelineId:''}${c.stageId?' | Stage ID: '+c.stageId:''}${c.customFieldUpdate?.updated?'':' | Custom field warning: '+(c.customFieldUpdate?.reason||c.customFieldUpdate?.error||'not updated')}`).join('\n'),
-    skipped.length?'\nSkipped / repaired leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='duplicate'?(s.opportunityCreated?'Matching GHL contact already existed; missing opportunity was created.':s.opportunityExisting?'Matching GHL contact already has an open opportunity.':'Skipped because a matching GHL contact already exists.'):s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':'Skipped before import.'} Reason: ${s.reason}${s.contactId?' | Existing contact: '+s.contactId:''}${s.opportunityError?' | Opportunity repair failed: '+s.opportunityError:''}`).join('\n'):'',
+    skipped.length?'\nSkipped / repaired leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='duplicate'?(s.opportunityCreated?'Matching GHL contact already existed; missing opportunity was created.':s.opportunityExisting?'Matching GHL contact already has an open opportunity.':'Skipped because a matching GHL contact already exists.'):s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':s.reason==='missing_email_and_phone'?'Contact was not imported because no email or phone was found and the company intelligence was not strong enough for manual review routing.':'Skipped before import.'} Reason: ${s.reason}${s.contactId?' | Existing contact: '+s.contactId:''}${s.opportunityError?' | Opportunity repair failed: '+s.opportunityError:''}`).join('\n'):'',
     failed.length?'\nFailed imports:\n'+failed.map(f=>`- ${f.name}: ${f.error}`).join('\n'):''
   ].filter(Boolean).join('\n');
   await saveMemoryItem({
@@ -8376,6 +8783,13 @@ function enrichmentLevelSummaryLines(p,contactability=leadContactability(p)){
 
 async function createGhlLeadFromProspect(p,opts={}){
   p=applyLeadScoring(p);
+  p={
+    ...p,
+    email:p.email||p.decisionMakerEmail||p.decision_maker_email||'',
+    phone:p.phone||p.decisionMakerPhone||p.decision_maker_phone||'',
+    linkedinPersonalUrl:p.linkedinPersonalUrl||p.decisionMakerLinkedin||p.decisionMakerLinkedIn||p.decision_maker_linkedin||'',
+    linkedinCompanyUrl:p.linkedinCompanyUrl||p.companyLinkedin||p.companyLinkedIn||p.company_linkedin||''
+  };
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
   const name=p.organizationName||p.name||'Unnamed business lead';
   const isWestwood=(p.leadProfile||'').toLowerCase()==='westwood';
@@ -8386,11 +8800,17 @@ async function createGhlLeadFromProspect(p,opts={}){
   const source=isWestwood?'Grace Intelligence Limitless Leads':'LimitLess Leads';
   const country=normalizeCountryCode(p.country);
   const contactability=leadContactability(p);
+  const goallIntel=isWestwood?null:buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.industry||p.organizationType||'business');
+  const allowManualReview=!isWestwood && !contactability.importable && strongGoallManualReviewLead(p,goallIntel);
+  if(!contactability.importable && !allowManualReview){
+    throw new Error('missing_email_and_phone');
+  }
   const leadFields=leadCustomFieldsFromProspect(p);
   const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
   if(!isWestwood) await assertGoallLeadScoreField(leadFieldIds);
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
   const tags=isWestwood?[tag]:[automation.automationTag,'GOALL Lead','Limitless Leads'];
+  if(allowManualReview) tags.push('Manual Review');
   if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
@@ -8437,6 +8857,9 @@ async function createGhlLeadFromProspect(p,opts={}){
   const note=[
     ...enrichmentLevelSummaryLines(p,contactability),
     '',
+    !isWestwood && goallIntel?.note?`Lead Intelligence Summary:\n${goallIntel.note}`:'',
+    !isWestwood && goallIntel?.firstCall?`Recommended First Call Angle:\n${goallIntel.firstCall}`:'',
+    allowManualReview?'Manual review route: no email or phone was found, but company intelligence is strong enough to review before outreach.':'',
     p.decisionMakerName
       ? `Decision maker verified: ${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
       : 'Public data did not return a reliable name for the decision maker. First and last name were set to unknown. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
