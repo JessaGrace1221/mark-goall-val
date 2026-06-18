@@ -1861,6 +1861,8 @@ function statusPayload(){
       ghlCalendarCount:GHL_CALENDAR_IDS.length,
       ghlAccountCount:configuredGhlAccounts().length,
       ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),
+      leadSearchMax:GOALL_LEAD_SEARCH_MAX,
+      leadContactValidation:'strict-v1',
       demoMode:DEMO_MODE
     }
   };
