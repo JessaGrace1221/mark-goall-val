@@ -3861,8 +3861,8 @@ function handleLeadResearchInput(text){
       return;
     }
     leadResearchState.step=leadResearchState.limit?'location':'count';
-    addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 100 for a larger scrape.',false);
-    document.getElementById('msgInput').placeholder=leadResearchState.limit?'Example: Texas, Dallas TX, United States...':'Example: 25, 50, 100';
+    addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 200 for the daily target.',false);
+    document.getElementById('msgInput').placeholder=leadResearchState.limit?'Example: Texas, Dallas TX, United States...':'Example: 25, 100, 200';
     return;
   }
   if(leadResearchState.step==='count'){
