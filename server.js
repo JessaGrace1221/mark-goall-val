@@ -8063,6 +8063,37 @@ function buildGoallSearchJobs(plan){
   return jobs.slice(0,GOALL_LEAD_SEARCH_CALLS_MAX);
 }
 
+const GOALL_LEAD_JOB_CONCURRENCY = Number(process.env.GOALL_LEAD_JOB_CONCURRENCY) || 6;
+const GOALL_CRM_DEDUPE_CONCURRENCY = Number(process.env.GOALL_CRM_DEDUPE_CONCURRENCY) || 8;
+
+function normalizedPhoneDigits(value){
+  return String(value||'').replace(/\D/g,'').replace(/^1(?=\d{10}$)/,'');
+}
+
+// Checks whether a scraped lead already exists in the GHL CRM by email or phone.
+// Returns {exists, contactId, matchedOn} - never throws; treats lookup failures as "not found"
+// so a transient GHL/API hiccup doesn't silently block the scraper from importing leads.
+async function checkCrmDuplicate(lead){
+  const email=String(lead.email||'').toLowerCase().trim();
+  const phoneDigits=normalizedPhoneDigits(lead.phone||lead.decisionMakerPhone);
+  if(!email && !phoneDigits) return {exists:false};
+  try{
+    if(email){
+      const matches=await ghlMcp.searchContacts({query:email,limit:5}).catch(()=>[]);
+      const hit=(matches||[]).find(c=>String(c.email||'').toLowerCase().trim()===email);
+      if(hit) return {exists:true,contactId:hit.id,matchedOn:'email'};
+    }
+    if(phoneDigits){
+      const matches=await ghlMcp.searchContacts({query:phoneDigits,limit:5}).catch(()=>[]);
+      const hit=(matches||[]).find(c=>normalizedPhoneDigits(c.phone)===phoneDigits);
+      if(hit) return {exists:true,contactId:hit.id,matchedOn:'phone'};
+    }
+  }catch(e){
+    return {exists:false,lookupError:e.message};
+  }
+  return {exists:false};
+}
+
 async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   const jobs=buildGoallSearchJobs(plan);
   const requested=plan.requestedViableLeads;
@@ -8072,7 +8103,7 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   let configured=true;
   let rawCount=0;
   const duplicateKeys=new Set();
-  const rejectedReasons={duplicate:0,missing_email_and_phone:0,bad_fit:0};
+  const rejectedReasons={duplicate:0,already_in_crm:0,missing_email_and_phone:0,bad_fit:0};
   const scrapeJob=async(job)=>{
     const scraped=await discoverOutscraperProspects({
       organizationType:job.industry,
@@ -8100,23 +8131,66 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
       raw.push(next);
     }
   };
+  // Run all search jobs with bounded concurrency instead of one-at-a-time sequential awaits.
+  // fastSearch jobs (already a small slice) still run fully in parallel.
   if(plan.fastSearch){
     const scrapeResults=await Promise.all(jobs.map(scrapeJob));
     const missing=scrapeResults.find(result=>!result.scraped.configured);
     if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
     scrapeResults.forEach(mergeScraped);
   }else{
-    for(const job of jobs){
-      if(raw.length>=GOALL_LEAD_RAW_SEARCH_MAX) break;
-      const result=await scrapeJob(job);
-      if(!result.scraped.configured) return {configured:false,leads:[],rawCount,error:result.scraped.error};
-      mergeScraped(result);
-      if(raw.length>=requested && raw.length>=requested*2) break;
+    const scrapeResults=await mapWithConcurrency(jobs,GOALL_LEAD_JOB_CONCURRENCY,scrapeJob);
+    const missing=scrapeResults.find(result=>!result.scraped.configured);
+    if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
+    scrapeResults.forEach(mergeScraped);
+  }
+  // Filter out leads that already exist in the GHL CRM (by email or phone) before spending
+  // enrichment calls (website scrape, Apollo, RocketReach) on them.
+  const crmChecked=await mapWithConcurrency(raw,GOALL_CRM_DEDUPE_CONCURRENCY,async lead=>{
+    const dup=await checkCrmDuplicate(lead);
+    return {lead,dup};
+  });
+  let freshLeads=[];
+  for(const {lead,dup} of crmChecked){
+    if(dup.exists){
+      rejectedReasons.already_in_crm+=1;
+      continue;
+    }
+    freshLeads.push(lead);
+  }
+  // If CRM-dedupe filtered out a large share of the batch, run one bounded top-up pass
+  // (higher per-search limit, same jobs) so the user still gets close to what they asked for.
+  if(freshLeads.length<requested && freshLeads.length<raw.length){
+    const topUpLimit=Math.min(50,perSearchLimit*2);
+    const topUpResults=await mapWithConcurrency(jobs,GOALL_LEAD_JOB_CONCURRENCY,async job=>{
+      const scraped=await discoverOutscraperProspects({
+        organizationType:job.industry,
+        employeeMinimum:plan.employeeMinimum,
+        market:job.market,
+        limit:topUpLimit,
+        leadProfile:plan.leadProfile
+      }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+      return {job,scraped};
+    });
+    topUpResults.forEach(mergeScraped);
+    const newRaw=raw.slice(crmChecked.length);
+    if(newRaw.length){
+      const newChecked=await mapWithConcurrency(newRaw,GOALL_CRM_DEDUPE_CONCURRENCY,async lead=>{
+        const dup=await checkCrmDuplicate(lead);
+        return {lead,dup};
+      });
+      for(const {lead,dup} of newChecked){
+        if(dup.exists){
+          rejectedReasons.already_in_crm+=1;
+          continue;
+        }
+        freshLeads.push(lead);
+      }
     }
   }
-  const enrichLimit=Math.min(raw.length,GOALL_LEAD_RAW_SEARCH_MAX);
+  const enrichLimit=Math.min(freshLeads.length,GOALL_LEAD_RAW_SEARCH_MAX);
   const enrichmentConcurrency=requested>=100?10:(requested>=25?6:3);
-  const enriched=await mapWithConcurrency(raw.slice(0,Math.min(enrichLimit,requested)),enrichmentConcurrency,async prospect=>{
+  const enriched=await mapWithConcurrency(freshLeads.slice(0,Math.min(enrichLimit,requested)),enrichmentConcurrency,async prospect=>{
     const next=await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch}).catch(e=>({...prospect,rocketReachStatus:e.message}));
     const exactIndustry=next.aiExactIndustry||next.industry||next.organizationType||prospect.organizationType||'unclear';
     return applyLeadScoring({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile});
