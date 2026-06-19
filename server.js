@@ -8395,8 +8395,19 @@ async function discoverHbsLeadProspects(body={}){
       ].join('\n');
       try{
         raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
-        leads=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
-        leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||0},{rocketReachMode}));
+        let candidates=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
+        // Same CRM-dedupe as the Outscraper path: skip leads already in GHL before
+        // spending enrichment calls (Apollo/RocketReach/website lookups) on them.
+        const candidateChecks=await mapWithConcurrency(candidates,GOALL_CRM_DEDUPE_CONCURRENCY,async lead=>{
+          const dup=await checkCrmDuplicate(lead);
+          return {lead,dup};
+        });
+        let webRejectedDuplicates=0;
+        candidates=candidateChecks.filter(({dup})=>{
+          if(dup.exists){ webRejectedDuplicates+=1; return false; }
+          return true;
+        }).map(({lead})=>lead);
+        leads=await mapWithConcurrency(candidates,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||0},{rocketReachMode}));
         leads=leads
           .map(p=>{
             const exactIndustry=p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear';
@@ -8404,6 +8415,7 @@ async function discoverHbsLeadProspects(body={}){
           })
           .sort(sortGoallLeads)
           .slice(0,limit);
+        if(webRejectedDuplicates) scraped.rejectedReasons={...(scraped.rejectedReasons||{}),already_in_crm:(scraped.rejectedReasons?.already_in_crm||0)+webRejectedDuplicates};
       }catch(e){
         webError=e.message||'upstream error';
       }
