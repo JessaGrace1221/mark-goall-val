@@ -9494,6 +9494,39 @@ async function processTranscriptPayload(payload){
   console.log(`Transcript processed: title="${title}" actionItems=${taskItems.length} tasksCreated=${createdTasks.length} draftsCreated=${createdDrafts.length} meetingMatched=${!!meetingMatch}`);
   return {analysis:parsed,createdTasks,createdDrafts,meetingMatch,counts:{actionItemsExtracted:taskItems.length,tasksCreated:createdTasks.length,draftsCreated:createdDrafts.length,meetingMatched:meetingMatch?1:0}};
 }
+function transcriptUiRecord(record,{includeText=false}={}){
+  const metadata=record.metadata||{};
+  const rawText=String(record.rawText||record.raw_text||'');
+  const actionItems=Array.isArray(metadata.actionItems)?metadata.actionItems:extractOpenLoopsFromText(rawText,`transcript:${record.id}`,record.createdAt).slice(0,12);
+  const people=Array.isArray(metadata.people)?metadata.people:splitPeopleFromText([record.title,rawText,JSON.stringify(metadata)].join(' ')).slice(0,12);
+  const summary=metadata.summary||metadata.analysis?.summary||rawText.replace(/\s+/g,' ').trim().slice(0,420);
+  const source=metadata.source||metadata.provider||metadata.platform||record.type||'webhook';
+  return {
+    id:record.id,type:record.type||'transcript',title:record.title||metadata.title||metadata.meetingName||metadata.callName||'Untitled transcript',
+    createdAt:record.createdAt||metadata.created_at||metadata.timestamp||'',source,status:metadata.status||(actionItems.length?'needs_review':'reviewed'),
+    summary,preview:rawText.replace(/\s+/g,' ').trim().slice(0,260),contactId:metadata.contact_id||metadata.contactId||'',
+    contactName:metadata.contact_name||metadata.contactName||metadata.company||metadata.companyName||'',opportunityId:metadata.opportunity_id||metadata.opportunityId||'',
+    meetingId:metadata.meeting_id||metadata.meetingId||metadata.calendarEventId||'',relatedOpportunity:metadata.opportunityName||metadata.opportunity||'',
+    keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
+    people,metadata,...(includeText?{transcriptText:rawText}:{})
+  };
+}
+app.get('/api/val/transcripts',async(req,res)=>{
+  try{
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
+    const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
+    const transcripts=(await recentTranscripts(days)).slice(0,limit).map(record=>transcriptUiRecord(record));
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.status==='needs_review').length,withOpenActions:transcripts.filter(t=>t.actionItems.length).length}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
+  try{
+    const id=decodeURIComponent(req.params.transcriptId);
+    const record=(await recentTranscripts(3650)).find(t=>String(t.id)===id);
+    if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
+    res.json({ok:true,transcript:transcriptUiRecord(record,{includeText:true})});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/transcripts',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';console.log('Transcript received:',body.title||body.type||'untitled');const saved=await saveTranscript({...body,transcript:transcriptText});const transcriptRecord={id:saved.id,title:body.title||saved.type,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});if(body&&body.process!==false)return res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,savedTranscriptId:saved.id,meetingMatch})});res.json({ok:true,...saved,meetingMatch});}catch(e){console.error('Transcript save/process error:',e.message);res.status(500).json({error:e.message});}});
 app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';const title=body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:transcriptText,metadata:{source:body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});

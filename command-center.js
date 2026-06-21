@@ -1,0 +1,86 @@
+(function(){
+'use strict';
+var transcriptState={items:[],counts:{total:0,needsReview:0,withOpenActions:0},active:null,loaded:false};
+var navItems=[
+  ['dashboard','⌂','Dashboard'],['relationships','◎','Relationships'],['meetings','▣','Meetings'],['transcripts','≣','Transcripts'],
+  ['communications','✉','Communications'],['opportunities','↗','Opportunities'],['tasks','✓','Tasks'],['intelligence','✦','Intelligence'],
+  ['leads','⌕','Lead Scraper'],['settings','⚙','Settings']
+];
+function safe(value){return typeof docSafe==='function'?docSafe(String(value==null?'':value)):String(value==null?'':value).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function call(name){var fn=window[name];if(typeof fn==='function')return fn.apply(window,[].slice.call(arguments,1));}
+function installShell(){
+  var app=document.querySelector('.app');if(!app||document.getElementById('valPrimaryNav'))return;
+  var nav=document.createElement('nav');nav.id='valPrimaryNav';nav.className='val-primary-nav';nav.setAttribute('aria-label','Primary navigation');
+  nav.innerHTML='<div class="val-nav-brand"><span class="val-nav-mark">V</span><span><strong id="valNavBrand">VAL</strong><small>Command Center</small></span></div><div class="val-nav-items">'+navItems.map(function(n){return '<button class="val-nav-item'+(n[0]==='dashboard'?' active':'')+'" data-view="'+n[0]+'" onclick="commandCenterNavigate(\''+n[0]+'\')"><span class="val-nav-icon">'+n[1]+'</span><span>'+n[2]+'</span></button>';}).join('')+'</div><div class="val-nav-foot"><span id="valNavStatus">System ready</span></div>';
+  app.insertBefore(nav,app.firstChild);
+  var top=document.querySelector('.topbar');if(top){var b=document.createElement('button');b.className='val-mobile-nav';b.setAttribute('aria-label','Open navigation');b.innerHTML='☰';b.onclick=function(){nav.classList.toggle('open');};top.insertBefore(b,top.firstChild);}
+  var center=document.querySelector('.center'),cmd=center&&center.querySelector('.cmd-area');if(center&&cmd){var view=document.createElement('section');view.id='valTranscriptView';view.className='val-transcript-view';center.insertBefore(view,cmd);}
+  setTimeout(function(){var brand=document.getElementById('valNavBrand');if(brand&&window.VAL_CONFIG)brand.textContent=VAL_CONFIG.brandName||VAL_CONFIG.clientName||'VAL';},200);
+  buildCommandCenter();loadTranscripts(false);
+}
+function setActive(view){document.querySelectorAll('.val-nav-item').forEach(function(el){el.classList.toggle('active',el.getAttribute('data-view')===view);});var nav=document.getElementById('valPrimaryNav');if(nav)nav.classList.remove('open');}
+function closeTranscriptView(){var view=document.getElementById('valTranscriptView');if(view)view.classList.remove('open');transcriptState.active=null;}
+window.commandCenterNavigate=function(view){
+  setActive(view);closeTranscriptView();
+  if(view==='dashboard'){call('closeDetail');buildCommandCenter();return;}
+  if(view==='transcripts'){openTranscripts();return;}
+  var routes={relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',intelligence:'openPriorityReview',leads:'openLeadIntelligence',settings:'openKeysPanel'};
+  call(routes[view]||'closeDetail');
+};
+function listLine(label,value){return '<div class="val-mini-item"><strong>'+safe(label)+'</strong><span>'+safe(value)+'</span></div>';}
+function upcomingEvents(){return ([].concat((window.dashData&&dashData.appointments)||[],(window.dashData&&dashData.calendarEvents)||[])).filter(function(e){var d=new Date(e.startTime||e.start||e.date||0);return d>=new Date()&&!isNaN(d);}).sort(function(a,b){return new Date(a.startTime||a.start||a.date)-new Date(b.startTime||b.start||b.date);});}
+function taskInfo(){var all=window.valTasks||((window.dashData&&dashData.tasks)||[]),open=all.filter(function(t){return !t.completed&&t.status!=='completed';}),now=new Date();return{open:open,overdue:open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;})};}
+function commandCard(kicker,title,copy,action,label,extra,priority){return '<article class="val-command-card'+(priority?' priority':'')+'"><div class="val-card-head"><div class="val-card-kicker">'+safe(kicker)+'</div>'+(extra&&extra.count!=null?'<span class="val-card-count">'+safe(extra.count)+'</span>':'')+'</div><h3>'+safe(title)+'</h3>'+(extra&&extra.html?'<div class="val-mini-list">'+extra.html+'</div>':'<p>'+safe(copy)+'</p>')+'<button class="val-card-action" onclick="'+action+'">'+safe(label)+'</button></article>';}
+function buildCommandCenter(){
+  var welcome=document.getElementById('centerWelcome');if(!welcome)return;
+  var events=upcomingEvents(),tasks=taskInfo(),next=events[0],unread=Number((window.dashData&&dashData.followups)||0),pipeline=Number((window.dashData&&dashData.pipelineActive)||0),stalled=Number((window.dashData&&dashData.stalledDeals)||0);
+  var priorityHtml='';if(next)priorityHtml+=listLine(next.title||next.summary||next.contactName||'Next meeting',new Date(next.startTime||next.start||next.date).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}));if(tasks.overdue.length)priorityHtml+=listLine(tasks.overdue[0].title||'Overdue commitment','Overdue');if(unread)priorityHtml+=listLine('Important conversations',unread+' unread');if(!priorityHtml)priorityHtml=listLine('No urgent exceptions detected','Review your day');
+  var tr=transcriptState.items.slice(0,2),trHtml=tr.map(function(t){return listLine(t.title,t.status==='needs_review'?'Needs review':new Date(t.createdAt).toLocaleDateString());}).join('');
+  var html='<div class="cw-label">Executive Command Center</div><div class="cw-title">Today, clearly.</div><div class="cw-sub">The decisions, relationships, and commitments most likely to need your attention—without the dashboard noise.</div><div class="val-command-grid">';
+  html+=commandCard("Today's Priorities",tasks.overdue.length?'Close the open loops first':'Your highest-leverage work is ready','VAL ranked today across meetings, communication, relationships, commitments, and revenue.','openPriorityReview()','Do It',{count:(tasks.overdue.length+unread+(stalled||0))+' signals',html:priorityHtml},true);
+  html+=commandCard('Meetings',next?(next.title||next.summary||'Next meeting'):'No upcoming meeting',next?'Your next conversation is ready for context and preparation.':'Your connected calendar has no upcoming event.','openMeetingBriefing()','Prepare Briefing',{count:events.length+' upcoming'});
+  html+=commandCard('Transcripts',tr.length?'Recent conversations are in memory':'No transcripts received yet','Webhook transcripts, summaries, and open actions live together here.','openTranscripts()','View Transcripts',{count:transcriptState.counts.needsReview+' to review',html:trHtml||''});
+  html+=commandCard('Communications',unread?unread+' conversations need attention':'Your communication queue is clear','Review important threads, waiting-on-response items, and draft replies.','openEmailIntelligence()','Draft Reply',{count:unread+' unread'});
+  html+=commandCard('Relationships','Keep valuable people from drifting','See who needs follow-up and why the relationship matters now.','openRelationshipReview()','Review');
+  html+=commandCard('Opportunities',pipeline?pipeline+' active opportunities':'Review opportunity signals',stalled?stalled+' opportunities may be stalled.':'Pipeline and lead signals are ready for review.','openOpportunityIntelligence()','Open',{count:stalled+' stalled'});
+  html+=commandCard('Tasks & Commitments',tasks.open.length?tasks.open.length+' open commitments':'No open commitments',tasks.overdue.length?tasks.overdue.length+' are overdue and should be resolved first.':'Promised follow-ups and action items are organized here.','openTaskBoard()','Create Task',{count:tasks.overdue.length+' overdue'});
+  html+='</div>';welcome.innerHTML=html;welcome.style.display='block';
+}
+function loadTranscripts(show){
+  var fetcher=typeof apiFetch==='function'?apiFetch:function(url){return fetch(url,{credentials:'same-origin'}).then(function(r){return r.json();});};
+  return fetcher((window.PROXY||'')+'/api/val/transcripts?days=365&limit=100').then(function(data){transcriptState.items=data.transcripts||[];transcriptState.counts=data.counts||transcriptState.counts;transcriptState.loaded=true;buildCommandCenter();if(show)renderTranscriptList();}).catch(function(e){transcriptState.loaded=true;if(show)renderTranscriptError(e.message);});
+}
+window.openTranscripts=function(){setActive('transcripts');call('closeDetail');var welcome=document.getElementById('centerWelcome');if(welcome)welcome.style.display='none';var view=document.getElementById('valTranscriptView');if(view)view.classList.add('open');if(!transcriptState.loaded){view.innerHTML='<div class="val-empty">Loading transcripts…</div>';loadTranscripts(true);}else renderTranscriptList();};
+function transcriptHeader(subtitle,back){return '<div class="val-view-head"><div><h2>Transcripts</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Back to list</button>':'')+'<button class="val-ui-btn" onclick="loadTranscripts(true)">Refresh</button></div></div>';}
+window.renderTranscriptList=function(){
+  transcriptState.active=null;var view=document.getElementById('valTranscriptView');if(!view)return;
+  var c=transcriptState.counts,rows=transcriptState.items.map(function(t){var meta=[t.contactName,t.source,t.createdAt?new Date(t.createdAt).toLocaleString():''].filter(Boolean).join(' · ');return '<button class="val-transcript-row" onclick="openTranscriptDetail(\''+safe(t.id)+'\')"><span><h3>'+safe(t.title)+'</h3><div class="val-transcript-meta">'+safe(meta)+'</div><p>'+safe(t.summary||t.preview||'No summary available.')+'</p></span><span class="val-status '+(t.status==='needs_review'?'review':'')+'">'+safe(String(t.status||'received').replace(/_/g,' '))+'</span></button>';}).join('');
+  view.innerHTML=transcriptHeader('Webhook conversations, meeting context, and follow-through in one place.')+'<div class="val-transcript-stats"><span class="val-transcript-stat"><strong>'+c.total+'</strong> total</span><span class="val-transcript-stat"><strong>'+c.needsReview+'</strong> need review</span><span class="val-transcript-stat"><strong>'+c.withOpenActions+'</strong> with open actions</span></div><div class="val-transcript-list">'+(rows||'<div class="val-empty">No transcripts have arrived yet. The existing webhook is ready to receive them.</div>')+'</div>';
+};
+function renderTranscriptError(message){var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Transcript archive')+'<div class="val-empty">Could not load transcripts: '+safe(message)+'</div>';}
+function normalizeList(items){return (Array.isArray(items)?items:[]).map(function(x){return typeof x==='string'?x:(x.title||x.text||x.summary||x.name||x.email||JSON.stringify(x));}).filter(Boolean);}
+window.openTranscriptDetail=function(id){
+  var view=document.getElementById('valTranscriptView');if(view)view.innerHTML='<div class="val-empty">Opening transcript…</div>';
+  (typeof apiFetch==='function'?apiFetch((window.PROXY||'')+'/api/val/transcripts/'+encodeURIComponent(id)):fetch('/api/val/transcripts/'+encodeURIComponent(id)).then(function(r){return r.json();})).then(function(data){transcriptState.active=data.transcript;renderTranscriptDetail(data.transcript);}).catch(function(e){renderTranscriptError(e.message);});
+};
+function detailList(items,empty){var arr=normalizeList(items);return arr.length?'<ul>'+arr.map(function(x){return '<li>'+safe(x)+'</li>';}).join('')+'</ul>':'<p>'+safe(empty)+'</p>';}
+function renderTranscriptDetail(t){
+  var view=document.getElementById('valTranscriptView');if(!view)return;var meta=[t.contactName,t.source,t.createdAt?new Date(t.createdAt).toLocaleString():''].filter(Boolean).join(' · ');
+  view.innerHTML=transcriptHeader(meta,true)+'<div class="val-transcript-detail"><div class="val-detail-main"><section class="val-detail-card"><h3>'+safe(t.title)+'</h3><p>'+safe(t.summary||'No summary is stored yet. Ask VAL to summarize this transcript.')+'</p></section><section class="val-detail-card"><h3>Full Transcript</h3><p class="val-full-transcript">'+safe(t.transcriptText||'No transcript text is available.')+'</p></section></div><aside class="val-detail-side"><section class="val-detail-card"><h3>Action Items & Promises</h3>'+detailList(t.actionItems,'No open action items detected.')+'<div class="val-chat-chips"><button onclick="transcriptCreateTask()">Create Task</button><button onclick="transcriptAsk(\'Draft a concise meeting follow-up email.\')">Draft Follow-up</button></div></section><section class="val-detail-card"><h3>People Mentioned</h3>'+detailList(t.people,'No people metadata is available.')+'</section><section class="val-detail-card"><h3>Chat with Transcript</h3><div class="val-chat-log" id="valTranscriptChat"><div class="val-chat-msg">Ask about promises, objections, buying signals, CRM notes, or the next follow-up.</div></div><div class="val-chat-input"><input id="valTranscriptQuestion" placeholder="Ask VAL about this transcript" onkeydown="if(event.key===\'Enter\')transcriptAsk()"><button class="val-ui-btn primary" onclick="transcriptAsk()">Ask</button></div><div class="val-chat-chips"><button onclick="transcriptAsk(\'What did I promise to do?\')">My promises</button><button onclick="transcriptAsk(\'What are the objections or buying signals?\')">Buying signals</button><button onclick="transcriptAsk(\'Summarize this for the CRM.\')">CRM summary</button></div></section></aside></div>';
+}
+function chatMessage(text,user){var log=document.getElementById('valTranscriptChat');if(!log)return;var el=document.createElement('div');el.className='val-chat-msg'+(user?' user':'');el.textContent=text;log.appendChild(el);log.scrollTop=log.scrollHeight;}
+window.transcriptAsk=function(question){
+  var t=transcriptState.active;if(!t)return;var input=document.getElementById('valTranscriptQuestion'),q=question||(input&&input.value.trim());if(!q)return;if(input)input.value='';chatMessage(q,true);chatMessage('Working from this transcript…',false);var log=document.getElementById('valTranscriptChat'),pending=log&&log.lastChild;
+  var context='Use only this selected transcript as the primary context. Transcript title: '+t.title+'\nRelated contact: '+(t.contactName||'not linked')+'\nTranscript ID: '+t.id+'\n\nTRANSCRIPT:\n'+String(t.transcriptText||'').slice(0,14000)+'\n\nUSER REQUEST:\n'+q;
+  fetch((window.PROXY||'')+'/api/val/chat',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:context}],dashboard:window.dashData||{}})}).then(function(r){return r.json();}).then(function(d){if(pending)pending.remove();chatMessage((d.message&&d.message.content)||d.message||'No response was returned.',false);if(d.createdTasks&&d.createdTasks.length)call('valTasksLoad');}).catch(function(e){if(pending)pending.remove();chatMessage('Unable to complete that request: '+e.message,false);});
+};
+window.transcriptCreateTask=function(){
+  var t=transcriptState.active;if(!t)return;var first=normalizeList(t.actionItems)[0],title=first||('Follow up on '+t.title),task={id:'transcript-task-'+Date.now(),title:title,notes:'Created from transcript: '+t.title+' ('+t.id+')',contactName:t.contactName||'',dueDate:'',priority:'medium',completed:false,source:'transcript',sourceId:t.id};
+  fetch((window.PROXY||'')+'/api/val/tasks',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(task)}).then(function(r){if(!r.ok)throw new Error('Task creation failed');return r.json();}).then(function(){chatMessage('Task created: '+title,false);call('valTasksLoad');}).catch(function(e){chatMessage('Task was not created: '+e.message,false);});
+};
+var originalSend=window.sendMessage;window.sendMessage=function(){var input=document.getElementById('msgInput');if(transcriptState.active&&document.getElementById('valTranscriptView')&&document.getElementById('valTranscriptView').classList.contains('open')&&input&&input.value.trim()){var q=input.value.trim();input.value='';input.style.height='auto';transcriptAsk(q);return;}return originalSend&&originalSend.apply(window,arguments);};
+document.addEventListener('click',function(e){var nav=document.getElementById('valPrimaryNav');if(nav&&nav.classList.contains('open')&&!nav.contains(e.target)&&!e.target.closest('.val-mobile-nav'))nav.classList.remove('open');});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installShell);else installShell();
+setTimeout(buildCommandCenter,1200);setTimeout(buildCommandCenter,3500);
+setInterval(function(){if(!document.getElementById('valTranscriptView')?.classList.contains('open'))buildCommandCenter();},15000);
+})();
