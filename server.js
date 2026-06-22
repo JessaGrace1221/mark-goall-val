@@ -3625,11 +3625,44 @@ function draftRelationshipOutreach(contact){
 function relationshipProfile(contact){
   return {
     name:contact.name,company:contact.company||'',email:contact.email||'',score:contact.score,scoreBreakdown:contact.scoreBreakdown,
-    relationshipSummary:contact.reason,recentTopics:contact.topics||[],openLoops:contact.openLoops||[],
+    relationshipType:contact.relationshipType||'Professional',relationshipSummary:contact.reason,recentTopics:contact.topics||[],openLoops:contact.openLoops||[],
     lastMeaningfulInteraction:contact.lastInteractionAt||'',strategicValue:contact.strategicValue||'Evidence-based relationship priority.',
     opportunitySignals:contact.opportunitySignals||[],riskSignals:contact.riskSignals||[],suggestedNextAction:contact.recommendedAction,
-    suggestedOutreach:contact.draftOutreach,relatedContacts:contact.relatedContacts||[],tags:contact.tags||[]
+    suggestedOutreach:contact.draftOutreach,relatedContacts:contact.relatedContacts||[],tags:contact.tags||[],evidence:contact.evidence||[],evidenceCount:(contact.evidence||[]).length,contactId:contact.contactId||contact.id||''
   };
+}
+function relationshipOwnerIdentity(){
+  const emails=[process.env.ADMIN_EMAIL,process.env.VAL_OWNER_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL]
+    .concat(String(process.env.VAL_OWNER_ALIASES||'').split(',')).map(normalizeContextEmail).filter(Boolean);
+  const names=[process.env.ADMIN_NAME,process.env.VAL_CLIENT_NAME,CLIENT_CONFIG.clientName,process.env.VAL_OWNER_NAME]
+    .concat(String(process.env.VAL_OWNER_ALIASES||'').split(',')).map(normalizeContextName).filter(Boolean);
+  return {emails:new Set(emails),names:new Set(names)};
+}
+function isOwnerRelationship(candidate={},owner=relationshipOwnerIdentity()){
+  const email=normalizeContextEmail(candidate.email||candidate.contactEmail||'');
+  const name=normalizeContextName(candidate.name||candidate.contactName||'');
+  if(email&&owner.emails.has(email)) return true;
+  if(name&&owner.names.has(name)) return true;
+  if(name&&[...owner.names].some(alias=>looseNameScore(name,alias)>=0.8)) return true;
+  return candidate.self===true||candidate.organizer===true&&(!email||owner.emails.has(email));
+}
+function isMeaningfulRelationshipEmail(email={}){
+  const from=`${email.from?.name||''} ${email.from?.email||''}`.toLowerCase();
+  const subject=String(email.subject||'').toLowerCase();
+  if(/mailsuite|mailtrack|email tracking|tracking notification/.test(from+' '+subject)) return false;
+  if(/^(opened:|email opened|link clicked|your email was opened)/.test(subject)) return false;
+  return true;
+}
+function relationshipEmailParticipants(email={}){
+  const values=[email.from,...(email.to||[]),...(email.cc||[])].filter(Boolean);
+  return values.map(v=>({name:v.name||v.displayName||'',email:v.email||v.address||''}));
+}
+function synthesizeRelationshipSummary(contact={}){
+  const types=[...new Set((contact.evidence||[]).map(e=>e.type))];
+  const context=contact.company?`${contact.name} is connected to ${contact.company}.`:`${contact.name} is an external relationship worth understanding.`;
+  const recent=contact.lastEvidenceSummary?` Recent activity includes ${String(contact.lastEvidenceSummary).replace(/\s+/g,' ').slice(0,180)}.`:'';
+  const why=(contact.opportunitySignals||[]).length?' There is a live opportunity, referral, or partnership signal.':(contact.openLoops||[]).length?' An open commitment makes timely follow-through important.':` Evidence comes from ${types.join(', ')||'connected activity'}.`;
+  return `${context}${recent}${why} ${contact.recommendedAction||'Review the relationship and choose one useful next move.'}`.replace(/\s+/g,' ').trim();
 }
 async function buildRelationshipReview({windowDays=7}={}){
   const now=new Date();
@@ -3638,12 +3671,18 @@ async function buildRelationshipReview({windowDays=7}={}){
   const future=new Date(now);future.setDate(future.getDate()+14);
   const people=new Map();
   const errors=[];
+  const owner=relationshipOwnerIdentity();
   function touch({name='',email='',company='',tags=[]}){
-    const key=personKey(name,email);
-    if(!people.has(key)) people.set(key,{key,name:cleanPersonName(name,email),email:String(email||'').toLowerCase(),company:company||'',tags:[],evidence:[],openLoops:[],opportunitySignals:[],riskSignals:[],topics:[],relatedContacts:[]});
-    const p=people.get(key);
+    const cleanName=cleanPersonName(name,email),cleanEmail=normalizeContextEmail(email);
+    if(isOwnerRelationship({name:cleanName,email:cleanEmail},owner)||(!cleanEmail&&(!cleanName||cleanName==='Unknown'))) return null;
+    if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(cleanEmail)) return null;
+    const normalizedName=normalizeContextName(cleanName),normalizedCompany=normalizeContextName(company);
+    let p=[...new Set(people.values())].find(existing=>(cleanEmail&&existing.email===cleanEmail)||(normalizedName&&normalizeContextName(existing.name)===normalizedName)||(normalizedName&&normalizedCompany&&normalizeContextName(existing.company)===normalizedCompany&&looseNameScore(existing.name,cleanName)>=0.5));
+    const key=personKey(cleanName,cleanEmail);
+    if(!p){p={key,name:cleanName,email:cleanEmail,company:company||'',tags:[],evidence:[],openLoops:[],opportunitySignals:[],riskSignals:[],topics:[],relatedContacts:[]};}
+    people.set(key,p);
     if(name&&(!p.name||p.name==='Unknown')) p.name=cleanPersonName(name,email);
-    if(email&&!p.email) p.email=String(email).toLowerCase();
+    if(cleanEmail&&!p.email) p.email=cleanEmail;
     if(company&&!p.company) p.company=company;
     p.tags=Array.from(new Set((p.tags||[]).concat(tags||[]).filter(Boolean)));
     return p;
@@ -3663,19 +3702,26 @@ async function buildRelationshipReview({windowDays=7}={}){
     const topic=String(evidence.summary||'').split(/[.!?]/)[0].slice(0,90);
     if(topic) person.topics=Array.from(new Set((person.topics||[]).concat(topic))).slice(0,8);
   }
-  const [gmail,outlook,tasks,transcripts,memory,ghlEvents,googleEvents,pipeline]=await Promise.all([
+  const [gmail,outlook,tasks,transcripts,memory,preferenceMemory,ghlEvents,googleEvents,pipeline]=await Promise.all([
     fetchGmailMessages({query:'newer_than:45d',maxResults:60}).catch(e=>{errors.push('Gmail: '+e.message);return {emails:[],error:e.message};}),
     fetchUnifiedOutlookEmails(60).catch(e=>{errors.push('Outlook: '+e.message);return {emails:[],error:e.message};}),
     loadTasks().catch(e=>{errors.push('Tasks: '+e.message);return [];}),
     recentTranscripts(45).catch(e=>{errors.push('Transcripts: '+e.message);return [];}),
     recentMemoryItems(45,120).catch(e=>{errors.push('Memory: '+e.message);return [];}),
+    recentMemoryItems(365,300).catch(()=>[]),
     fetchGhlCalendarEvents(widerPast,future).catch(e=>{errors.push('GHL calendar: '+e.message);return [];}),
     fetchGoogleCalendarEvents(widerPast,future,150).catch(e=>{errors.push('Google calendar: '+e.message);return [];}),
     fetchGhlOpportunities({status:'open',limit:100}).catch(e=>{errors.push('Pipeline: '+e.message);return {data:{opportunities:[]}};})
   ]);
+  const preferences=new Map();
+  for(const mem of preferenceMemory.filter(m=>m.kind==='relationship_preference').sort((a,b)=>interactionDate(a.createdAt)-interactionDate(b.createdAt))){
+    const pref=mem.metadata||parseLeadJson(mem.rawText)||{};const c=pref.contact||{};
+    preferences.set(personKey(c.name,c.email),{action:pref.action||'',until:pref.until||'',createdAt:mem.createdAt||''});
+  }
   for(const email of (gmail.emails||[]).concat(outlook.emails||[])){
-    const sender=touch({name:email.from?.name,email:email.from?.email});
-    addEvidence(sender,relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt,'high',email.messageId));
+    if(!isMeaningfulRelationshipEmail(email)) continue;
+    const evidence=relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt||email.date,'high',email.messageId);
+    relationshipEmailParticipants(email).filter(person=>!isOwnerRelationship(person,owner)).forEach(person=>addEvidence(touch(person),evidence));
   }
   for(const ev of ghlEvents.concat(googleEvents)){
     inferAttendeesFromEvent(ev).forEach(a=>{
@@ -3694,7 +3740,7 @@ async function buildRelationshipReview({windowDays=7}={}){
       addEvidence(p,relationshipEvidence('transcript',`${tr.title||'Transcript'}: ${String(tr.rawText||'').slice(0,220)}`,tr.createdAt,person.confidence,tr.id));
     });
   }
-  for(const mem of memory){
+  for(const mem of memory.filter(m=>m.kind!=='relationship_preference')){
     splitPeopleFromText([mem.summary,mem.rawText].join(' ')).forEach(person=>{
       const p=touch(person);
       addEvidence(p,relationshipEvidence('memory',`${mem.summary||mem.kind}: ${String(mem.rawText||'').slice(0,220)}`,mem.createdAt,person.confidence,mem.id));
@@ -3705,19 +3751,24 @@ async function buildRelationshipReview({windowDays=7}={}){
     const p=touch({name:c.name||o.contactName||o.name,email:c.email||o.contactEmail,company:o.name});
     addEvidence(p,relationshipEvidence('opportunity',`${o.name||'Open opportunity'}${o.monetaryValue?' worth $'+o.monetaryValue:''}${o.status?' is '+o.status:''}`,o.updatedAt||o.lastStatusChangeAt,'high',o.id));
   }
-  for(const p of people.values()){
+  for(const p of new Set(people.values())){
     const introCount=p.evidence.filter(e=>/intro|introduction|connect|referral|referred/i.test(e.summary)).length;
     p.superConnector=introCount>=2;
     if(p.superConnector) p.tags.push('Super Connector');
     p.lastInteractionDays=daysSince(p.lastInteractionAt);
+    const pref=preferences.get(personKey(p.name,p.email))||preferences.get(personKey(p.name,''))||{};
+    p.manualVip=pref.action==='mark_vip';p.notImportant=pref.action==='not_important';p.snoozedUntil=pref.action==='snooze'?pref.until:'';
     p.scoreBreakdown=relationshipScore(p);
     p.score=p.scoreBreakdown.total;
-    p.reason=[p.score>=70?'High priority relationship':'Relationship worth tracking',p.lastEvidenceSummary||'Evidence found across connected systems'].join(': ');
+    if(p.manualVip){p.score=Math.min(100,p.score+20);p.tags.push('VIP');}
+    if(p.notImportant)p.score=Math.max(0,p.score-40);
     p.recommendedAction=recommendedRelationshipAction(p);
+    p.relationshipType=p.manualVip?'VIP':p.superConnector?'Connector':p.scoreBreakdown.opportunityPotential>=10?'Opportunity':p.company?'Professional':'Personal';
+    p.reason=synthesizeRelationshipSummary(p);
     p.draftOutreach=draftRelationshipOutreach(p);
     p.profile=relationshipProfile(p);
   }
-  const contacts=Array.from(people.values()).filter(p=>p.name&&p.name!=='Unknown'&&p.evidence.length).sort((a,b)=>b.score-a.score).slice(0,80);
+  const contacts=[...new Set(people.values())].filter(p=>p.name&&p.name!=='Unknown'&&p.evidence.length&&!isOwnerRelationship(p,owner)&&!p.notImportant&&(!p.snoozedUntil||new Date(p.snoozedUntil)<=now)).sort((a,b)=>b.score-a.score).slice(0,80);
   const topRelationshipPriorities=contacts.slice(0,10);
   const highestLeverageRelationships=contacts.filter(c=>c.scoreBreakdown.strategicImportance>=10||c.superConnector||c.scoreBreakdown.opportunityPotential>=10).slice(0,8);
   const coolingRelationships=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14&&c.score>=35).sort((a,b)=>b.score-a.score).slice(0,8);
@@ -9970,13 +10021,15 @@ app.post('/api/relationships/actions',async(req,res)=>{
       return res.json({ok:true,draft});
     }
     if(action==='create_task'){
-      const task={id:uuid('task'),title:req.body.title||contact.recommendedAction||`Follow up with ${contact.name||contact.email}`,contactName:contact.name||contact.email||'',dueDate:req.body.dueDate||null,notes:req.body.notes||`Created from Relationship Review. Score: ${contact.score||'unknown'}`,details:[{text:'Created from Relationship Review',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      const defaultDue=new Date(Date.now()+2*24*60*60*1000).toISOString();
+      const task={id:uuid('task'),title:req.body.title||contact.recommendedAction||`Follow up with ${contact.name||contact.email}`,contactName:contact.name||contact.email||'',contactId:contact.contactId||contact.id||'',dueDate:req.body.dueDate||defaultDue,priority:req.body.priority||((contact.score||0)>=70?'high':'medium'),notes:req.body.notes||`${contact.reason||'Created from Relationship Review.'}\n\nRecommended action: ${contact.recommendedAction||'Review relationship history.'}`,details:[{text:'Created from Relationship Review',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
       await saveTask(task);
       return res.json({ok:true,task});
     }
     if(['mark_vip','snooze','not_important'].includes(action)){
-      await saveMemoryItem({kind:'relationship_preference',summary:`${action}: ${contact.name||contact.email}`,rawText:JSON.stringify({action,contact,until:req.body.until||''}),importance:action==='mark_vip'?4:2,metadata:{source:'relationship_review',action,contact}});
-      return res.json({ok:true,status:'saved'});
+      const until=action==='snooze'?(req.body.until||new Date(Date.now()+7*24*60*60*1000).toISOString()):'';
+      await saveMemoryItem({kind:'relationship_preference',summary:`${action}: ${contact.name||contact.email}`,rawText:JSON.stringify({action,contact,until}),importance:action==='mark_vip'?4:2,metadata:{source:'relationship_review',action,contact,until,identityKey:personKey(contact.name,contact.email)}});
+      return res.json({ok:true,status:'saved',action,until});
     }
     if(action==='brainstorm'){
       if(DEMO_MODE){
