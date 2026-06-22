@@ -1437,9 +1437,41 @@ function openPriorityReview(){
   openExecutiveWorkspace({id:'priorityWorkspace',title:'Priority Review',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Email Intelligence</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
 }
 function openLeadIntelligence(){
-  var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Search Controls</h3><p>Use Lead Scrape to search by industry, market, company size, and client lead profile.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Previewed leads will appear in chat before import. VAL will show score, contactability, automation tag, and import actions when data returns.</p></section><section class="exec-card"><h3>Configuration</h3><p>If Level 1, Level 2, or Level 3 checks fail, add or test keys in Register Your Keys.</p></section></div>';
-  openExecutiveWorkspace({id:'leadWorkspace',title:'Lead Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="startLeadResearch()">Do It</button><button class="alert-btn" onclick="openKeysPanel()">Register Your Keys</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'leadWorkspace\')">Close</button>'});
+  var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Scrape Employers</h3><p>Would this company benefit from GOALL?</p><p>Search by industry, market, and company size.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Employer leads keep the existing scoring, review, automation, and import workflow.</p></section><section class="exec-card"><h3>CRM Route</h3><p>The existing employer pipeline and stage remain unchanged.</p></section></div>';
+  openExecutiveWorkspace({id:'leadWorkspace',title:'Scrape Employers',body:body,footer:'<button class="alert-btn primary" onclick="startLeadResearch()">Start employer scrape</button><button class="alert-btn" onclick="openKeysPanel()">Register Your Keys</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'leadWorkspace\')">Close</button>'});
 }
+function openPartnerIntelligence(){
+  var types=['Employee Benefits Brokers','Property & Casualty Agencies','Life & Health Insurance Agencies','General Insurance Brokerages','Voluntary Benefits Providers','Section 125 Providers','SIMRP Providers','Payroll Companies','Staffing Agencies','HR Consultants','Professional Associations','Trade Organizations','Industry Membership Organizations','Conference Organizers','Referral Partners'];
+  var options=types.map(function(type){return '<option>'+docSafe(type)+'</option>';}).join('');
+  var body='<div class="partner-search-panel"><section class="exec-card"><h3>Scrape Partners</h3><p>Could this organization help GOALL reach many employers?</p><label>Partner type<select id="partnerTypeInput">'+options+'</select></label><label>Geographic market<input id="partnerMarketInput" value="United States" placeholder="United States, Arizona, Phoenix..."></label><label>Prospects to find<input id="partnerLimitInput" type="number" min="1" max="100" value="12"></label><p class="partner-standard">Public sources only · recent sources preferred · two supporting sources whenever possible</p></section><section class="exec-card"><h3>CRM Destination</h3><p><strong>GOALL Strategic Partners</strong><br>New Limitless Lead Added</p><p>Potential Reach and Partnership Fit Score are stored as sortable lead data.</p></section></div>';
+  openExecutiveWorkspace({id:'partnerWorkspace',title:'Scrape Partners',body:body,footer:'<button class="alert-btn primary" onclick="runPartnerScrapeFromForm()">Run partner scrape</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'partnerWorkspace\')">Close</button>'});
+}
+function runPartnerScrapeFromForm(){
+  var type=document.getElementById('partnerTypeInput').value,market=document.getElementById('partnerMarketInput').value||'United States';
+  var limit=Math.min(Math.max(parseInt(document.getElementById('partnerLimitInput').value,10)||12,1),100);
+  closeExecutiveWorkspace('partnerWorkspace');openDetailWithTitle('Scrape Partners');addMsg('Scrape '+type+' in '+market,true);
+  addMsg('Searching public sources, checking GHL for duplicates, estimating potential reach, and scoring partnership fit. Nothing will be pushed until you approve it.',false);showTyping();
+  fetch(PROXY+'/api/val/partners/discover-preview',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({partnerType:type,market:market,limit:limit})})
+  .then(function(r){removeTyping();return apiTextOrJson(r);}).then(function(d){if(d.ok===false)throw new Error(d.error||'No partner results returned.');pendingPartnerImport=d;renderPartnerReviewTable();}).catch(function(e){removeTyping();addSys('Partner scrape failed: '+e.message);});
+}
+function partnerValue(lead,key){var n=Number(lead[key]);return Number.isFinite(n)?n:String(lead[key]||'').toLowerCase();}
+function sortPartnerReview(key){if(partnerSort.key===key)partnerSort.direction*=-1;else partnerSort={key:key,direction:-1};renderPartnerReviewTable();}
+function togglePartnerApproval(index,checked){if(pendingPartnerImport&&pendingPartnerImport.leads[index])pendingPartnerImport.leads[index]._approved=checked;}
+function renderPartnerReviewTable(){
+  if(!pendingPartnerImport)return;pendingPartnerImport.leads.forEach(function(lead){if(lead._approved===undefined)lead._approved=true;});
+  pendingPartnerImport.leads.sort(function(a,b){var av=partnerValue(a,partnerSort.key),bv=partnerValue(b,partnerSort.key);return av===bv?0:(av>bv?1:-1)*partnerSort.direction;});
+  var c=document.getElementById('chatScroll'),d=document.createElement('div');d.className='cmsg assistant partner-review-message';
+  var rows=pendingPartnerImport.leads.map(function(p,i){return '<tr><td><input type="checkbox" '+(p._approved?'checked':'')+' onchange="togglePartnerApproval('+i+',this.checked)"></td><td><strong>'+htmlEscape(p.organizationName||p.name||'Unnamed')+'</strong><small>'+htmlEscape(p.partnerType||'Referral Partner')+'</small></td><td>'+Number(p.potentialReach||0).toLocaleString()+'</td><td>'+Number(p.partnershipFitScore||0)+'/100</td><td>'+htmlEscape(p.decisionMakerName||'Not identified')+'</td><td><details><summary>Research</summary><p>'+htmlEscape(p.reasonForScore||'')+'</p><p><strong>Angle:</strong> '+htmlEscape(p.recommendedOutreachAngle||'')+'</p><p><strong>Sources:</strong> '+((p.sourceUrls||[]).map(function(url){return '<a href="'+htmlEscape(url)+'" target="_blank" rel="noopener">'+htmlEscape(url)+'</a>';}).join('<br>')||'Needs second-source research')+'</p></details></td></tr>';}).join('');
+  d.innerHTML='<div class="cmsg-bubble partner-review"><p><strong>Partner review</strong></p><p>'+pendingPartnerImport.leads.length+' prospects found. Select leads to approve. Potential Reach and Fit Score are sortable.</p><div class="partner-table-wrap"><table class="partner-table"><thead><tr><th>Approve</th><th onclick="sortPartnerReview(\'organizationName\')">Organization ↕</th><th onclick="sortPartnerReview(\'potentialReach\')">Potential Reach ↕</th><th onclick="sortPartnerReview(\'partnershipFitScore\')">Fit Score ↕</th><th>Contact</th><th>Evidence</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="partner-actions"><button class="chip" onclick="approvePartnerImport()">Push approved partners to CRM</button><button class="chip" onclick="cancelPartnerImport()">Cancel</button></div><p><strong>Destination:</strong> GOALL Strategic Partners / New Limitless Lead Added</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  var prior=c.querySelector('.partner-review-message');if(prior)prior.remove();c.appendChild(d);c.scrollTop=c.scrollHeight;
+}
+function approvePartnerImport(){
+  var leads=(pendingPartnerImport&&pendingPartnerImport.leads||[]).filter(function(p){return p._approved;});if(!leads.length){addSys('Select at least one partner to approve.');return;}
+  addMsg('Push '+leads.length+' approved partners to CRM',true);showTyping();
+  fetch(PROXY+'/api/val/partners/import-approved',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({},pendingPartnerImport,{leads:leads}))})
+  .then(function(r){removeTyping();return apiTextOrJson(r);}).then(function(d){pendingPartnerImport=null;addMsg(d.content||'Partner import finished.',false);loadDashboard();}).catch(function(e){removeTyping();addSys('Partner import failed: '+e.message);});
+}
+function cancelPartnerImport(){pendingPartnerImport=null;var prior=document.querySelector('.partner-review-message');if(prior)prior.remove();addMsg('Partner import canceled. Nothing was added to GHL.',false);}
 function openMeetingBriefing(){
   var meetings=(dashData.appointments||dashData.calendarEvents||[]);
   var next=meetings.map(function(ev){return {ev:ev,dt:eventStart(ev)};}).filter(function(x){return x.dt&&x.dt>=new Date();}).sort(function(a,b){return a.dt-b.dt;})[0];
@@ -2581,6 +2613,8 @@ var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=
 var dashData={};
 var leadResearchState=null;
 var pendingLeadImport=null;
+var pendingPartnerImport=null;
+var partnerSort={key:'partnershipFitScore',direction:-1};
 var lastGoallLeadBatchPayload=null;
 var valActor='VAL User';
 

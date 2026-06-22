@@ -8,6 +8,7 @@ Primary purpose:
 - read recent GHL contact notes, including phone-call transcript notes
 - help Mark understand each call, caller, potential client, risk, and next action quickly
 - support GOALL lead intelligence and prospect research
+- run independent employer and strategic-partner prospecting workflows
 
 Key endpoints:
 - `GET /dashboard`
@@ -27,6 +28,10 @@ Important setup:
 - optional `GHL_OPPORTUNITY_STAGE_ID`
 - optional `ROCKETREACH_API_KEY`
 - optional `OUTSCRAPER_API_KEY`
+- optional `GHL_PARTNER_PIPELINE_ID` (otherwise exact name `GOALL Strategic Partners` is used)
+- optional `GHL_PARTNER_STAGE_ID` (otherwise exact name `New Limitless Lead Added` is used)
+
+Strategic partner custom fields are discovered by name when present in GHL. Supported fields include Partner Type, Organization Size, Potential Reach, Partnership Fit Score, Reason For Score, Recommended Outreach Angle, Source URLs, and Date Added. Matching `GHL_FIELD_*` variables can be used to pin exact custom-field IDs.
 
 GHL MCP architecture:
 - GHL access is centralized in `services/ghlMcpService.js`.

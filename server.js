@@ -83,6 +83,10 @@ const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || p
 const GHL_OPPORTUNITY_STAGE_ID = process.env.GHL_OPPORTUNITY_STAGE_ID || process.env.GHL_PIPELINE_STAGE_ID || '';
 const GHL_OPPORTUNITY_PIPELINE_NAME = process.env.GHL_OPPORTUNITY_PIPELINE_NAME || 'GOALL';
 const GHL_OPPORTUNITY_STAGE_NAME = process.env.GHL_OPPORTUNITY_STAGE_NAME || 'New Lead';
+const GHL_PARTNER_PIPELINE_ID = process.env.GHL_PARTNER_PIPELINE_ID || '';
+const GHL_PARTNER_STAGE_ID = process.env.GHL_PARTNER_STAGE_ID || '';
+const GHL_PARTNER_PIPELINE_NAME = process.env.GHL_PARTNER_PIPELINE_NAME || 'GOALL Strategic Partners';
+const GHL_PARTNER_STAGE_NAME = process.env.GHL_PARTNER_STAGE_NAME || 'New Limitless Lead Added';
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || '';
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || '';
 const MICROSOFT_REDIRECT_URI = process.env.MICROSOFT_REDIRECT_URI || (CLIENT_CONFIG.publicBaseUrl ? `${CLIENT_CONFIG.publicBaseUrl.replace(/\/$/,'')}/auth/microsoft/callback` : '');
@@ -306,7 +310,14 @@ const GHL_LEAD_FIELD_IDS = {
   company_linkedin: process.env.GHL_FIELD_COMPANY_LINKEDIN || '',
   goall_intelligence_note: process.env.GHL_FIELD_GOALL_INTELLIGENCE_NOTE || '',
   recommended_first_call_angle: process.env.GHL_FIELD_RECOMMENDED_FIRST_CALL_ANGLE || '',
-  missing_data: process.env.GHL_FIELD_MISSING_DATA || ''
+  missing_data: process.env.GHL_FIELD_MISSING_DATA || '',
+  partner_type: process.env.GHL_FIELD_PARTNER_TYPE || '',
+  organization_size: process.env.GHL_FIELD_ORGANIZATION_SIZE || '',
+  potential_reach: process.env.GHL_FIELD_POTENTIAL_REACH || '',
+  partnership_fit_score: process.env.GHL_FIELD_PARTNERSHIP_FIT_SCORE || '',
+  reason_for_score: process.env.GHL_FIELD_REASON_FOR_SCORE || '',
+  source_urls: process.env.GHL_FIELD_SOURCE_URLS || '',
+  date_added: process.env.GHL_FIELD_DATE_ADDED || ''
 };
 const GHL_LEAD_FIELD_KEYS = {
   lead_source_system:'contact.lead_source_system',
@@ -428,7 +439,14 @@ const GHL_LEAD_FIELD_KEYS = {
   company_linkedin:'contact.company_linkedin',
   goall_intelligence_note:'contact.goall_intelligence_note',
   recommended_first_call_angle:'contact.recommended_first_call_angle',
-  missing_data:'contact.missing_data'
+  missing_data:'contact.missing_data',
+  partner_type:'contact.partner_type',
+  organization_size:'contact.organization_size',
+  potential_reach:'contact.potential_reach',
+  partnership_fit_score:'contact.partnership_fit_score',
+  reason_for_score:'contact.reason_for_score',
+  source_urls:'contact.source_urls',
+  date_added:'contact.date_added'
 };
 const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_source_system:['lead source system','lead_source_system'],
@@ -484,6 +502,13 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   goall_intelligence_note:['goall intelligence note','goall_intelligence_note','lead intelligence summary','lead intelligence note','caller intelligence summary'],
   recommended_first_call_angle:['recommended first call angle','recommended_first_call_angle','first call angle','opening line'],
   missing_data:['missing data','missing_data','missing data note'],
+  partner_type:['partner type','partner_type'],
+  organization_size:['organization size','organization_size'],
+  potential_reach:['potential reach','potential_reach','estimated reach'],
+  partnership_fit_score:['partnership fit score','partnership_fit_score','partner fit score'],
+  reason_for_score:['reason for score','reason_for_score','partnership score reason'],
+  source_urls:['source urls','source_urls','research sources'],
+  date_added:['date added','date_added'],
   signals_positive_count:['signals positive count','signals_positive_count'],
   signals_top_indicators:['signals top indicators','signals_top_indicators'],
   signals_confidence:['signals confidence','signals_confidence'],
@@ -4952,6 +4977,38 @@ app.post('/api/val/leads/import-approved',async(req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 
+app.post('/api/val/partners/discover-preview',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const request={
+      ...body,
+      leadProfile:'goall',
+      organizationType:String(body.partnerType||body.organizationType||'strategic distribution partners'),
+      criteria:String(body.criteria||`Find ${body.partnerType||'strategic partner organizations'} that can distribute, recommend, introduce, or sell GOALL. Prioritize ${GOALL_PRIORITY_ASSOCIATIONS.join(', ')} and similar organizations. Use public information, prefer sources updated in the last 12 months, and find at least two supporting source URLs whenever possible. For associations capture industry served, membership size, geographic reach, executive leadership, membership/partnership/events directors, conference details, vendor and sponsor opportunities. For agencies capture agency type, employee/revenue estimates, states licensed, decision makers, and benefits/life/commercial insurance evidence.`),
+      employeeMinimum:1,
+      market:String(body.market||'United States'),
+      limit:Math.min(Math.max(Number(body.limit)||12,1),100),
+      fastSearch:false,
+      rocketReachMode:body.rocketReachMode||'defer'
+    };
+    const discovered=DEMO_MODE?demoLeadDiscovery(request):await withTimeout(discoverHbsLeadProspects(request),GOALL_LEAD_DISCOVERY_TIMEOUT_MS,'partner scrape timed out before results returned');
+    const leads=(discovered.leads||[]).map(lead=>scorePartnerFit({...lead,partnerType:body.partnerType||lead.partnerType}));
+    const result={...discovered,ok:true,prospectingMode:'partners',leadProfile:'partners',partnerTypes:GOALL_PARTNER_TYPES,leads,crmDestination:{pipeline:GHL_PARTNER_PIPELINE_NAME,stage:GHL_PARTNER_STAGE_NAME},researchStandard:{publicOnly:true,preferredFreshnessMonths:12,supportingSourcesPreferred:2}};
+    result.content=partnerPreviewText(result);
+    res.json(result);
+  }catch(e){res.json({ok:false,prospectingMode:'partners',leads:[],error:e.message,content:`Partner scrape could not complete.\n\n${e.message}`});}
+});
+
+app.post('/api/val/partners/import-approved',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const leads=(req.body?.leads||[]).map(scorePartnerFit);
+      return res.json({ok:true,created:leads,failed:[],content:withDemoCta(`Pushed ${leads.length} approved demo strategic partners to GOALL Strategic Partners / New Limitless Lead Added.`)});
+    }
+    res.json(await importApprovedPartnerLeads(req.body||{}));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
 app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -7960,6 +8017,169 @@ async function getOpportunityTarget(){
   return {pipelineId:pipeline.id,stageId:stage.id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
 }
 
+async function getPartnerOpportunityTarget(){
+  const data=await ghl('GET',`/opportunities/pipelines?locationId=${GHL_LOC}`);
+  const pipelines=data.pipelines||data.data||[];
+  const pipeline=pipelines.find(p=>GHL_PARTNER_PIPELINE_ID
+    ? String(p.id||p._id||'')===String(GHL_PARTNER_PIPELINE_ID)
+    : String(p.name||p.title||'').trim().toLowerCase()===GHL_PARTNER_PIPELINE_NAME.toLowerCase());
+  if(!pipeline) throw new Error(`No GHL pipeline matched "${GHL_PARTNER_PIPELINE_NAME}". Create it or set GHL_PARTNER_PIPELINE_ID.`);
+  const stages=pipeline.stages||pipeline.pipelineStages||[];
+  const stage=stages.find(s=>GHL_PARTNER_STAGE_ID
+    ? String(s.id||s._id||'')===String(GHL_PARTNER_STAGE_ID)
+    : String(s.name||s.title||'').trim().toLowerCase()===GHL_PARTNER_STAGE_NAME.toLowerCase());
+  if(!stage) throw new Error(`No GHL stage matched "${GHL_PARTNER_STAGE_NAME}" in "${pipeline.name||pipeline.title}". Create it or set GHL_PARTNER_STAGE_ID.`);
+  return {pipelineId:pipeline.id||pipeline._id,stageId:stage.id||stage._id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
+}
+
+const GOALL_PARTNER_TYPES=[
+  'Employee Benefits Broker','Property & Casualty Agency','Life & Health Insurance Agency','General Insurance Brokerage',
+  'Voluntary Benefits Provider','Section 125 Provider','SIMRP Provider','Payroll Company','Staffing Agency','HR Consultant',
+  'Professional Association','Trade Organization','Industry Membership Organization','Conference Organizer','Referral Partner'
+];
+const GOALL_PRIORITY_ASSOCIATIONS=['SHRM','MGMA','AHA','AAHC','AGC','ABC','NAHB','ATA','NPTC','APA','ASA','NAPS','NARPM'];
+
+function partnerTypeFromLead(p={}){
+  const text=[p.partnerType,p.organizationType,p.industry,p.category,p.subcategory,p.organizationName,p.name].filter(Boolean).join(' ').toLowerCase();
+  if(/association|membership|society|chamber/.test(text)) return 'Professional Association';
+  if(/conference|expo|event organizer/.test(text)) return 'Conference Organizer';
+  if(/payroll|paychex|adp/.test(text)) return 'Payroll Company';
+  if(/staffing|recruit/.test(text)) return 'Staffing Agency';
+  if(/section\s*125|cafeteria plan/.test(text)) return 'Section 125 Provider';
+  if(/simrp/.test(text)) return 'SIMRP Provider';
+  if(/voluntary benefits/.test(text)) return 'Voluntary Benefits Provider';
+  if(/property.{0,3}casualty|commercial insurance|\bp&c\b/.test(text)) return 'Property & Casualty Agency';
+  if(/life|health insurance|medicare/.test(text)) return 'Life & Health Insurance Agency';
+  if(/benefits|employee benefit/.test(text)) return 'Employee Benefits Broker';
+  if(/insurance|brokerage|agency/.test(text)) return 'General Insurance Brokerage';
+  if(/hr consultant|human resources consult/.test(text)) return 'HR Consultant';
+  if(/trade organization/.test(text)) return 'Trade Organization';
+  return p.partnerType||'Referral Partner';
+}
+
+function partnerSourceUrls(p={}){
+  return [...new Set([
+    ...(Array.isArray(p.sourceUrls)?p.sourceUrls:String(p.sourceUrls||'').split(/[\n,]/)),
+    p.website,p.googleMapsUrl,p.google_maps_url,p.linkedinCompanyUrl,p.linkedinPersonalUrl,p.membershipUrl,p.eventsUrl,p.sponsorUrl,p.vendorUrl
+  ].map(v=>String(v||'').trim()).filter(v=>/^https?:\/\//i.test(v)))];
+}
+
+function partnerPotentialReach(p={},type=partnerTypeFromLead(p)){
+  const direct=donorValue(p.potentialReach||p.membershipSize||p.memberCount||p.attendeeCount||p.employerClients||p.businessClients);
+  if(direct) return direct;
+  const employees=donorValue(p.employeeCount||p.estimatedEmployeeCount||p.scrapedNumberOfEmployees||p.linkedinEmployeeCount||p.approximateDonors);
+  const reviews=donorValue(p.googleReviewCount||p.reviews);
+  if(/Association|Organization/.test(type)) return Math.max(employees?employees*100:0,reviews?reviews*20:0,500);
+  if(type==='Conference Organizer') return Math.max(employees?employees*75:0,reviews?reviews*15:0,250);
+  if(/Broker|Agency|Insurance|Benefits/.test(type)) return Math.max(employees?employees*18:0,reviews?reviews*6:0,50);
+  if(type==='Payroll Company'||type==='Staffing Agency') return Math.max(employees?employees*12:0,reviews?reviews*5:0,50);
+  return Math.max(employees?employees*8:0,reviews?reviews*4:0,25);
+}
+
+function scorePartnerFit(p={}){
+  const partnerType=partnerTypeFromLead(p);
+  const potentialReach=partnerPotentialReach(p,partnerType);
+  const sources=partnerSourceUrls(p);
+  const text=JSON.stringify(p).toLowerCase();
+  const audienceSize=Math.min(30,potentialReach>=10000?30:potentialReach>=2500?26:potentialReach>=500?21:potentialReach>=100?15:9);
+  const employerAccess=Math.min(25,/benefit|insurance|payroll|staffing|association|membership|trade organization/.test(partnerType.toLowerCase())?25:16);
+  const priority=GOALL_PRIORITY_ASSOCIATIONS.some(name=>new RegExp(`\\b${name.toLowerCase()}\\b`,'i').test(`${p.organizationName||p.name||''} ${p.website||''}`));
+  const trustCredibility=Math.min(20,(priority?20:0)||((p.googleRating||p.executiveLeadership||p.decisionMakerName||sources.length>=2)?16:10));
+  const easeOfPartnership=Math.min(15,(validEmail(p.email)||validPhone(p.phone)?8:3)+(/sponsor|vendor|partner|conference|events? director|membership director/.test(text)?7:3));
+  const growthPotential=Math.min(10,(/national|multi.?state|growth|expansion|annual conference/.test(text)?10:potentialReach>=500?8:5));
+  const partnershipFitScore=Math.min(100,audienceSize+employerAccess+trustCredibility+easeOfPartnership+growthPotential);
+  const reasonForScore=`Audience ${audienceSize}/30; employer access ${employerAccess}/25; trust/credibility ${trustCredibility}/20; ease of partnership ${easeOfPartnership}/15; growth potential ${growthPotential}/10. Estimated reach: ${potentialReach.toLocaleString()}.`;
+  const recommendedOutreachAngle=/Association|Organization|Conference/.test(partnerType)
+    ? 'Propose a member-value education, conference sponsorship, or preferred-vendor relationship that introduces GOALL to many employers at once.'
+    : 'Propose a referral or co-selling partnership that adds GOALL to the organization’s employer relationships without disrupting its core service.';
+  return {...p,leadProfile:'partners',partnerType,potentialReach,partnershipFitScore,reasonForScore,recommendedOutreachAngle,sources,sourceUrls:sources,researchSourceCount:sources.length,researchQuality:sources.length>=2?'supported':'needs second source'};
+}
+
+function partnerPreviewText(discovered={}){
+  const leads=(discovered.leads||[]).map(scorePartnerFit).sort((a,b)=>b.partnershipFitScore-a.partnershipFitScore||b.potentialReach-a.potentialReach);
+  return [
+    `Found ${leads.length} strategic partner prospect${leads.length===1?'':'s'}.`,
+    'Partner question: Could this organization help GOALL reach many employers?',
+    `Search: ${discovered.organizationType||'strategic partners'} | ${discovered.market||'United States'}`,
+    'Research standard: public information only; two supporting sources preferred; recent sources prioritized.',
+    '',
+    ...leads.map((p,i)=>`${i+1}. ${p.organizationName||p.name||'Unnamed organization'}\n   Partner type: ${p.partnerType}\n   Potential reach: ${p.potentialReach.toLocaleString()}\n   Partnership fit: ${p.partnershipFitScore}/100\n   Reason: ${p.reasonForScore}\n   Outreach: ${p.recommendedOutreachAngle}\n   Contact: ${p.decisionMakerName||'not identified'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''} | ${p.email||'email unavailable'} | ${p.phone||'phone unavailable'}\n   Sources (${p.sourceUrls.length}): ${p.sourceUrls.join(', ')||'second-source research needed'}`),
+    '',
+    'Review and approve before pushing to GOALL Strategic Partners / New Limitless Lead Added.'
+  ].join('\n');
+}
+
+function partnerCustomFields(p={}){
+  const scored=scorePartnerFit(p);
+  return {
+    partner_type:scored.partnerType,
+    organization_size:String(p.organizationSize||p.employeeCount||p.estimatedEmployeeCount||p.linkedinEmployeeCount||''),
+    potential_reach:String(scored.potentialReach),
+    partnership_fit_score:String(scored.partnershipFitScore),
+    reason_for_score:scored.reasonForScore,
+    recommended_outreach_angle:scored.recommendedOutreachAngle,
+    source_urls:scored.sourceUrls.join('\n'),
+    lead_source_system:'GOALL Strategic Partner Prospecting',
+    date_added:p.dateAdded||new Date().toISOString(),
+    linkedin_url:p.linkedinPersonalUrl||p.linkedinCompanyUrl||p.linkedinUrl||'',
+    title:p.decisionMakerTitle||p.contactTitle||''
+  };
+}
+
+async function findPartnerOpportunity(contactId,target){
+  const data=await fetchGhlOpportunities({status:'open',limit:100}).catch(()=>({opportunities:[]}));
+  const opportunities=data.data?.opportunities||data.opportunities||[];
+  return opportunities.find(o=>opportunityContactId(o)===String(contactId)&&String(o.pipelineId||o.pipeline_id||o.pipeline?.id||'')===String(target.pipelineId))||null;
+}
+
+async function upsertGhlPartnerLead(raw={}){
+  const p=scorePartnerFit(sanitizeDecisionMaker(raw));
+  const target=await getPartnerOpportunityTarget();
+  const fields=partnerCustomFields(p);
+  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const customFields=leadCustomFieldPayloads(ids,fields);
+  const duplicate=await findExistingGhlLeadDuplicate(p);
+  let contactId=duplicate?.id||'';
+  let updated=!!duplicate;
+  const contactPayload={
+    locationId:GHL_LOC,companyName:p.organizationName||p.name||'Unnamed partner',website:p.website||undefined,
+    email:validEmail(p.email)?p.email:undefined,phone:validPhone(p.phone)?p.phone:undefined,
+    city:p.city||undefined,state:p.state||undefined,source:'GOALL Strategic Partner Prospecting',
+    tags:['partner','GOALL Strategic Partner','Limitless Leads',p.partnerType],customFields:customFields.length?customFields:undefined
+  };
+  const decisionName=String(p.decisionMakerName||p.contactName||'').trim().split(/\s+/);
+  if(decisionName[0]){contactPayload.firstName=decisionName[0];contactPayload.lastName=decisionName.slice(1).join(' ')||undefined;}
+  if(contactId){
+    const {locationId,...updatePayload}=contactPayload;
+    await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
+  }else{
+    const created=await ghlStrict('POST','/contacts',contactPayload);
+    contactId=(created.contact||created).id;
+  }
+  if(!contactId) throw new Error(`GHL contact upsert returned no contact id for ${p.organizationName||p.name||'partner'}`);
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags:contactPayload.tags}).catch(()=>{});
+  const note=[`Partner type: ${p.partnerType}`,`Potential reach: ${p.potentialReach}`,`Partnership fit: ${p.partnershipFitScore}/100`,p.reasonForScore,`Recommended outreach: ${p.recommendedOutreachAngle}`,`Sources: ${p.sourceUrls.join(', ')||'Needs second source'}`,p.membershipSize?`Membership size: ${p.membershipSize}`:'',p.geographicReach?`Geographic reach: ${p.geographicReach}`:'',p.conferenceInformation?`Conference: ${p.conferenceInformation}`:'',p.vendorOpportunities?`Vendor opportunities: ${p.vendorOpportunities}`:'',p.sponsorOpportunities?`Sponsor opportunities: ${p.sponsorOpportunities}`:'',p.benefitsEvidence?`Benefits evidence: ${p.benefitsEvidence}`:'',p.lifeInsuranceEvidence?`Life evidence: ${p.lifeInsuranceEvidence}`:'',p.commercialInsuranceEvidence?`Commercial evidence: ${p.commercialInsuranceEvidence}`:''].filter(Boolean).join('\n');
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  let opportunity=await findPartnerOpportunity(contactId,target);
+  if(!opportunity){
+    const created=await createGhlOpportunity({locationId:GHL_LOC,pipelineId:target.pipelineId,pipelineStageId:target.stageId,name:p.organizationName||p.name,status:'open',contactId,monetaryValue:p.potentialReach,source:'GOALL Strategic Partner Prospecting'});
+    opportunity=created.opportunity||created;
+  }
+  return {name:p.organizationName||p.name,contactId,updated,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,partnershipFitScore:p.partnershipFitScore,potentialReach:p.potentialReach};
+}
+
+async function importApprovedPartnerLeads(body={}){
+  const leads=(Array.isArray(body.leads)?body.leads:[]).map(scorePartnerFit);
+  if(!leads.length) throw new Error('No approved partner leads were provided for import.');
+  const created=[],failed=[];
+  await mapWithConcurrency(leads,GOALL_LEAD_IMPORT_CONCURRENCY,async lead=>{
+    try{created.push(await upsertGhlPartnerLead(lead));}catch(e){failed.push({name:lead.organizationName||lead.name,error:e.message});}
+  });
+  const updated=created.filter(x=>x.updated).length;
+  const content=[`Pushed ${created.length} approved strategic partner${created.length===1?'':'s'} to GHL.`,updated?`Updated ${updated} existing contact${updated===1?'':'s'} instead of creating duplicates.`:'','Pipeline: GOALL Strategic Partners','Stage: New Limitless Lead Added',failed.length?`Failed: ${failed.length}`:''].filter(Boolean).join('\n');
+  return {ok:true,created,failed,content};
+}
+
 function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
   const name=row.name||row.title||row.business_name||row.organizationName||'';
   const city=[row.city,row.state].filter(Boolean).join(', ') || row.full_address || row.address || market || '';
@@ -8596,7 +8816,10 @@ function ghlContactMatchText(contact={}){
     contact.lastName,
     contact.companyName,
     contact.businessName,
-    contact.website
+    contact.website,
+    contact.linkedinUrl,
+    contact.linkedin,
+    contact.customFields?.map?.(field=>field.field_value||field.value||'').join(' ')
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -8605,7 +8828,8 @@ function leadDuplicateNeedles(p={}){
     validEmail(p.email)?String(p.email).toLowerCase().trim():'',
     validPhone(p.phone)?String(p.phone).replace(/\D/g,''):'',
     leadDomain(p.website||''),
-    normalizeCompanyForMatch(p.organizationName||p.name||'')
+    normalizeCompanyForMatch(p.organizationName||p.name||''),
+    String(p.linkedinPersonalUrl||p.linkedinCompanyUrl||p.linkedinUrl||'').toLowerCase().trim()
   ].filter(Boolean);
 }
 
@@ -8614,7 +8838,8 @@ async function findExistingGhlLeadDuplicate(p={}){
     validEmail(p.email)?String(p.email).trim():'',
     validPhone(p.phone)?String(p.phone).trim():'',
     leadDomain(p.website||''),
-    p.organizationName||p.name||''
+    p.organizationName||p.name||'',
+    p.linkedinPersonalUrl||p.linkedinCompanyUrl||p.linkedinUrl||''
   ].filter(Boolean);
   const needles=leadDuplicateNeedles(p);
   if(!queries.length || !needles.length) return null;
@@ -8676,8 +8901,8 @@ async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,aut
   };
   const opportunityData=await createGhlOpportunity(opportunityPayload);
   const tags=isGoall
-    ? [automation.automationTag,'GOALL Lead','Limitless Leads'].filter(Boolean)
-    : [discovered.tag||'limitless_enrich'].filter(Boolean);
+    ? [automation.automationTag,'Employer','GOALL Lead','Limitless Leads'].filter(Boolean)
+    : [discovered.tag||'limitless_enrich','Employer'].filter(Boolean);
   if(tags.length) await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
   return {created:true, contactId, opportunity:opportunityData.opportunity||opportunityData,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||''};
 }
@@ -8732,7 +8957,7 @@ async function importApprovedHbsLeads(discovered){
   const summary=[
     `Imported ${created.length} new ${brand} business lead${created.length===1?'':'s'} to GHL.`,
     `Search: ${organizationType} | ${employeeMinimum}+ employees | ${market}`,
-    brand==='GOALL'?'Tags applied: per-lead automation tag + GOALL Lead + Limitless Leads':`Tag applied: ${tag}`,
+    brand==='GOALL'?'Tags applied: Employer + per-lead automation tag + GOALL Lead + Limitless Leads':`Tags applied: ${tag} + Employer`,
     duplicateCount?`Already in GHL: ${duplicateCount} matching contact${duplicateCount===1?'':'s'} found, so those were not duplicated.`:'',
     repairedOpportunityCount?`Repaired opportunities: ${repairedOpportunityCount} missing opportunit${repairedOpportunityCount===1?'y was':'ies were'} created for existing contact${repairedOpportunityCount===1?'':'s'}.`:'',
     existingOpportunityCount?`Existing opportunities: ${existingOpportunityCount} contact${existingOpportunityCount===1?' already has':'s already have'} an open opportunity.`:'',
@@ -8866,7 +9091,7 @@ async function createGhlLeadFromProspect(p,opts={}){
   const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
   if(!isWestwood) await assertGoallLeadScoreField(leadFieldIds);
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
-  const tags=isWestwood?[tag]:[automation.automationTag,'GOALL Lead','Limitless Leads'];
+  const tags=isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads'];
   if(allowManualReview) tags.push('Manual Review');
   if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
