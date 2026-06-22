@@ -25,7 +25,7 @@ test('emails and meetings attribute evidence to external participants',()=>{
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{
   assert.match(server,/mailsuite\|mailtrack\|email tracking\|tracking notification/);
-  assert.match(server,/memory\.filter\(m=>m\.kind!==\'relationship_preference\'\)/);
+  assert.match(server,/memory\.filter\(m=>m&&m\.kind!==\'relationship_preference\'\)/);
 });
 
 test('identity resolution merges exact email name and company signals',()=>{
@@ -48,4 +48,17 @@ test('VIP snooze and not-important preferences alter review visibility',()=>{
   assert.match(server,/p\.notImportant=pref\.action===\'not_important\'/);
   assert.match(server,/p\.snoozedUntil=pref\.action===\'snooze\'/);
   assert.match(server,/!p\.notImportant&&\(!p\.snoozedUntil/);
+});
+
+test('null contacts cannot crash production relationship ingestion',()=>{
+  assert.match(server,/if\(!p\|\|p\.name===\'Unknown\'\) continue/);
+});
+
+test('relationship contrast rules load after the shared command center stylesheet',()=>{
+  const sharedStyles=dashboard.indexOf('<link rel="stylesheet" href="/command-center.css">');
+  const contrastStyles=dashboard.indexOf('<style id="relationship-review-contrast">');
+  assert.ok(sharedStyles>=0&&contrastStyles>sharedStyles);
+  assert.match(dashboard,/\.exec-workspace-modal \.exec-workspace-footer \.alert-btn\{[^}]*color:#172740!important/);
+  assert.match(dashboard,/\.exec-workspace-modal #relationshipTabs button\{[^}]*color:#172740!important/);
+  assert.match(dashboard,/\.relationship-review-error\{[^}]*color:#7f1d1d!important/);
 });

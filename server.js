@@ -3714,39 +3714,43 @@ async function buildRelationshipReview({windowDays=7}={}){
     fetchGhlOpportunities({status:'open',limit:100}).catch(e=>{errors.push('Pipeline: '+e.message);return {data:{opportunities:[]}};})
   ]);
   const preferences=new Map();
-  for(const mem of preferenceMemory.filter(m=>m.kind==='relationship_preference').sort((a,b)=>interactionDate(a.createdAt)-interactionDate(b.createdAt))){
+  for(const mem of preferenceMemory.filter(m=>m&&m.kind==='relationship_preference').sort((a,b)=>interactionDate(a.createdAt)-interactionDate(b.createdAt))){
     const pref=mem.metadata||parseLeadJson(mem.rawText)||{};const c=pref.contact||{};
     preferences.set(personKey(c.name,c.email),{action:pref.action||'',until:pref.until||'',createdAt:mem.createdAt||''});
   }
   for(const email of (gmail.emails||[]).concat(outlook.emails||[])){
+    if(!email) continue;
     if(!isMeaningfulRelationshipEmail(email)) continue;
     const evidence=relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt||email.date,'high',email.messageId);
     relationshipEmailParticipants(email).filter(person=>!isOwnerRelationship(person,owner)).forEach(person=>addEvidence(touch(person),evidence));
   }
   for(const ev of ghlEvents.concat(googleEvents)){
+    if(!ev) continue;
     inferAttendeesFromEvent(ev).forEach(a=>{
       const p=touch({name:a.name,email:a.email});
       addEvidence(p,relationshipEvidence('meeting',`${ev.title||ev.summary||'Meeting'}${ev.startTime?' on '+new Date(ev.startTime).toLocaleDateString('en-US'):''}`,ev.startTime,'high',ev.id));
     });
   }
-  for(const task of tasks.filter(t=>!t.completed)){
+  for(const task of tasks.filter(t=>t&&!t.completed)){
     const p=touch({name:task.contactName||''});
-    if(p.name==='Unknown') continue;
+    if(!p||p.name==='Unknown') continue;
     addEvidence(p,relationshipEvidence('task',task.title+(task.notes?': '+task.notes:''),task.createdAt||task.dueDate,'high',task.id));
   }
   for(const tr of transcripts){
+    if(!tr) continue;
     splitPeopleFromText([tr.title,tr.rawText].join(' ')).forEach(person=>{
       const p=touch(person);
       addEvidence(p,relationshipEvidence('transcript',`${tr.title||'Transcript'}: ${String(tr.rawText||'').slice(0,220)}`,tr.createdAt,person.confidence,tr.id));
     });
   }
-  for(const mem of memory.filter(m=>m.kind!=='relationship_preference')){
+  for(const mem of memory.filter(m=>m&&m.kind!=='relationship_preference')){
     splitPeopleFromText([mem.summary,mem.rawText].join(' ')).forEach(person=>{
       const p=touch(person);
       addEvidence(p,relationshipEvidence('memory',`${mem.summary||mem.kind}: ${String(mem.rawText||'').slice(0,220)}`,mem.createdAt,person.confidence,mem.id));
     });
   }
   for(const o of (pipeline.data?.opportunities||[])){
+    if(!o) continue;
     const c=o.contact||{};
     const p=touch({name:c.name||o.contactName||o.name,email:c.email||o.contactEmail,company:o.name});
     addEvidence(p,relationshipEvidence('opportunity',`${o.name||'Open opportunity'}${o.monetaryValue?' worth $'+o.monetaryValue:''}${o.status?' is '+o.status:''}`,o.updatedAt||o.lastStatusChangeAt,'high',o.id));
