@@ -55,7 +55,7 @@ test('null contacts cannot crash production relationship ingestion',()=>{
 });
 
 test('relationship contrast rules load after the shared command center stylesheet',()=>{
-  const sharedStyles=dashboard.indexOf('<link rel="stylesheet" href="/command-center.css">');
+  const sharedStyles=dashboard.search(/<link rel="stylesheet" href="\/command-center\.css(?:\?[^\"]*)?">/);
   const contrastStyles=dashboard.indexOf('<style id="relationship-review-contrast">');
   assert.ok(sharedStyles>=0&&contrastStyles>sharedStyles);
   assert.match(dashboard,/\.exec-workspace-modal \.exec-workspace-footer \.alert-btn\{[^}]*color:#172740!important/);

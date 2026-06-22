@@ -1080,7 +1080,9 @@ function writeJson(file,value){
   catch(e){ console.error('writeJson error:',e.message); }
 }
 function valStore(){
-  return readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
+  const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
+  ['transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
 function uuid(prefix){
@@ -1572,6 +1574,82 @@ async function initValDb(){
       metadata jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists transcripts (
+      transcript_id text primary key,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      source text not null default 'unknown',
+      meeting_title text,
+      meeting_datetime timestamptz,
+      calendar_event_id text,
+      raw_transcript text not null,
+      processing_status text not null default 'received',
+      summary_status text not null default 'pending',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists transcript_participants (
+      participant_id text primary key,
+      transcript_id text not null references transcripts(transcript_id) on delete cascade,
+      speaker_name_raw text,
+      matched_contact_id text,
+      matched_contact_name text,
+      matched_email text,
+      matched_phone text,
+      matched_company text,
+      match_confidence numeric not null default 0,
+      match_reason text,
+      needs_review boolean not null default true,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists transcript_summaries (
+      summary_id text primary key,
+      transcript_id text not null references transcripts(transcript_id) on delete cascade,
+      executive_summary text not null,
+      client_summary text,
+      internal_notes text,
+      key_decisions jsonb not null default '[]',
+      open_questions jsonb not null default '[]',
+      relationship_updates jsonb not null default '[]',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists transcript_tasks (
+      task_id text primary key,
+      transcript_id text not null references transcripts(transcript_id) on delete cascade,
+      assigned_to_contact_id text,
+      assigned_to_name text,
+      task_title text not null,
+      task_description text,
+      due_date timestamptz,
+      priority text not null default 'medium',
+      confidence numeric not null default 0,
+      status text not null default 'staged',
+      needs_approval boolean not null default true,
+      source_quote text not null,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists transcript_contact_updates (
+      update_id text primary key,
+      transcript_id text not null references transcripts(transcript_id) on delete cascade,
+      contact_id text,
+      field_to_update text not null,
+      old_value text,
+      new_value text,
+      reason text,
+      source_quote text not null,
+      confidence numeric not null default 0,
+      approved boolean not null default false,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists transcript_action_log (
+      action_id text primary key,
+      transcript_id text not null references transcripts(transcript_id) on delete cascade,
+      action_type text not null,
+      target_record_id text,
+      status text not null,
+      error_message text,
+      created_at timestamptz not null default now()
+    );
     create table if not exists val_memory_items (
       id text primary key,
       user_id text not null default 'default',
@@ -1699,6 +1777,11 @@ async function initValDb(){
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
+    create index if not exists transcripts_user_created_idx on transcripts(user_id,created_at desc);
+    create index if not exists transcript_participants_transcript_idx on transcript_participants(transcript_id,needs_review);
+    create index if not exists transcript_tasks_transcript_idx on transcript_tasks(transcript_id,needs_approval,status);
+    create index if not exists transcript_updates_transcript_idx on transcript_contact_updates(transcript_id,approved);
+    create index if not exists transcript_action_log_transcript_idx on transcript_action_log(transcript_id,created_at);
     create index if not exists val_memory_user_created_idx on val_memory_items(user_id,created_at desc);
     create index if not exists val_sessions_user_expires_idx on val_sessions(user_id,expires_at);
     create index if not exists user_integration_credentials_lookup_idx on user_integration_credentials(tenant_id,user_id,provider,credential_type);
@@ -6103,10 +6186,95 @@ async function saveMemoryItem(payload){
   }
   return {id};
 }
+const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
+const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
+function transcriptFileArray(store,key){if(!Array.isArray(store[key]))store[key]=[];return store[key];}
+function transcriptDemoArray(key){const state=requestContext.getStore()?.demoState;if(!state)return null;if(!Array.isArray(state[key]))state[key]=[];return state[key];}
+async function saveTranscriptIndexRaw(payload,id){
+  const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:payload.title||payload.meetingTitle||'Untitled transcript',meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript:payload.transcript||payload.rawText||payload.text||'',processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}return row;}
+  await valDbReady;
+  if(pgPool){await dbQuery(`insert into transcripts (transcript_id,user_id,tenant_id,source,meeting_title,meeting_datetime,calendar_event_id,raw_transcript,processing_status,summary_status,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,'received','pending',coalesce($9::timestamptz,now()),now()) on conflict (transcript_id) do update set source=excluded.source,meeting_title=excluded.meeting_title,meeting_datetime=coalesce(excluded.meeting_datetime,transcripts.meeting_datetime),calendar_event_id=coalesce(nullif(excluded.calendar_event_id,''),transcripts.calendar_event_id),raw_transcript=excluded.raw_transcript,updated_at=now()`,[id,VAL_USER_ID,CLIENT_CONFIG.clientSlug||'default',row.source,row.meetingTitle,row.meetingDatetime,row.calendarEventId,row.rawTranscript,row.createdAt]);}
+  else{const store=valStore(),rows=transcriptFileArray(store,'transcriptIndex'),i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);saveValStore(store);}
+  return row;
+}
+async function updateTranscriptIndexStatus(id,updates={}){
+  const clean={processingStatus:updates.processingStatus,summaryStatus:updates.summaryStatus,calendarEventId:updates.calendarEventId,meetingDatetime:updates.meetingDatetime,updatedAt:new Date().toISOString()};
+  if(DEMO_MODE){const row=(transcriptDemoArray('transcriptIndex')||[]).find(x=>x.transcriptId===id);if(row)Object.keys(clean).forEach(k=>clean[k]!==undefined&&(row[k]=clean[k]));return;}
+  await valDbReady;
+  if(pgPool){await dbQuery(`update transcripts set processing_status=coalesce($1,processing_status),summary_status=coalesce($2,summary_status),calendar_event_id=coalesce(nullif($3,''),calendar_event_id),meeting_datetime=coalesce($4::timestamptz,meeting_datetime),updated_at=now() where transcript_id=$5 and user_id=$6`,[clean.processingStatus||null,clean.summaryStatus||null,clean.calendarEventId||'',clean.meetingDatetime||null,id,VAL_USER_ID]);}
+  else{const store=valStore(),row=transcriptFileArray(store,'transcriptIndex').find(x=>x.transcriptId===id);if(row)Object.keys(clean).forEach(k=>clean[k]!==undefined&&(row[k]=clean[k]));saveValStore(store);}
+}
+async function logTranscriptAction(transcriptId,actionType,targetRecordId,status,errorMessage=''){
+  const row={actionId:uuid('tr_action'),transcriptId,actionType,targetRecordId:targetRecordId||'',status,errorMessage:errorMessage||'',createdAt:new Date().toISOString()};
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptActionLog');if(rows)rows.push(row);return row;}
+  await valDbReady;if(pgPool)await dbQuery('insert into transcript_action_log (action_id,transcript_id,action_type,target_record_id,status,error_message,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.actionId,transcriptId,actionType,row.targetRecordId,status,row.errorMessage||null]);else{const store=valStore();transcriptFileArray(store,'transcriptActionLog').push(row);saveValStore(store);}return row;
+}
+async function replaceTranscriptParticipants(transcriptId,participants){
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptParticipants');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(...participants);}return;}
+  await valDbReady;if(pgPool){await dbQuery('delete from transcript_participants where transcript_id=$1',[transcriptId]);for(const p of participants)await dbQuery(`insert into transcript_participants (participant_id,transcript_id,speaker_name_raw,matched_contact_id,matched_contact_name,matched_email,matched_phone,matched_company,match_confidence,match_reason,needs_review,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,[p.participantId,transcriptId,p.speakerNameRaw,p.matchedContactId||null,p.matchedContactName||null,p.matchedEmail||null,p.matchedPhone||null,p.matchedCompany||null,p.matchConfidence||0,p.matchReason||'',!!p.needsReview]);}else{const store=valStore();store.transcriptParticipants=transcriptFileArray(store,'transcriptParticipants').filter(x=>x.transcriptId!==transcriptId);store.transcriptParticipants.push(...participants);saveValStore(store);}
+}
+async function saveTranscriptSummary(transcriptId,summary){
+  const row={summaryId:uuid('tr_summary'),transcriptId,executiveSummary:summary.executiveSummary||summary.summary||'Summary unavailable.',clientSummary:summary.clientSummary||'',internalNotes:summary.internalNotes||'',keyDecisions:summary.keyDecisions||[],openQuestions:summary.openQuestions||[],relationshipUpdates:summary.relationshipUpdates||[],createdAt:new Date().toISOString()};
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptSummaries');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(row);}}
+  else{await valDbReady;if(pgPool){await dbQuery('delete from transcript_summaries where transcript_id=$1',[transcriptId]);await dbQuery(`insert into transcript_summaries (summary_id,transcript_id,executive_summary,client_summary,internal_notes,key_decisions,open_questions,relationship_updates,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[row.summaryId,transcriptId,row.executiveSummary,row.clientSummary,row.internalNotes,JSON.stringify(row.keyDecisions),JSON.stringify(row.openQuestions),JSON.stringify(row.relationshipUpdates)]);}else{const store=valStore();store.transcriptSummaries=transcriptFileArray(store,'transcriptSummaries').filter(x=>x.transcriptId!==transcriptId);store.transcriptSummaries.push(row);saveValStore(store);}}
+  await logTranscriptAction(transcriptId,'summary_created',row.summaryId,'completed');return row;
+}
+async function saveStagedTranscriptTask(row){
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptTasks');if(rows)rows.push(row);}
+  else{await valDbReady;if(pgPool)await dbQuery(`insert into transcript_tasks (task_id,transcript_id,assigned_to_contact_id,assigned_to_name,task_title,task_description,due_date,priority,confidence,status,needs_approval,source_quote,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())`,[row.taskId,row.transcriptId,row.assignedToContactId||null,row.assignedToName||null,row.taskTitle,row.taskDescription||'',row.dueDate||null,row.priority||'medium',row.confidence||0,row.status||'staged',!!row.needsApproval,row.sourceQuote]);else{const store=valStore();transcriptFileArray(store,'transcriptTasks').push(row);saveValStore(store);}}
+  await logTranscriptAction(row.transcriptId,'task_extracted',row.taskId,'completed');return row;
+}
+async function updateStagedTranscriptTask(taskId,updates){
+  if(DEMO_MODE){const row=(transcriptDemoArray('transcriptTasks')||[]).find(x=>x.taskId===taskId);if(row)Object.assign(row,updates);return row;}
+  await valDbReady;if(pgPool){const r=await dbQuery('update transcript_tasks set status=coalesce($1,status),needs_approval=coalesce($2,needs_approval),assigned_to_contact_id=coalesce($3,assigned_to_contact_id),assigned_to_name=coalesce($4,assigned_to_name) where task_id=$5 returning *',[updates.status||null,updates.needsApproval===undefined?null:!!updates.needsApproval,updates.assignedToContactId||null,updates.assignedToName||null,taskId]);return r.rows[0];}const store=valStore(),row=transcriptFileArray(store,'transcriptTasks').find(x=>x.taskId===taskId);if(row)Object.assign(row,updates);saveValStore(store);return row;
+}
+async function saveStagedContactUpdate(row){
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptContactUpdates');if(rows)rows.push(row);}else{await valDbReady;if(pgPool)await dbQuery(`insert into transcript_contact_updates (update_id,transcript_id,contact_id,field_to_update,old_value,new_value,reason,source_quote,confidence,approved,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,[row.updateId,row.transcriptId,row.contactId||null,row.fieldToUpdate,row.oldValue||'',row.newValue||'',row.reason||'',row.sourceQuote,row.confidence||0,!!row.approved]);else{const store=valStore();transcriptFileArray(store,'transcriptContactUpdates').push(row);saveValStore(store);}}
+  await logTranscriptAction(row.transcriptId,'contact_update_extracted',row.updateId,'completed');return row;
+}
+function transcriptPgRow(row){
+  if(!row)return row;
+  const out={};
+  for(const [key,value] of Object.entries(row))out[key.replace(/_([a-z])/g,(_,c)=>c.toUpperCase())]=value;
+  ['keyDecisions','openQuestions','relationshipUpdates'].forEach(key=>{if(typeof out[key]==='string')try{out[key]=JSON.parse(out[key]);}catch(e){}});
+  return out;
+}
+async function transcriptIndexData(transcriptId=''){
+  if(DEMO_MODE){
+    const get=key=>(transcriptDemoArray(key)||[]).filter(row=>!transcriptId||row.transcriptId===transcriptId);
+    return {transcripts:get('transcriptIndex'),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
+  }
+  await valDbReady;
+  if(pgPool){
+    const where=transcriptId?' and transcript_id=$2':'',args=transcriptId?[VAL_USER_ID,transcriptId]:[VAL_USER_ID];
+    const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow);
+    const ids=transcripts.map(row=>row.transcriptId);if(!ids.length)return {transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]};
+    const fetch=async table=>(await dbQuery(`select * from ${table} where transcript_id=any($1::text[]) order by created_at asc`,[ids])).rows.map(transcriptPgRow);
+    return {transcripts,participants:await fetch('transcript_participants'),summaries:await fetch('transcript_summaries'),tasks:await fetch('transcript_tasks'),contactUpdates:await fetch('transcript_contact_updates'),actionLog:await fetch('transcript_action_log')};
+  }
+  const store=valStore(),get=key=>transcriptFileArray(store,key).filter(row=>!transcriptId||row.transcriptId===transcriptId);
+  return {transcripts:get('transcriptIndex'),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
+}
+function transcriptDetailFromIndex(data,transcript){
+  const id=transcript.transcriptId;
+  const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
+  const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
+  return {...transcript,id,title:transcript.meetingTitle,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
+}
+async function clearTranscriptStaging(transcriptId){
+  if(DEMO_MODE){for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog']){const rows=transcriptDemoArray(key)||[];for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);}return;}
+  await valDbReady;
+  if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
+  const store=valStore();for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'])store[key]=transcriptFileArray(store,key).filter(row=>row.transcriptId!==transcriptId);saveValStore(store);
+}
 async function saveTranscript(payload){
+  const indexId=payload.id||uuid(DEMO_MODE?'demo-tr':'tr');
+  payload={...payload,id:indexId};
+  await saveTranscriptIndexRaw(payload,indexId);
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
-    const id=payload.id||uuid('demo-tr');
+    const id=indexId;
     const type=payload.type||'transcript';
     const rawText=payload.transcript||payload.rawText||payload.text||'';
     const nested=payload.metadata&&typeof payload.metadata==='object'&&!Array.isArray(payload.metadata)?payload.metadata:{};
@@ -6116,7 +6284,7 @@ async function saveTranscript(payload){
     return {id,type};
   }
   await valDbReady;
-  const id=payload.id||uuid('tr');
+  const id=indexId;
   const type=payload.type||'transcript';
   const rawText=payload.transcript||payload.rawText||payload.text||'';
   const nested=payload.metadata&&typeof payload.metadata==='object'&&!Array.isArray(payload.metadata)?payload.metadata:{};
@@ -9812,51 +9980,68 @@ app.get('/api/val/memory/search',async(req,res)=>{
     res.json({ok:true,query:q,results:ranked});
   }catch(e){res.status(500).json({error:e.message});}
 });
++function transcriptSupportingQuote(transcript,requested=''){
+  const text=String(transcript||''),quote=String(requested||'').trim();
+  if(quote&&text.toLowerCase().includes(quote.toLowerCase()))return quote.slice(0,800);
+  const sentences=text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
+  return (sentences.find(s=>/\b(will|need to|follow up|send|schedule|review|update|introduce|decided|agreed)\b/i.test(s))||sentences[0]||text.slice(0,500)).slice(0,800);
+}
+function transcriptIdentityInputs(payload,transcript){
+  const attendees=[...(Array.isArray(payload.attendees)?payload.attendees:[]),...(Array.isArray(payload.metadata?.attendees)?payload.metadata.attendees:[]),...inferAttendeesFromEvent(payload.meetingMatch||payload.calendarEvent||{})];
+  const speakers=[...String(transcript).matchAll(/^\s*([^:\n]{2,80}):\s*.+$/gm)].map(match=>match[1].trim()).filter(name=>!/^https?|meeting|transcript$/i.test(name));
+  const emails=[...String(transcript).matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map(match=>match[0]);
+  const inputs=[];
+  for(const attendee of attendees)inputs.push({name:attendee.name||attendee.displayName||'',email:attendee.email||attendee.address||'',phone:attendee.phone||'',company:attendee.company||'',origin:'calendar attendee'});
+  for(const name of speakers)inputs.push({name,origin:'transcript speaker'});
+  for(const email of emails)inputs.push({email,origin:'transcript email'});
+  const merged=[];for(const input of inputs){const email=normalizeContextEmail(input.email),name=normalizeContextName(input.name),existing=merged.find(row=>(email&&normalizeContextEmail(row.email)===email)||(name&&normalizeContextName(row.name)===name));if(existing)Object.assign(existing,compactObject({...existing,...input,email:existing.email||input.email,name:existing.name||input.name,origin:existing.origin==='calendar attendee'?existing.origin:input.origin}));else if(email||name)merged.push(input);}return merged.slice(0,30);
+}
+async function matchTranscriptParticipants(payload,transcriptId,transcript){
+  const participants=[];
+  for(const input of transcriptIdentityInputs(payload,transcript)){
+    const resolution=await resolveContactFromContext({...input,transcript,attendees:payload.attendees||payload.metadata?.attendees||[],calendarEvent:payload.meetingMatch||payload.calendarEvent||{}});
+    const best=resolution.contact||null,second=resolution.matches?.[1]||null;
+    const ambiguous=!!(best&&second&&best.id!==second.id&&Math.abs(best.confidence-second.confidence)<0.12);
+    const confidence=ambiguous?Math.min(Number(best.confidence||0),0.6):Number(best?.confidence||0);
+    let reason=input.email&&best?.email===normalizeContextEmail(input.email)?`${input.origin}: exact email`:input.phone&&best?.phone===normalizeContextPhone(input.phone)?'transcript phone: exact phone':best?.matchReasons?.join(', ')||'No reliable CRM contact match';
+    if(ambiguous)reason=`Ambiguous match: ${best.name||best.id} and ${second.name||second.id} scored too closely; review required`;
+    participants.push({participantId:uuid('tr_participant'),transcriptId,speakerNameRaw:input.name||input.email||input.phone||'Unknown participant',matchedContactId:ambiguous?'':best?.id||'',matchedContactName:ambiguous?'':best?.name||'',matchedEmail:ambiguous?'':best?.email||input.email||'',matchedPhone:ambiguous?'':best?.phone||input.phone||'',matchedCompany:ambiguous?'':best?.company||input.company||'',matchConfidence:confidence,matchReason:reason,needsReview:ambiguous||!best||confidence<TRANSCRIPT_SAFE_MATCH_CONFIDENCE,createdAt:new Date().toISOString()});
+  }
+  await replaceTranscriptParticipants(transcriptId,participants);return participants;
+}
+async function promoteTranscriptTask(staged){
+  const mainTask={id:uuid('task'),title:staged.taskTitle,notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
+  await saveTask(mainTask);await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
+}
 async function processTranscriptPayload(payload){
-  const transcript=payload.transcript||payload.rawText||'';
-  if(!transcript.trim()) throw new Error('Missing transcript');
-  const title=payload.title||'Processed transcript';
-  const sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId||title;
-  const memory=await recentMemoryContext(title+' '+transcript.slice(0,1000));
-  const system=[VAL_SYSTEM_PROMPT,'You process transcripts for VAL. Your job is to prevent commitments from leaking.','Extract every unresolved promise, next step, follow-up, owner action, waiting-for item, meeting prep need, and task implied by the conversation.','If someone says they will send, review, schedule, introduce, decide, follow up, check, draft, prepare, update, research, or circle back, that belongs in actionItems unless it was explicitly completed in the transcript.','If a follow-up message should be sent after the meeting, include it in followupDrafts and also create a matching actionItems entry unless another action item already covers it.','Do not invent work. Do not create tasks for completed items. When due timing is unclear, use null.','Return strict JSON with keys: summary, actionItems, decisions, people, memoryUpdates, followupDrafts.','actionItems must be an array of objects with title, dueDate, notes, priority, contactName, person, evidence.','Every action item title should start with a verb and be clear enough to execute without reopening the transcript.',memory?'Relevant saved memory:\n'+memory:''].filter(Boolean).join('\n\n');
-  const raw=await callValModel({system,user:'Transcript title: '+title+'\n\nTranscript:\n'+transcript.slice(0,30000),maxTokens:1800,temperature:0.2,json:true});
-  let parsed={};
-  try{parsed=JSON.parse(raw);}catch(e){parsed={summary:raw,actionItems:[],decisions:[],people:[],memoryUpdates:[],followupDrafts:[]};}
-  const createdTasks=[];
-  const createdDrafts=[];
-  const taskItems=Array.isArray(parsed.actionItems)?parsed.actionItems.slice(0,18):[];
-  const rawFollowupDrafts=(Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8);
-  const followupItems=rawFollowupDrafts.map(f=>({title:f.title||f.task||('Send follow-up'+(f.recipient||f.contactName||f.person?' to '+(f.recipient||f.contactName||f.person):'')),contactName:f.contactName||f.person||f.recipient||'',dueDate:f.dueDate||null,notes:[f.reason||'',f.subject?'Subject: '+f.subject:'',f.message||f.body||''].filter(Boolean).join('\n'),priority:f.priority||'high',evidence:f.evidence||'Follow-up draft created from transcript'}));
-  const existing=await loadTasks();
-  const seen=new Set(existing.filter(t=>!t.completed).map(t=>taskFingerprint(t.title,t.contactName)));
-  for(const item of taskItems.concat(followupItems)){
-    const task=transcriptTaskFromItem(item,title,sourceId,'transcript_action');
-    if(!task) continue;
-    const fp=taskFingerprint(task.title,task.contactName);
-    if(seen.has(fp)) continue;
-    seen.add(fp);
-    await saveTask(task);
-    createdTasks.push(task);
+  const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
+  const title=payload.title||'Processed transcript',sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
+  await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
+  const participants=await matchTranscriptParticipants(payload,sourceId,transcript);
+  await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  let parsed={},modelFailed='';
+  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
+  catch(e){
+    modelFailed=e.message;const lines=transcript.split(/\n+/).map(line=>line.trim()).filter(Boolean),fallbackTasks=lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>{const split=line.match(/^([^:]{2,80}):\s*(.+)$/),quote=split?split[2]:line,person=split?split[1]:'';return {taskTitle:cleanTaskTitle(quote).replace(/^I\s+will\s+/i,'').replace(/^we\s+will\s+/i,''),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:person,dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line};}),decisions=lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10);
+    parsed={executiveSummary:transcript.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Automated fallback summary; model processing needs review.',keyDecisions:decisions,openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),relationshipUpdates:[],tasks:fallbackTasks,contactUpdates:[],followupDrafts:[]};
   }
-  for(const f of rawFollowupDrafts){
-    const body=f.message||f.body||'';
-    if(!body.trim()) continue;
-    createdDrafts.push(await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:f.subject||('Follow-up: '+title),body,status:'draft',sourceContext:{source:'transcript_processing',transcriptId:sourceId,recipient:f.recipient||f.email||'',person:f.person||f.contactName||'',reason:f.reason||''}}));
+  const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
+  if(modelFailed)await logTranscriptAction(sourceId,'failed_action','summary_model','failed',modelFailed);
+  const stagedTasks=[],createdTasks=[],createdDrafts=[];
+  for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
+    const assignedName=item.assignedToName||item.assignedPerson||item.person||item.contactName||'',participant=participants.find(p=>looseNameScore(assignedName,p.speakerNameRaw)>=0.8||looseNameScore(assignedName,p.matchedContactName)>=0.8),confidence=Math.max(0,Math.min(1,Number(item.confidence)||0));
+    const owner=isOwnerRelationship({name:assignedName,email:participant?.matchedEmail||''}),safeMatch=!!participant&&!participant.needsReview&&participant.matchConfidence>=TRANSCRIPT_SAFE_MATCH_CONFIDENCE;
+    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:cleanTaskTitle(item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'staged',needsApproval:!(owner||safeMatch),sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),createdAt:new Date().toISOString()};
+    if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);if(owner||safeMatch)createdTasks.push(await promoteTranscriptTask(staged));
   }
-  if(Array.isArray(parsed.memoryUpdates)){
-    for(const m of parsed.memoryUpdates.slice(0,12)){
-      const text=typeof m==='string'?m:(m.text||m.summary||JSON.stringify(m));
-      await saveMemoryItem({kind:'transcript_insight',summary:title,rawText:text,importance:3,metadata:{title,source:'transcript_processing'}});
-    }
+  for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20)){
+    const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
+    await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
-  let meetingMatch=payload.meetingMatch||null;
-  if(!meetingMatch){
-    try{
-      meetingMatch=await linkTranscriptToBestMeeting({id:sourceId,title,rawText:transcript,metadata:payload.metadata||payload,createdAt:payload.timestamp||payload.createdAt||new Date().toISOString()});
-    }catch(e){console.log('Transcript meeting match skipped:',e.message);}
-  }
-  console.log(`Transcript processed: title="${title}" actionItems=${taskItems.length} tasksCreated=${createdTasks.length} draftsCreated=${createdDrafts.length} meetingMatched=${!!meetingMatch}`);
-  return {analysis:parsed,createdTasks,createdDrafts,meetingMatch,counts:{actionItemsExtracted:taskItems.length,tasksCreated:createdTasks.length,draftsCreated:createdDrafts.length,meetingMatched:meetingMatch?1:0}};
+  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const saved=await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,sourceQuote:transcriptSupportingQuote(transcript,draft.sourceQuote)}});createdDrafts.push(saved);await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
+  await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
+  return {analysis:parsed,summary,participants,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
@@ -9898,15 +10083,20 @@ function normalizedTranscriptWebhookPayload(body={}){
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
-    const transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
+    const data=await transcriptIndexData();
+    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length}});}
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
     res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/transcripts/review',async(req,res)=>{
+  try{const data=await transcriptIndexData();res.json({ok:true,participants:data.participants.filter(row=>row.needsReview),tasks:data.tasks.filter(row=>row.needsApproval),contactUpdates:data.contactUpdates.filter(row=>!row.approved)});}catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId);
+    const data=await transcriptIndexData(id);if(data.transcripts[0])return res.json({ok:true,transcript:transcriptDetailFromIndex(data,data.transcripts[0])});
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
     res.json({ok:true,transcript:transcriptUiRecord(record,{includeText:true})});
@@ -9921,16 +10111,35 @@ app.post('/api/val/transcripts',async(req,res)=>{
     console.log('[transcripts] saved successfully',{id:saved.id,title:payload.title,source:payload.source});
     const transcriptRecord={id:saved.id,title:payload.title||saved.type,rawText:transcriptText,metadata:payload,createdAt:payload.timestamp||payload.createdAt||payload.receivedAt};
     const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.warn('[transcripts] meeting link failed',e.message);return null;});
-    if(payload.process===false)return res.status(201).json({ok:true,...saved,meetingMatch,saved:true,processed:false});
     try{
       const processed=await processTranscriptPayload({...payload,savedTranscriptId:saved.id,meetingMatch});
       await updateTranscriptMetadata(saved.id,{analysis:processed.analysis,summary:processed.analysis?.summary||'',actionItems:processed.analysis?.actionItems||[],people:processed.analysis?.people||[],reviewStatus:'needs_review',processedAt:new Date().toISOString()});
       return res.status(201).json({ok:true,...saved,...processed,saved:true,processed:true});
     }catch(processError){
       console.error('[transcripts] processing failed after durable save',{id:saved.id,error:processError.message});
+      const fallback={executiveSummary:transcriptText.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Processing failed; transcript retained for review.',keyDecisions:[],openQuestions:[],relationshipUpdates:[]};
+      await saveTranscriptSummary(saved.id,fallback).catch(()=>{});await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});await logTranscriptAction(saved.id,'failed_action','pipeline','failed',processError.message).catch(()=>{});
       return res.status(202).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch});
     }
   }catch(e){console.error('[transcripts] save failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/tasks/:taskId/approve',async(req,res)=>{
+  try{const data=await transcriptIndexData(),task=data.tasks.find(row=>row.taskId===req.params.taskId);if(!task)return res.status(404).json({ok:false,error:'Staged task not found'});if(task.status==='created')return res.json({ok:true,task,alreadyCreated:true});const created=await promoteTranscriptTask(task);res.json({ok:true,task:created});}catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/participants/:participantId/approve',async(req,res)=>{
+  try{
+    const data=await transcriptIndexData(),participant=data.participants.find(row=>row.participantId===req.params.participantId);if(!participant)return res.status(404).json({ok:false,error:'Participant not found'});
+    const updates={matchedContactId:req.body.contactId||participant.matchedContactId,matchedContactName:req.body.contactName||participant.matchedContactName,matchedEmail:req.body.email||participant.matchedEmail,matchedPhone:req.body.phone||participant.matchedPhone,matchedCompany:req.body.company||participant.matchedCompany,matchConfidence:1,matchReason:req.body.reason||'User-approved participant match',needsReview:false};
+    if(!updates.matchedContactId)return res.status(400).json({ok:false,error:'Choose a specific CRM contact before approving this participant match'});
+    if(DEMO_MODE)Object.assign((transcriptDemoArray('transcriptParticipants')||[]).find(row=>row.participantId===participant.participantId),updates);else if(pgPool)await dbQuery('update transcript_participants set matched_contact_id=$1,matched_contact_name=$2,matched_email=$3,matched_phone=$4,matched_company=$5,match_confidence=1,match_reason=$6,needs_review=false where participant_id=$7',[updates.matchedContactId,updates.matchedContactName,updates.matchedEmail,updates.matchedPhone,updates.matchedCompany,updates.matchReason,participant.participantId]);else{const store=valStore();Object.assign(store.transcriptParticipants.find(row=>row.participantId===participant.participantId),updates);saveValStore(store);}await logTranscriptAction(participant.transcriptId,'participant_match_approved',participant.participantId,'completed');res.json({ok:true,participant:{...participant,...updates}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)=>{
+  try{
+    const data=await transcriptIndexData(),update=data.contactUpdates.find(row=>row.updateId===req.params.updateId);if(!update)return res.status(404).json({ok:false,error:'Contact update not found'});if(!update.contactId)return res.status(400).json({ok:false,error:'Approve a participant/contact match before applying this update'});
+    const allowed={email:'email',phone:'phone',firstName:'firstName',lastName:'lastName',companyName:'companyName',address1:'address1',city:'city',state:'state',postalCode:'postalCode'};const field=allowed[update.fieldToUpdate];if(!field)return res.status(400).json({ok:false,error:'This field cannot be written automatically; keep it as a reviewed intelligence note'});
+    try{await ghlStrict('PUT',`/contacts/${encodeURIComponent(update.contactId)}`,{[field]:update.newValue});if(DEMO_MODE){const row=(transcriptDemoArray('transcriptContactUpdates')||[]).find(x=>x.updateId===update.updateId);if(row)row.approved=true;}else if(pgPool)await dbQuery('update transcript_contact_updates set approved=true where update_id=$1',[update.updateId]);else{const store=valStore(),row=store.transcriptContactUpdates.find(x=>x.updateId===update.updateId);if(row)row.approved=true;saveValStore(store);}await logTranscriptAction(update.transcriptId,'contact_updated',update.contactId,'completed');res.json({ok:true,update:{...update,approved:true}});}catch(error){await logTranscriptAction(update.transcriptId,'failed_action',update.contactId,'failed',error.message);throw error;}
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
@@ -9938,21 +10147,21 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     if(!record)return res.status(404).json({ok:false,error:'Transcript not found'});
     const transcript=transcriptUiRecord(record,{includeText:true}),action=String(req.body.action||'');
     if(action==='create_task'){
-      const first=transcript.actionItems.find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
+      const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
       const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
-      const task={id:uuid('task'),title,notes:`Created from transcript: ${transcript.title} (${transcript.id})`,contactName:transcript.contactName||'',dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',completed:false,source:'transcript',sourceId:transcript.id,createdAt:new Date().toISOString()};
-      await saveTask(task);return res.json({ok:true,task});
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:title,taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),createdAt:new Date().toISOString()};
+      await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
     if(action==='draft_followup'){
       const firstName=String(transcript.contactName||'there').split(/\s+/)[0],next=String(transcript.actionItems.map(item=>typeof item==='string'?item:item.title||item.text).filter(Boolean)[0]||'keep the next step moving').replace(/[.!?]+$/,'');
       const draft=await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:`Follow-up: ${transcript.title}`,body:`Hi ${firstName},\n\nThank you for the conversation. ${transcript.summary||'I wanted to follow up while the discussion is still fresh.'}\n\nNext step: ${next}.\n\nBest,`,status:'draft',sourceContext:{source:'transcript',transcriptId:transcript.id,contactName:transcript.contactName||''}});
-      return res.json({ok:true,draft});
+      await logTranscriptAction(transcript.id,'email_draft_created',draft.id||'','completed');return res.json({ok:true,draft});
     }
     if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';const title=body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:transcriptText,metadata:{source:body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/conversations/:id',async(req,res)=>{
