@@ -2,8 +2,8 @@
 'use strict';
 var transcriptState={items:[],counts:{total:0,needsReview:0,withOpenActions:0},active:null,loaded:false,loading:false,error:'',lastLoadedAt:''};
 var navItems=[
-  ['dashboard','⌂','Dashboard'],['relationships','◎','Relationships'],['meetings','▣','Meetings'],['transcripts','≣','Transcripts'],
-  ['communications','✉','Communications'],['opportunities','↗','Opportunities'],['tasks','✓','Tasks'],['intelligence','✦','Intelligence'],
+  ['dashboard','⌂','Dashboard'],['chat','✦','General Chat'],['relationships','◎','Relationships'],['meetings','▣','Meetings'],['transcripts','≣','Transcripts'],
+  ['communications','✉','Communications'],['email_intelligence','✉','Email Intelligence'],['opportunities','↗','Opportunities'],['tasks','✓','Tasks'],['intelligence','✦','Intelligence'],
   ['leads_employers','⌕','Scrape Employers'],['leads_partners','◇','Scrape Partners'],['settings','⚙','Settings']
 ];
 function safe(value){return typeof docSafe==='function'?docSafe(String(value==null?'':value)):String(value==null?'':value).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -24,7 +24,7 @@ window.commandCenterNavigate=function(view){
   setActive(view);closeTranscriptView();
   if(view==='dashboard'){call('closeDetail');buildCommandCenter();return;}
   if(view==='transcripts'){openTranscripts();return;}
-  var routes={relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel'};
+  var routes={chat:'openGeneralChat',relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'askComms',email_intelligence:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel'};
   call(routes[view]||'closeDetail');
 };
 function listLine(label,value){return '<div class="val-mini-item"><strong>'+safe(label)+'</strong><span>'+safe(value)+'</span></div>';}
@@ -52,7 +52,7 @@ function loadTranscripts(show){
   return fetcher((window.PROXY||'')+'/api/val/transcripts?days=3650&limit=250').then(function(data){if(!data||data.ok===false||!Array.isArray(data.transcripts))throw new Error((data&&data.error)||'Transcript retrieval returned an invalid response.');transcriptState.items=data.transcripts;transcriptState.counts=data.counts||{total:data.transcripts.length,needsReview:0,withOpenActions:0};transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error='';transcriptState.lastLoadedAt=new Date().toISOString();buildCommandCenter();if(show)renderTranscriptList();return data;}).catch(function(e){transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error=e.message||String(e);buildCommandCenter();if(show)renderTranscriptError(transcriptState.error);throw e;});
 }
 window.openTranscripts=function(){setActive('transcripts');call('closeDetail');var welcome=document.getElementById('centerWelcome');if(welcome)welcome.style.display='none';var view=document.getElementById('valTranscriptView');if(view)view.classList.add('open');if(!transcriptState.loaded||transcriptState.error){loadTranscripts(true).catch(function(){});}else renderTranscriptList();};
-function transcriptHeader(subtitle,back){return '<div class="val-view-head"><div><h2>Transcripts</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Back to list</button>':'')+'<button class="val-ui-btn" '+(transcriptState.loading?'disabled':'')+' onclick="loadTranscripts(true).catch(function(){})">'+(transcriptState.loading?'Refreshing…':'Refresh')+'</button></div></div>';}
+function transcriptHeader(subtitle,back){return '<div class="val-view-head"><div><h2>Transcripts</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Back to list</button>':'')+'<button class="val-ui-btn" onclick="openIntegrationStatus()">Webhook Setup</button><button class="val-ui-btn" '+(transcriptState.loading?'disabled':'')+' onclick="loadTranscripts(true).catch(function(){})">'+(transcriptState.loading?'Refreshing…':'Refresh')+'</button></div></div>';}
 function renderTranscriptLoading(){var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Loading the durable transcript archive…')+'<div class="val-empty val-transcript-loading">Refreshing transcripts…</div>';}
 window.renderTranscriptList=function(){
   transcriptState.active=null;var view=document.getElementById('valTranscriptView');if(!view)return;

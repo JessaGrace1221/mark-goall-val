@@ -1280,10 +1280,8 @@ function transcriptWebhookInfo(req){
     clientSlug:CLIENT_CONFIG.clientSlug,
     method:'POST',
     url:`${base}/api/val/transcripts?token=${encodeURIComponent(token)}`,
-    headerUrl:`${base}/api/val/transcripts`,
     pingUrl:`${base}/api/val/transcripts/ping?token=${encodeURIComponent(token)}`,
-    headerName:'X-VAL-Transcript-Token',
-    headerToken:token,
+    authentication:'Signed webhook URL',
     contentType:'application/json',
     processDefault:true,
     recent30DaysCount:0,
@@ -1433,6 +1431,7 @@ async function resolveIntegrationSecret(provider,credentialType,fallback=''){
   return fallback || '';
 }
 async function resolveOpenAIKey(){ return resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
+async function resolveAnthropicKey(){ return resolveIntegrationSecret('anthropic','api_key',ANTHROPIC_KEY); }
 async function resolveOpenAIModel(){
   return resolveIntegrationSecret('openai','preferred_model',OPENAI_CHAT_MODEL);
 }
@@ -1542,6 +1541,8 @@ async function initValDb(){
       notes text,
       details jsonb not null default '[]',
       completed boolean not null default false,
+      completed_at timestamptz,
+      completed_by text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -1719,6 +1720,8 @@ async function initValDb(){
   await dbQuery('alter table val_users add column if not exists password_reset_expires_at timestamptz');
   await dbQuery('alter table meeting_transcript_links add column if not exists contact_id text');
   await dbQuery('alter table meeting_transcript_links add column if not exists updated_at timestamptz not null default now()');
+  await dbQuery('alter table val_tasks add column if not exists completed_at timestamptz');
+  await dbQuery('alter table val_tasks add column if not exists completed_by text');
   await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
@@ -2067,6 +2070,11 @@ app.post('/api/integrations/test/:provider',async(req,res)=>{
       if(!key) throw new Error('OpenAI API key is missing');
       const r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${key}`}});
       ok=r.ok; message=ok?'Connected':`Failed (${r.status})`;
+    }else if(provider==='anthropic'){
+      const key=await resolveAnthropicKey();
+      if(!key) throw new Error('Anthropic API key is missing');
+      const r=await fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01'}});
+      ok=r.ok;message=ok?'Connected':`Failed (${r.status})`;
     }else if(provider==='ghl'){
       const loc=await resolveGhlLocationId();
       const key=await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
@@ -2671,6 +2679,13 @@ app.post('/api/generate-image',async(req,res)=>{
     console.error('image generation error:',e);
     res.status(500).json({error:e.message});
   }
+});
+app.post('/api/claude',async(req,res)=>{
+  try{
+    const key=await resolveAnthropicKey();if(!key)return res.status(400).json({ok:false,error:'Connect Anthropic in Settings before using Claude.'});
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:req.body.model||'claude-sonnet-4-20250514',max_tokens:Number(req.body.max_tokens)||2000,system:req.body.system||'',messages:req.body.messages||[{role:'user',content:req.body.user||''}]})});
+    const d=await r.json();if(!r.ok)return res.status(r.status).json({ok:false,error:d.error?.message||'Claude request failed'});res.json({ok:true,text:(d.content||[]).map(x=>x.text||'').join(''),usage:d.usage||{}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
 app.get('/auth/google', (req, res) => {
@@ -3582,6 +3597,25 @@ async function recentMemoryItems(days=30,limit=120){
     return r.rows.map(row=>({id:row.id,kind:row.kind,summary:row.summary||'',rawText:row.raw_text||'',metadata:row.metadata||{},createdAt:row.created_at?row.created_at.toISOString():''}));
   }
   return (valStore().memoryItems||[]).filter(m=>new Date(m.createdAt||0)>=new Date(since)).slice(0,limit);
+}
+async function condenseOlderMemory(){
+  await valDbReady;
+  const cutoff=new Date(Date.now()-30*24*60*60*1000),items=[];
+  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true};
+  if(pgPool){
+    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind <> 'memory_condensation' order by created_at asc limit 500",[VAL_USER_ID,cutoff.toISOString()]);
+    items.push(...r.rows.map(x=>({id:x.id,kind:x.kind,summary:x.summary||'',rawText:x.raw_text||'',metadata:x.metadata||{},createdAt:x.created_at?.toISOString()||''})));
+  }else items.push(...(valStore().memoryItems||[]).filter(x=>new Date(x.createdAt||0)<cutoff&&x.kind!=='memory_condensation').slice(0,500));
+  if(!items.length)return {ok:true,created:0,keptOriginals:true};
+  const groups={};items.forEach(item=>{const d=new Date(item.createdAt||0),key=isNaN(d)?'undated':d.toISOString().slice(0,7);(groups[key]=groups[key]||[]).push(item);});
+  let created=0;
+  for(const [month,rows] of Object.entries(groups)){
+    const sourceIds=rows.map(x=>x.id),fingerprint=crypto.createHash('sha256').update(sourceIds.join('|')).digest('hex').slice(0,20);
+    const existing=await recentMemoryItems(3650,1000).catch(()=>[]);if(existing.some(x=>x.kind==='memory_condensation'&&x.metadata?.fingerprint===fingerprint))continue;
+    const highlights=rows.sort((a,b)=>Number(b.importance||1)-Number(a.importance||1)).slice(0,40).map(x=>`[${x.kind}] ${x.summary||String(x.rawText||'').slice(0,240)}`).join('\n');
+    await saveMemoryItem({kind:'memory_condensation',summary:`Condensed VAL memory for ${month} (${rows.length} original items retained)`,rawText:highlights,importance:4,metadata:{fingerprint,month,sourceIds,sourceCount:rows.length,keptOriginals:true,condensedAt:new Date().toISOString()}});created++;
+  }
+  return {ok:true,created,sourceItems:items.length,keptOriginals:true};
 }
 function relationshipScore(contact){
   const ev=contact.evidence||[];
@@ -5401,7 +5435,7 @@ app.put('/api/ghl/social/posts/:id',async(req,res)=>{
 function readTasks(){ return readJson(TASKS_FILE,[]); }
 function writeTasks(tasks){ writeJson(TASKS_FILE,tasks); }
 function rowToTask(row){
-  return {id:row.id,title:row.title,contactName:row.contact_name||'',dueDate:row.due_date?row.due_date.toISOString():null,notes:row.notes||'',details:row.details||[],completed:!!row.completed,createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString()};
+  return {id:row.id,title:row.title,contactName:row.contact_name||'',dueDate:row.due_date?row.due_date.toISOString():null,notes:row.notes||'',details:row.details||[],completed:!!row.completed,completedAt:row.completed_at?row.completed_at.toISOString():null,completedBy:row.completed_by||'',createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString()};
 }
 async function loadTasks(){
   if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.tasks || []);
@@ -5413,6 +5447,10 @@ async function loadTasks(){
   return readTasks();
 }
 async function saveTask(task){
+  task={...task};
+  task.title=String(task.title||'Untitled task').trim()||'Untitled task';
+  task.contactName=task.contactName||'';
+  if(!task.dueDate&&!task.completed) task.dueDate=new Date(Date.now()+24*60*60*1000).toISOString();
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
     if(state){
@@ -5423,8 +5461,6 @@ async function saveTask(task){
     return;
   }
   await valDbReady;
-  task.title=String(task.title||'Untitled task').trim()||'Untitled task';
-  task.contactName=task.contactName||'';
   if(pgPool){
     if(!task.completed){
       const dupe=await dbQuery('select id,details from val_tasks where user_id=$1 and completed=false and lower(title)=lower($2) and lower(coalesce(contact_name,\'\'))=lower($3) limit 1',[VAL_USER_ID,task.title,task.contactName]);
@@ -5435,10 +5471,10 @@ async function saveTask(task){
       }
     }
     await dbQuery(`
-      insert into val_tasks (id,user_id,title,contact_name,due_date,notes,details,completed,created_at,updated_at)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9::timestamptz,now()),now())
-      on conflict (id) do update set title=excluded.title, contact_name=excluded.contact_name, due_date=excluded.due_date, notes=excluded.notes, details=excluded.details, completed=excluded.completed, updated_at=now()
-    `,[task.id,VAL_USER_ID,task.title||'Untitled task',task.contactName||'',task.dueDate||null,task.notes||'',JSON.stringify(task.details||[]),!!task.completed,task.createdAt||null]);
+      insert into val_tasks (id,user_id,title,contact_name,due_date,notes,details,completed,completed_at,completed_by,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11::timestamptz,now()),now())
+      on conflict (id) do update set title=excluded.title, contact_name=excluded.contact_name, due_date=excluded.due_date, notes=excluded.notes, details=excluded.details, completed=excluded.completed, completed_at=excluded.completed_at, completed_by=excluded.completed_by, updated_at=now()
+    `,[task.id,VAL_USER_ID,task.title||'Untitled task',task.contactName||'',task.dueDate||null,task.notes||'',JSON.stringify(task.details||[]),!!task.completed,task.completedAt||null,task.completedBy||'',task.createdAt||null]);
     return;
   }
   const tasks=readTasks();
@@ -9918,6 +9954,43 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
 });
 app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';const title=body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:transcriptText,metadata:{source:body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.patch('/api/val/conversations/:id',async(req,res)=>{
+  try{
+    const id=String(req.params.id||''),title=String(req.body?.title||'').trim().slice(0,120);
+    if(!title)return res.status(400).json({ok:false,error:'Conversation title is required'});
+    await valDbReady;
+    if(DEMO_MODE){
+      const state=demoState(req,res);const row=(state.savedConversations||[]).find(c=>c.id===id);
+      if(row){row.title=title;row.updated_at=new Date().toISOString();}
+    }else if(pgPool){
+      const result=await dbQuery('update val_conversations set title=$1,updated_at=now() where id=$2 and user_id=$3 returning id,title,updated_at',[title,id,VAL_USER_ID]);
+      if(!result.rows[0])return res.status(404).json({ok:false,error:'Conversation not found'});
+    }else{
+      const store=valStore(),row=store.conversations.find(c=>c.id===id&&c.userId===VAL_USER_ID);
+      if(!row)return res.status(404).json({ok:false,error:'Conversation not found'});
+      row.title=title;row.updatedAt=new Date().toISOString();saveValStore(store);
+    }
+    res.json({ok:true,id,title});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/val/conversations/:id/context',async(req,res)=>{
+  try{
+    const id=String(req.params.id||''),contact=req.body?.contact&&typeof req.body.contact==='object'?req.body.contact:null,company=String(req.body?.company||contact?.company||'').trim();
+    const context=contact?{contact:{id:contact.id||contact.contactId||'',name:contact.name||'',email:contact.email||'',company},confirmedBy:'user',confirmedAt:new Date().toISOString()}:{};
+    await valDbReady;
+    if(DEMO_MODE){
+      const state=demoState(req,res),row=(state.savedConversations||[]).find(c=>c.id===id);if(row)row.metadata={...(row.metadata||{}),context};
+    }else if(pgPool){
+      const result=await dbQuery("update val_conversations set metadata=coalesce(metadata,'{}'::jsonb)||$1::jsonb,updated_at=now() where id=$2 and user_id=$3 returning id",[JSON.stringify({context}),id,VAL_USER_ID]);
+      if(!result.rows[0])return res.status(404).json({ok:false,error:'Conversation not found'});
+    }else{
+      const store=valStore(),row=store.conversations.find(c=>c.id===id&&c.userId===VAL_USER_ID);if(!row)return res.status(404).json({ok:false,error:'Conversation not found'});row.metadata={...(row.metadata||{}),context};saveValStore(store);
+    }
+    if(contact)await saveMemoryItem({kind:'conversation_entity_link',summary:`Conversation linked to ${contact.name||contact.email||company}`,rawText:JSON.stringify({conversationId:id,contact,company}),importance:3,metadata:{conversationId:id,contactId:contact.id||contact.contactId||'',contactName:contact.name||'',contactEmail:contact.email||'',company,confirmed:true}});
+    res.json({ok:true,id,context});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/context/resolve-contact',async(req,res)=>{try{res.json(await resolveContactFromContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/val/context/resolve-meeting',async(req,res)=>{try{res.json(await resolveMeetingContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/val/context/link-transcript',async(req,res)=>{
@@ -10281,4 +10354,8 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
 
 // ════════════════════════════════════════════════════════
 const PORT=process.env.PORT||3000;
-app.listen(PORT,()=>console.log(`VAL proxy running on port ${PORT}`));
+app.listen(PORT,()=>{
+  console.log(`VAL proxy running on port ${PORT}`);
+  setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
+  setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
+});

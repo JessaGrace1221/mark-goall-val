@@ -989,7 +989,11 @@ body{font-size:1rem}
         </div>
         <div class="ws-item" onclick="openEmailIntelligence()">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg></div>
-          <div class="ws-item-text"><div class="ws-item-title">Email AI</div><div class="ws-item-sub">Gmail triage and drafts</div></div>
+          <div class="ws-item-text"><div class="ws-item-title">Email Intelligence</div><div class="ws-item-sub">Priority inbox, rules, and drafts</div></div>
+        </div>
+        <div class="ws-item" onclick="openIntegrationStatus()">
+          <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+          <div class="ws-item-text"><div class="ws-item-title">Transcript Setup</div><div class="ws-item-sub">Webhook URL and connection health</div></div>
         </div>
         <div class="ws-item" onclick="wsNav('approvals')">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h3.75c.621 0 1.125.504 1.125 1.125v1.5h3.375c.621 0 1.125.504 1.125 1.125v14.625c0 .621-.504 1.125-1.125 1.125H5.625A1.125 1.125 0 014.5 20.625V6c0-.621.504-1.125 1.125-1.125H9v-1.5c0-.621.504-1.125 1.125-1.125z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 13.5l2.25 2.25L15.75 9"/></svg></div>
@@ -1320,9 +1324,10 @@ var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_SIDEBAR_CALENDAR = '/api/calendar/sidebar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
-var keyProviderLabels={openai:'OpenAI',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',apollo:'Apollo',rocketreach:'RocketReach'};
+var keyProviderLabels={openai:'OpenAI',anthropic:'Anthropic / Claude',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',apollo:'Apollo',rocketreach:'RocketReach'};
 var keyProviderFields={
   openai:[['apiKey','API key','password'],['preferredModel','Preferred model','text']],
+  anthropic:[['apiKey','API key','password']],
   ghl:[['apiKey','GHL API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
   microsoft_oauth:[],
   google_oauth:[],
@@ -1783,8 +1788,8 @@ function renderTranscriptWebhook(webhook){
     +'<div style="margin-top:6px;font-size:12px;line-height:1.55;">Paste this URL into your transcriber, Make.com, Zapier, or any tool that can send a POST webhook to VAL.</div>'
     +'<div style="margin-top:8px;word-break:break-all;font-family:var(--mono);font-size:11px;color:#111827;background:#f8fafc;border:1px solid rgba(17,24,39,.14);border-radius:8px;padding:10px;">'+docSafe(webhook.url)+'</div>'
     +'<div style="margin-top:8px;font-size:12px;line-height:1.55;"><strong>Last received:</strong> '+docSafe(last)+'<br><strong>Recent transcripts:</strong> '+docSafe(webhook.recent30DaysCount||0)+' in 30 days<br><strong>Matched to meetings:</strong> '+docSafe(webhook.matchedToMeetings30DaysCount||0)+'</div>'
-    +'<div class="email-actions"><button class="primary" onclick="copyText(window._valTranscriptWebhook.url,&quot;Webhook URL&quot;)">Copy Webhook URL</button><button onclick="copyText(window._valTranscriptWebhook.pingUrl,&quot;Ping URL&quot;)">Copy Ping URL</button><button onclick="copyText(window._valTranscriptWebhook.headerUrl,&quot;Header URL&quot;)">Copy Header URL</button><button onclick="copyText(window._valTranscriptWebhook.headerToken,&quot;Webhook Token&quot;)">Copy Token</button><button onclick="copyText(JSON.stringify(window._valTranscriptWebhook.samplePayload,null,2),&quot;Sample Payload&quot;)">Copy Sample JSON</button></div>'
-    +'<div style="margin-top:8px;color:#334155;font-size:12px;">Use POST with JSON. The easiest setup is the full Webhook URL above. Advanced setup can POST to the Header URL and send the token as the <strong>X-VAL-Transcript-Token</strong> header. Use the Ping URL to test whether the webhook is live without creating a transcript.</div>'
+    +'<div class="email-actions"><button class="primary" onclick="copyText(window._valTranscriptWebhook.url,&quot;Webhook URL&quot;)">Copy Webhook URL</button><button onclick="copyText(window._valTranscriptWebhook.pingUrl,&quot;Ping URL&quot;)">Copy Test URL</button><button onclick="copyText(JSON.stringify(window._valTranscriptWebhook.samplePayload,null,2),&quot;Sample Payload&quot;)">Copy Sample JSON</button></div>'
+    +'<div style="margin-top:8px;color:#334155;font-size:12px;">Use POST with JSON. The copied URL is signed for this VAL account; keep the full URL private. VAL never displays the underlying credential separately. Use the test URL to verify the connection without creating a transcript.</div>'
     +'<pre style="white-space:pre-wrap;max-height:190px;overflow:auto;margin-top:10px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;font-size:11px;">'+docSafe(sample)+'</pre></div>';
 }
 
@@ -2004,7 +2009,7 @@ function valAddTask(title,contactName,dueDate,notes){
     refreshTaskUI();
     return existing;
   }
-  var task={id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
+  var task={id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),title:title,contactName:contactName||'',dueDate:dueDate||new Date(Date.now()+24*60*60*1000).toISOString(),notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
   valTasks.push(task);
   valTaskSaveOne(task);
   refreshTaskUI();
@@ -2025,6 +2030,7 @@ function valCompleteTask(id,quiet){
   if(t){
     t.completed=true;
     t.completedAt=new Date().toISOString();
+    t.completedBy='you';
     if(!t.details)t.details=[];
     t.details.push({text:'Marked complete.',ts:t.completedAt});
     valTaskSaveOne(t);
@@ -2039,6 +2045,8 @@ function valReopenTask(id){
   var t=valTasks.find(function(t){return t.id===id;});
   if(t){
     t.completed=false;
+    t.completedAt=null;
+    t.completedBy='';
     if(!t.details)t.details=[];
     t.details.push({text:'Moved back to To Do.',ts:new Date().toISOString()});
     valTaskSaveOne(t);
@@ -2122,7 +2130,7 @@ function taskCardHtml(t,done){
     +'<button class="task-check" aria-label="'+(done?'Move back to To Do':'Mark complete')+'" onclick="'+(done?'valReopenTask':'valCompleteTask')+'('+id+')">✓</button>'
     +'<div>'
       +'<div class="task-title">'+docSafe(t.title||'Untitled task')+'</div>'
-      +'<div class="task-meta">'+(done?'Completed':'To do')+' · '+docSafe(due)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
+      +'<div class="task-meta">'+(done?'Completed by '+docSafe(t.completedBy||'you'):'To do')+' · '+docSafe(due)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
       +(context?'<div class="task-notes">'+docSafe(context)+'</div>':'')
       +'<div class="task-actions">'
         +'<button class="primary" onclick="openTaskDetail('+id+')">Context</button>'
@@ -2144,7 +2152,7 @@ function renderTaskBoard(){
     +'<section class="task-column"><div class="task-column-head"><div class="task-column-title">'+(isBookEditorMode()?'Editorial To Do':'To Do')+'</div><div class="task-count-pill">'+open.length+' open</div></div>'
       +'<div class="task-list">'+(open.length?visibleOpen.map(function(t){return taskCardHtml(t,false);}).join('')+(openMore?'<div class="task-empty">Showing '+visibleOpen.length+' of '+open.length+' open tasks. '+openMore+'</div>':''):'<div class="task-empty">No open tasks. Ask Michele VAL what the next clean editorial move is, and it will save each action here.</div>')+'</div></section>'
     +'<section class="task-column"><div class="task-column-head"><div class="task-column-title">Done</div><div class="task-count-pill">'+done.length+' complete</div></div>'
-      +'<div class="task-list">'+(done.length?visibleDone.map(function(t){return taskCardHtml(t,true);}).join('')+(doneMore?'<div class="task-empty">Showing '+visibleDone.length+' of '+done.length+' completed tasks. '+doneMore+'</div>':''):'<div class="task-empty">Completed tasks will collect here so Michele can see the progress stacking up.</div>')+'</div></section>'
+      +'<div class="task-list">'+(done.length?visibleDone.map(function(t){return taskCardHtml(t,true);}).join('')+(doneMore?'<div class="task-empty">Showing '+visibleDone.length+' of '+done.length+' completed tasks. '+doneMore+'</div>':''):'<div class="task-empty">'+(isBookEditorMode()?'Completed tasks will collect here so Michele can see the progress stacking up.':'Completed tasks will collect here so you can see the progress stacking up.')+'</div>')+'</div></section>'
     +'</div>';
 }
 function renderTaskBoardIfOpen(){
@@ -2274,13 +2282,14 @@ function openTaskDetail(id){
     '<div style="padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:flex-start;justify-content:space-between;">'
       +'<div>'
         +'<div style="font-family:var(--serif);font-size:16px;color:var(--cream);line-height:1.3;max-width:280px;">'+t.title+'</div>'
-        +'<div style="font-size:11px;color:'+(overdue?'#e57373':'var(--gold)')+';margin-top:5px;font-family:var(--mono);">'+due+(overdue?' · OVERDUE':'')+'</div>'
+        +'<div style="font-size:11px;color:'+(overdue?'#e57373':'var(--gold)')+';margin-top:5px;font-family:var(--mono);">'+due+(overdue?' · OVERDUE':'')+(t.completed?' · Completed by '+docSafe(t.completedBy||'you'):'')+'</div>'
       +'</div>'
       +'<button onclick="document.getElementById(\'taskDetailPanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;">✕</button>'
     +'</div>'
     +'<div id="taskDetailNotes" style="flex:1;overflow-y:auto;padding:14px 18px;">'+detailsHtml+'</div>'
     +'<div style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.08);">'
       +'<textarea id="taskDetailInput" placeholder="Add a note, idea, or step..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--cream);font-size:13px;padding:10px 12px;resize:none;height:72px;font-family:var(--body);box-sizing:border-box;outline:none;"></textarea>'
+      +'<label style="display:block;margin-top:10px;font-size:11px;color:var(--cream);">Due date <input type="datetime-local" id="taskDueInput" value="'+taskDueInputValue(t.dueDate)+'" onchange="valUpdateTaskDue(\''+id+'\',this.value)" style="display:block;width:100%;margin-top:5px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:8px;color:var(--cream);box-sizing:border-box;"></label>'
       +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
         +'<button class="chip" onclick="saveTaskDetail(\''+id+'\')">+ Add note</button>'
         +'<button class="chip" onclick="brainstormTask(\''+id+'\')">💡 Brainstorm with VAL</button>'
@@ -2293,6 +2302,18 @@ function openTaskDetail(id){
   document.getElementById('taskDetailInput').onkeydown=function(e){
     if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();saveTaskDetail(id);}
   };
+}
+
+function taskDueInputValue(raw){
+  if(!raw)return '';
+  var d=new Date(raw);if(isNaN(d.getTime()))return '';
+  var local=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,16);
+}
+function valUpdateTaskDue(id,value){
+  var t=valTasks.find(function(x){return x.id===id;});if(!t)return;
+  t.dueDate=value?new Date(value).toISOString():new Date(Date.now()+24*60*60*1000).toISOString();
+  valTaskSaveOne(t);refreshTaskUI();
 }
 
 function saveTaskDetail(id){
@@ -2620,13 +2641,12 @@ function editDoc(docId){ openDocPanel(docId); }
 
 // Helper: call Claude API directly (used for doc generation)
 function callClaude(system, user, callback){
-  fetch('https://api.anthropic.com/v1/messages',{
+  apiFetch(PROXY+'/api/claude',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:system,messages:[{role:'user',content:user}]})
-  }).then(r=>r.json()).then(function(d){
-    var text=(d.content||[]).map(function(b){return b.text||'';}).join('');
-    callback(text);
+  }).then(function(d){
+    callback(d.text||'');
   }).catch(function(e){
     addMsg('Error generating document: '+e.message,false);
   });
@@ -4700,15 +4720,20 @@ var addTaskState=null;
 
 // ── GENERAL CHAT OVERLAY ───────────────────────────────
 var gchatHistory=[];
+var gchatConversationId=null;
+var gchatConversationTitle='New conversation';
+var gchatContext=null;
 function openGeneralChat(){
   if(document.getElementById('gchatOverlay')){document.getElementById('gchatOverlay').remove();return;}
   var el=document.createElement('div');
   el.id='gchatOverlay';
   el.style.cssText='position:fixed;inset:0;background:rgba(27,43,69,0.75);z-index:2000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s;backdrop-filter:blur(8px);';
   el.innerHTML=
-    '<div style="width:720px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;background:var(--cream);border-radius:18px;box-shadow:0 24px 80px rgba(27,43,69,0.35);display:flex;flex-direction:column;overflow:hidden;animation:popIn 0.28s var(--spring);">'
+    '<div style="width:960px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;background:var(--cream);border-radius:18px;box-shadow:0 24px 80px rgba(27,43,69,0.35);display:flex;overflow:hidden;animation:popIn 0.28s var(--spring);">'
+      +'<aside style="width:230px;background:#132238;color:white;padding:14px;overflow:auto;flex-shrink:0;"><button onclick="gchatNew()" style="width:100%;padding:9px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;color:white;cursor:pointer;">+ New chat</button><div id="gchatThreads" style="margin-top:12px;font-size:12px;"></div></aside>'
+      +'<div style="display:flex;flex-direction:column;min-width:0;flex:1;">'
       +'<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--navy);flex-shrink:0;">'
-        +'<div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;display:flex;align-items:center;gap:8px;"><span style="color:var(--gold);font-size:0.5rem;">✦</span>General Chat</div>'
+        +'<div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;display:flex;align-items:center;gap:8px;"><span style="color:var(--gold);font-size:0.5rem;">✦</span><span id="gchatTitle">'+docSafe(gchatConversationTitle)+'</span><span id="gchatContextLabel" style="font:11px var(--body);opacity:.75;"></span><button onclick="gchatRename()" title="Rename conversation" style="background:none;border:0;color:#f8d98b;cursor:pointer;">Rename</button></div>'
         +'<button onclick="document.getElementById(\'gchatOverlay\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:20px;padding:0;line-height:1;transition:color 0.2s;" onmouseover="this.style.color=\'white\'" onmouseout="this.style.color=\'rgba(255,255,255,0.5)\'">✕</button>'
       +'</div>'
       +'<div id="gchatMessages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;"></div>'
@@ -4718,11 +4743,48 @@ function openGeneralChat(){
           +'<svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>'
         +'</button>'
       +'</div>'
+      +'</div>'
     +'</div>';
   el.onclick=function(e){if(e.target===el)el.remove();};
   document.body.appendChild(el);
+  gchatRenderHistory();
+  gchatLoadThreads();
   setTimeout(function(){document.getElementById('gchatInput').focus();},100);
 }
+function gchatRenderHistory(){var c=document.getElementById('gchatMessages');if(!c)return;c.innerHTML='';gchatHistory.forEach(function(m){gchatBubble(m.content,m.role==='user');});}
+function gchatNew(){gchatConversationId=null;gchatConversationTitle='New conversation';gchatHistory=[];gchatContext=null;var t=document.getElementById('gchatTitle');if(t)t.textContent=gchatConversationTitle;gchatUpdateContextLabel();gchatRenderHistory();}
+function gchatUpdateContextLabel(){var el=document.getElementById('gchatContextLabel');if(el)el.textContent=gchatContext&&gchatContext.contact?'Linked: '+(gchatContext.contact.name||gchatContext.contact.email||gchatContext.contact.company||'contact'):'';}
+function gchatLoadThreads(){
+  apiFetch(CONVERSATION_HOOK+'?limit=30').then(function(rows){
+    rows=Array.isArray(rows)?rows:[];var el=document.getElementById('gchatThreads');if(!el)return;
+    el.innerHTML=rows.length?rows.map(function(c){return '<button onclick="gchatOpenThread(\''+docSafe(c.id)+'\')" style="display:block;width:100%;text-align:left;padding:8px;margin:4px 0;border:0;border-radius:7px;background:'+(c.id===gchatConversationId?'rgba(201,164,93,.3)':'rgba(255,255,255,.06)')+';color:white;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+docSafe(c.title||'Conversation')+'</button>';}).join(''):'<div style="opacity:.6;padding:8px;">No saved chats yet.</div>';
+  }).catch(function(){});
+}
+function gchatOpenThread(id){
+  apiFetch(CONVERSATION_HOOK+'/'+encodeURIComponent(id)+'/messages').then(function(rows){
+    gchatConversationId=id;gchatHistory=(Array.isArray(rows)?rows:[]).map(function(m){return {role:m.role,content:m.content};});
+    apiFetch(CONVERSATION_HOOK+'?limit=30').then(function(list){var row=(list||[]).find(function(c){return c.id===id;});gchatConversationTitle=row&&row.title||'Conversation';gchatContext=row&&row.metadata&&row.metadata.context||null;var t=document.getElementById('gchatTitle');if(t)t.textContent=gchatConversationTitle;gchatUpdateContextLabel();gchatRenderHistory();gchatLoadThreads();});
+  });
+}
+function gchatRename(){
+  if(!gchatConversationId){addSys('Send the first message before renaming this chat.');return;}
+  var title=prompt('Conversation name',gchatConversationTitle);if(!title||!title.trim())return;
+  apiFetch(CONVERSATION_HOOK+'/'+encodeURIComponent(gchatConversationId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.trim()})}).then(function(){gchatConversationTitle=title.trim();var t=document.getElementById('gchatTitle');if(t)t.textContent=gchatConversationTitle;gchatLoadThreads();loadWsThreads();});
+}
+function gchatSuggestContext(msg){
+  if(gchatContext||!gchatConversationId)return;
+  var match=String(msg||'').match(/\b(?:about|with|for|regarding|email|call|meeting with)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/);if(!match)return;
+  apiFetch(PROXY+'/api/val/context/resolve-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:match[1],transcript:msg})}).then(function(d){
+    if(!d.contact)return;window._gchatSuggestedContact=d.contact;
+    var c=document.getElementById('gchatMessages');if(!c)return;var el=document.createElement('div');el.id='gchatContextSuggestion';el.style.cssText='align-self:flex-start;background:#fff7df;border:1px solid #d8b55b;color:#23324a;border-radius:10px;padding:10px 12px;font-size:12px;';
+    el.innerHTML='Is this conversation about <strong>'+docSafe(d.contact.name||d.contact.email||match[1])+'</strong>'+(d.contact.company?' at '+docSafe(d.contact.company):'')+'? <button onclick="gchatConfirmContext()">Yes, link it</button> <button onclick="gchatEditContext()">Choose another</button> <button onclick="this.parentNode.remove()">No</button>';c.appendChild(el);c.scrollTop=c.scrollHeight;
+  }).catch(function(){});
+}
+function gchatConfirmContext(contact){
+  contact=contact||window._gchatSuggestedContact;if(!contact||!gchatConversationId)return;
+  apiFetch(CONVERSATION_HOOK+'/'+encodeURIComponent(gchatConversationId)+'/context',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({contact:contact,company:contact.company||''})}).then(function(d){gchatContext=d.context;gchatUpdateContextLabel();var s=document.getElementById('gchatContextSuggestion');if(s)s.remove();gchatLoadThreads();});
+}
+function gchatEditContext(){var name=prompt('Who or which company is this conversation about?','');if(!name)return;apiFetch(PROXY+'/api/val/context/resolve-contact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,company:name})}).then(function(d){if(d.contact)gchatConfirmContext(d.contact);else addSys('No matching contact was found. Add the contact to your connected CRM, then try again.');});}
 function gchatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();gchatSend();}}
 function gchatBubble(text,isUser){
   var c=document.getElementById('gchatMessages');if(!c)return;
@@ -4747,13 +4809,14 @@ function gchatSend(){
   typing.textContent='VAL is thinking...';
   document.getElementById('gchatMessages').appendChild(typing);
   document.getElementById('gchatMessages').scrollTop=99999;
-  var sys='You are VAL, executive assistant to GOALL. This is a clean general chat with no dashboard distractions. Be conversational, warm, sharp, and direct. Write like a real person who has opinions and has done the work. No em dashes. No generic AI phrasing. No corporate filler. Do not over-explain. For code: write complete, working, production-quality code. For writing: match the client voice: authoritative, warm, grounded, specific. For strategy: be specific, not generic.';
-  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:gchatHistory})})
-  .then(function(r){return r.json();}).then(function(d){
+  apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:gchatHistory,dashboard:dashData||{},conversationId:gchatConversationId,channel:'general_chat'})})
+  .then(function(d){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
-    var text=(d.content||[]).map(function(b){return b.text||'';}).join('');
+    var text=((d.message&&d.message.content)||d.content||d.text||'').trim();
     gchatHistory.push({role:'assistant',content:text});
     gchatBubble(text,false);
+    if(!gchatConversationTitle||gchatConversationTitle==='New conversation')gchatConversationTitle=msg.slice(0,70);
+    return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:gchatConversationId,title:gchatConversationTitle,source:'general_chat',messages:gchatHistory,metadata:{channel:'general_chat',context:gchatContext}})}).then(function(saved){gchatConversationId=saved.id;var title=document.getElementById('gchatTitle');if(title)title.textContent=gchatConversationTitle;gchatLoadThreads();loadWsThreads();gchatSuggestContext(msg);});
   }).catch(function(e){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
     gchatBubble('Error: '+e.message,false);
@@ -4868,7 +4931,7 @@ function generateSocialPost(){
     if(wrap)wrap.style.display='block';
     if(draftEl){draftEl.value=text;updateSocialChar();}
     document.getElementById('socialActions').innerHTML=
-      '<button class="chip" onclick="sendSocialPost()">🚀 Send to Make</button>'
+      '<button class="chip" onclick="sendSocialPost()">Approve &amp; send to Make</button>'
       +'<button class="chip" onclick="generateSocialPost()">↺ Regenerate</button>'
       +'<button class="chip" onclick="copySocialPost()">⎘ Copy</button>'
       +'<button class="chip" onclick="document.getElementById(\'socialOverlay\').remove()">Done</button>';
@@ -4879,6 +4942,7 @@ function generateSocialPost(){
 function sendSocialPost(){
   var draft=document.getElementById('socialDraft');
   if(!draft||!draft.value.trim()){alert('No post to send.');return;}
+  if(!confirm('Approve this exact draft and send it to the connected Make workflow? VAL will not send or publish it without this confirmation.'))return;
   fetch(SEND_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     type:'social_post',
     platforms:window._socialPlatforms||[],
