@@ -3023,7 +3023,8 @@ const GOOGLE_CLIENT_SECRET_ENV_NAMES = ['GOOGLE_CLIENT_SECRET','GOOGLE_OAUTH_CLI
 const GOOGLE_REDIRECT_URI_ENV_NAMES = ['GOOGLE_REDIRECT_URI','GOOGLE_OAUTH_REDIRECT_URI','REDIRECT_URI'];
 const GOOGLE_CLIENT_ID     = firstEnvValue(GOOGLE_CLIENT_ID_ENV_NAMES);
 const GOOGLE_CLIENT_SECRET = firstEnvValue(GOOGLE_CLIENT_SECRET_ENV_NAMES);
-const REDIRECT_URI         = firstEnvValue(GOOGLE_REDIRECT_URI_ENV_NAMES) || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
+const CONFIGURED_GOOGLE_REDIRECT_URI = firstEnvValue(GOOGLE_REDIRECT_URI_ENV_NAMES);
+const REDIRECT_URI         = CONFIGURED_GOOGLE_REDIRECT_URI || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
 const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
@@ -3058,12 +3059,15 @@ let gmailSyncStatus = {lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',las
 function validGoogleClientId(id=GOOGLE_CLIENT_ID){
   return /^\d+[-\w]*\.apps\.googleusercontent\.com$/.test(String(id||'').trim());
 }
-function googleOAuthConfigProblems(){
+function googleRedirectUri(req=null){
+  return CONFIGURED_GOOGLE_REDIRECT_URI || (req ? `${baseUrl(req)}/auth/callback` : REDIRECT_URI);
+}
+function googleOAuthConfigProblems(req=null){
   const problems=[];
   if(!GOOGLE_CLIENT_ID) problems.push(`Missing ${GOOGLE_CLIENT_ID_ENV_NAMES.join(' or ')}`);
   else if(!validGoogleClientId()) problems.push('GOOGLE_CLIENT_ID does not look like a Google OAuth web client ID ending in .apps.googleusercontent.com');
   if(!GOOGLE_CLIENT_SECRET) problems.push(`Missing ${GOOGLE_CLIENT_SECRET_ENV_NAMES.join(' or ')}`);
-  if(!REDIRECT_URI) problems.push(`Missing ${GOOGLE_REDIRECT_URI_ENV_NAMES.join(' or ')} or VAL_PUBLIC_BASE_URL`);
+  if(!googleRedirectUri(req)) problems.push(`Missing ${GOOGLE_REDIRECT_URI_ENV_NAMES.join(' or ')} or VAL_PUBLIC_BASE_URL`);
   if(IS_PRODUCTION&&!encryptionConfigured()) problems.push('Missing ENCRYPTION_KEY in this Railway service/environment; production OAuth token saves are blocked until it is available at runtime');
   return problems;
 }
@@ -3074,7 +3078,7 @@ function googleOAuthConfigSnapshot(){
     clientIdLooksValid:validGoogleClientId(),
     clientId:maskSecret(GOOGLE_CLIENT_ID),
     clientSecretConfigured:!!GOOGLE_CLIENT_SECRET,
-    redirectUri:REDIRECT_URI,
+    redirectUri:googleRedirectUri(),
     encryptionConfigured:encryptionConfigured(),
     envNames:{
       clientId:GOOGLE_CLIENT_ID_ENV_NAMES,
@@ -3251,13 +3255,14 @@ app.post('/api/claude',async(req,res)=>{
 });
 
 app.get('/auth/google', (req, res) => {
-  const problems=googleOAuthConfigProblems();
+  const problems=googleOAuthConfigProblems(req);
+  const redirectUri=googleRedirectUri(req);
   if(problems.length){
     lastGoogleAuthError=problems.join('; ');
-    return res.status(503).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth is not ready</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(REDIRECT_URI)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(baseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
+    return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth needs configuration</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(redirectUri)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(baseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
   }
   const scopes = GOOGLE_SCOPES.join(' ');
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
   res.redirect(url);
 });
 
@@ -3266,8 +3271,9 @@ app.get('/auth/callback', async (req, res) => {
   const {code} = req.query;
   if(!code) return res.status(400).send('No code received');
   try {
-    const problems=googleOAuthConfigProblems();
+    const problems=googleOAuthConfigProblems(req);
     if(problems.length) throw new Error(problems.join('; '));
+    const redirectUri=googleRedirectUri(req);
     const existingTokens = await loadOAuthTokens('google') || googleTokens || {};
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -3275,7 +3281,7 @@ app.get('/auth/callback', async (req, res) => {
       body: new URLSearchParams({
         code, client_id: GOOGLE_CLIENT_ID,
         client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code'
       })
     });
