@@ -6,6 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
 test('creates the six transcript intelligence staging tables',()=>{
   for(const table of ['transcripts','transcript_participants','transcript_summaries','transcript_tasks','transcript_contact_updates','transcript_action_log']){
@@ -38,4 +39,27 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Participants & Match Confidence/);
   assert.match(ui,/Action Log/);
   assert.match(ui,/Approve & Create/);
+});
+
+test('stores meeting recap templates and renders transcript recap drafts from them',()=>{
+  assert.match(server,/create table if not exists val_templates \(/);
+  assert.match(server,/DEFAULT_MEETING_RECAP_TEMPLATE/);
+  assert.match(server,/app\.get\('\/api\/val\/templates\/:templateKey'/);
+  assert.match(server,/app\.put\('\/api\/val\/templates\/:templateKey'/);
+  assert.match(server,/saveMeetingRecapDraft/);
+  assert.match(server,/renderMeetingRecapTemplate/);
+  assert.match(server,/draftType:'meeting_recap'/);
+  assert.match(server,/htmlBody:rendered\.htmlBody/);
+});
+
+test('exposes drafts and settings templates navigation',()=>{
+  assert.match(ui,/\['drafts','✎','Drafts'\]/);
+  assert.match(ui,/\['settings_templates','▤','Templates'\]/);
+  assert.match(ui,/settings_templates:'openTemplatesPage'/);
+  assert.match(ui,/drafts:'openDraftsPage'/);
+  assert.match(dashboard,/function openTemplatesPage/);
+  assert.match(dashboard,/function openDraftsPage/);
+  assert.match(dashboard,/meetingRecapSubjectTemplate/);
+  assert.match(dashboard,/api\/val\/templates\/meeting_recap/);
+  assert.match(dashboard,/api\/val\/drafts/);
 });

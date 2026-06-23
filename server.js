@@ -1081,7 +1081,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -1680,6 +1680,20 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists val_templates (
+      id text primary key,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      template_key text not null,
+      name text not null,
+      subject_template text not null default '',
+      html_template text not null default '',
+      text_template text not null default '',
+      is_active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,template_key)
+    );
     create table if not exists meeting_transcript_links (
       id text primary key,
       user_id text not null default 'default',
@@ -1788,6 +1802,7 @@ async function initValDb(){
     create index if not exists email_rules_lookup_idx on email_rules(tenant_id,user_id,is_active,rule_type);
     create index if not exists email_action_log_lookup_idx on email_action_log(tenant_id,user_id,action_type,created_at desc);
     create index if not exists drafts_lookup_idx on drafts(tenant_id,user_id,status,created_at desc);
+    create index if not exists val_templates_lookup_idx on val_templates(tenant_id,user_id,template_key,is_active);
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
     create index if not exists val_calendar_events_lookup_idx on val_calendar_events(tenant_id,user_id,start_time desc);
   `);
@@ -5686,6 +5701,130 @@ app.get('/api/val/tasks',async(req,res)=>{try{res.json(await loadTasks());}catch
 app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!task.id)return res.status(400).json({error:'Missing task id'});await saveTask(task);res.json({ok:true,task});}catch(e){res.status(500).json({error:e.message});}});
 app.put('/api/val/tasks',async(req,res)=>{try{if(!Array.isArray(req.body))return res.status(400).json({error:'Expected array'});await replaceTasks(req.body);res.json({ok:true,count:req.body.length});}catch(e){res.status(500).json({error:e.message});}});
 app.delete('/api/val/tasks/:id',async(req,res)=>{try{await deleteTask(req.params.id);res.json({ok:true});}catch(e){res.status(500).json({error:e.message});}});
+
+const MEETING_RECAP_TEMPLATE_KEY='meeting_recap';
+const DEFAULT_MEETING_RECAP_TEMPLATE={
+  templateKey:MEETING_RECAP_TEMPLATE_KEY,
+  name:'Meeting Recap Template',
+  subjectTemplate:'Recap: {{meeting_title}}',
+  htmlTemplate:[
+    '<p>Hi {{recipient_first_name}},</p>',
+    '<p>Thank you for the conversation. Here is the recap from <strong>{{meeting_title}}</strong>.</p>',
+    '<h3>Executive summary</h3>',
+    '<p>{{executive_summary}}</p>',
+    '<h3>Key decisions</h3>',
+    '<ul>{{key_decisions_html}}</ul>',
+    '<h3>Open questions</h3>',
+    '<ul>{{open_questions_html}}</ul>',
+    '<h3>Next steps</h3>',
+    '<ul>{{tasks_html}}</ul>',
+    '<p>Best,</p>'
+  ].join('\n'),
+  textTemplate:[
+    'Hi {{recipient_first_name}},',
+    '',
+    'Thank you for the conversation. Here is the recap from {{meeting_title}}.',
+    '',
+    'Executive summary:',
+    '{{executive_summary}}',
+    '',
+    'Key decisions:',
+    '{{key_decisions_text}}',
+    '',
+    'Open questions:',
+    '{{open_questions_text}}',
+    '',
+    'Next steps:',
+    '{{tasks_text}}',
+    '',
+    'Best,'
+  ].join('\n')
+};
+function templatePgRow(row){
+  return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,templateKey:row.template_key,name:row.name,subjectTemplate:row.subject_template||'',htmlTemplate:row.html_template||'',textTemplate:row.text_template||'',isActive:row.is_active!==false,createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
+}
+function systemTemplate(key){
+  if(key===MEETING_RECAP_TEMPLATE_KEY)return {...DEFAULT_MEETING_RECAP_TEMPLATE,id:'system_'+key,userId:currentUserId(),tenantId:tenantId(),isActive:true,systemDefault:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  return null;
+}
+async function getActiveTemplate(key){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from val_templates where tenant_id=$1 and user_id=$2 and template_key=$3 and is_active=true order by updated_at desc limit 1',[tenantId(),currentUserId(),key]);
+    return r.rows[0]?templatePgRow(r.rows[0]):systemTemplate(key);
+  }
+  const row=(valStore().templates||[]).filter(t=>t.tenantId===tenantId()&&t.userId===currentUserId()&&t.templateKey===key&&t.isActive!==false).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
+  return row||systemTemplate(key);
+}
+async function saveTemplate(key,payload={}){
+  const base=systemTemplate(key);
+  if(!base)throw new Error('Unknown template key');
+  const template={id:payload.id||uuid('tmpl'),userId:currentUserId(),tenantId:tenantId(),templateKey:key,name:payload.name||base.name,subjectTemplate:String(payload.subjectTemplate??payload.subject_template??base.subjectTemplate),htmlTemplate:String(payload.htmlTemplate??payload.html_template??base.htmlTemplate),textTemplate:String(payload.textTemplate??payload.text_template??base.textTemplate),isActive:payload.isActive!==false,createdAt:payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(pgPool){
+    const r=await dbQuery(`
+      insert into val_templates (id,user_id,tenant_id,template_key,name,subject_template,html_template,text_template,is_active,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10::timestamptz,now()),now())
+      on conflict (tenant_id,user_id,template_key) do update set name=excluded.name,subject_template=excluded.subject_template,html_template=excluded.html_template,text_template=excluded.text_template,is_active=excluded.is_active,updated_at=now()
+      returning *
+    `,[template.id,template.userId,template.tenantId,template.templateKey,template.name,template.subjectTemplate,template.htmlTemplate,template.textTemplate,template.isActive,template.createdAt]);
+    return templatePgRow(r.rows[0]);
+  }
+  const store=valStore();store.templates=store.templates||[];
+  const idx=store.templates.findIndex(t=>t.tenantId===template.tenantId&&t.userId===template.userId&&t.templateKey===template.templateKey);
+  if(idx>=0)store.templates[idx]={...store.templates[idx],...template}; else store.templates.unshift(template);
+  saveValStore(store);return template;
+}
+function renderTemplateString(source,vars){
+  return String(source||'').replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g,(_,key)=>String(vars[key]??''));
+}
+function escapeHtml(value){
+  return String(value==null?'':value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function htmlList(items){
+  const list=(Array.isArray(items)?items:[]).map(x=>String(typeof x==='string'?x:x?.title||x?.text||x?.taskTitle||'').trim()).filter(Boolean);
+  return list.length?list.map(x=>`<li>${escapeHtml(x)}</li>`).join('\n'):'<li>None captured.</li>';
+}
+function textList(items){
+  const list=(Array.isArray(items)?items:[]).map(x=>String(typeof x==='string'?x:x?.title||x?.text||x?.taskTitle||'').trim()).filter(Boolean);
+  return list.length?list.map(x=>`- ${x}`).join('\n'):'- None captured.';
+}
+function firstName(name){return String(name||'there').trim().split(/\s+/)[0]||'there';}
+async function renderMeetingRecapTemplate({transcriptId,title,summary,participants,tasks,sourceQuote}){
+  const template=await getActiveTemplate(MEETING_RECAP_TEMPLATE_KEY);
+  const recipient=(participants||[]).find(p=>!isOwnerRelationship({name:p.matchedContactName||p.speakerNameRaw,email:p.matchedEmail||''}))||participants?.[0]||{};
+  const vars={
+    meeting_title:title||'Meeting',
+    transcript_id:transcriptId||'',
+    recipient_name:recipient.matchedContactName||recipient.speakerNameRaw||'there',
+    recipient_first_name:firstName(recipient.matchedContactName||recipient.speakerNameRaw),
+    executive_summary:summary?.executiveSummary||summary?.summary||'Summary pending.',
+    client_summary:summary?.clientSummary||'',
+    internal_notes:summary?.internalNotes||'',
+    key_decisions_html:htmlList(summary?.keyDecisions),
+    key_decisions_text:textList(summary?.keyDecisions),
+    open_questions_html:htmlList(summary?.openQuestions),
+    open_questions_text:textList(summary?.openQuestions),
+    relationship_updates_html:htmlList(summary?.relationshipUpdates),
+    relationship_updates_text:textList(summary?.relationshipUpdates),
+    tasks_html:htmlList(tasks),
+    tasks_text:textList(tasks),
+    source_quote:sourceQuote||''
+  };
+  return {template,subject:renderTemplateString(template.subjectTemplate,vars).trim()||`Recap: ${title||'Meeting'}`,htmlBody:renderTemplateString(template.htmlTemplate,vars),textBody:renderTemplateString(template.textTemplate,vars),vars};
+}
+async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText}){
+  const rendered=await renderMeetingRecapTemplate({transcriptId,title,summary,participants,tasks,sourceQuote:transcriptSupportingQuote(transcriptText,'')});
+  const existing=(await listDrafts()).find(d=>d.draftType==='meeting_recap'&&d.sourceContext?.transcriptId===transcriptId);
+  return saveInternalDraft({id:existing?.id,draftType:'meeting_recap',provider:'internal',subject:rendered.subject,body:rendered.textBody,status:'draft',sourceContext:{...(existing?.sourceContext||{}),source:'transcript_intelligence',transcriptId,transcriptTitle:title,templateKey:MEETING_RECAP_TEMPLATE_KEY,templateId:rendered.template.id,htmlBody:rendered.htmlBody,plainTextBody:rendered.textBody}});
+}
+app.get('/api/val/templates/:templateKey',async(req,res)=>{
+  try{const template=await getActiveTemplate(req.params.templateKey);if(!template)return res.status(404).json({ok:false,error:'Template not found'});res.json({ok:true,template});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.put('/api/val/templates/:templateKey',async(req,res)=>{
+  try{res.json({ok:true,template:await saveTemplate(req.params.templateKey,req.body||{})});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 
 function rowToDraft(row){
   return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,draftType:row.draft_type,contactId:row.contact_id||'',provider:row.provider,subject:row.subject||'',body:row.body||'',status:row.status,sourceContext:row.source_context_json||{},createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
@@ -10092,7 +10231,9 @@ async function processTranscriptPayload(payload){
     const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
     await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
-  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const saved=await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,sourceQuote:transcriptSupportingQuote(transcript,draft.sourceQuote)}});createdDrafts.push(saved);await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
+  const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
+  if(recapDraft){createdDrafts.push(recapDraft);await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
+  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote:transcriptSupportingQuote(transcript,draft.sourceQuote)}});createdDrafts.push(saved);await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
   return {analysis:parsed,summary,participants,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
@@ -10209,8 +10350,9 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
     if(action==='draft_followup'){
-      const firstName=String(transcript.contactName||'there').split(/\s+/)[0],next=String(transcript.actionItems.map(item=>typeof item==='string'?item:item.title||item.text).filter(Boolean)[0]||'keep the next step moving').replace(/[.!?]+$/,'');
-      const draft=await saveInternalDraft({draftType:'follow_up',provider:'internal',subject:`Follow-up: ${transcript.title}`,body:`Hi ${firstName},\n\nThank you for the conversation. ${transcript.summary||'I wanted to follow up while the discussion is still fresh.'}\n\nNext step: ${next}.\n\nBest,`,status:'draft',sourceContext:{source:'transcript',transcriptId:transcript.id,contactName:transcript.contactName||''}});
+      const summary=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.preview||''};
+      const existingTasks=(transcript.tasks||[]).length?transcript.tasks:transcript.actionItems||[];
+      const draft=await saveMeetingRecapDraft({transcriptId:transcript.id,title:transcript.title,summary,participants:transcript.participants||[],tasks:existingTasks,transcriptText:transcript.transcriptText||''});
       await logTranscriptAction(transcript.id,'email_draft_created',draft.id||'','completed');return res.json({ok:true,draft});
     }
     if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
