@@ -9,10 +9,9 @@ It prepares you for meetings, protects follow-up, organizes commitments by perso
 New to VAL? Start with these four moves.
 
 1. [Tell VAL about yourself](#tell-me-about-yourself)
-2. [Open the Executive Command Center](#command-center)
-3. [Review Email Intelligence and Inbox Command](#email-intelligence)
-4. [Open Transcript Intelligence](#transcript-intelligence)
-5. [Calendarize open tasks](#calendarized-tasks)
+2. [Run Relationship Review](#relationship-review)
+3. [Review meeting prep](#meeting-prep)
+4. [Open the Approval Queue](#approval-queue)
 
 ## Quick Links
 
@@ -21,16 +20,13 @@ New to VAL? Start with these four moves.
 - [Relationship Review](#relationship-review)
 - [Relationship Radar](#relationship-radar)
 - [Email Intelligence](#email-intelligence)
-- [Inbox Command](#inbox-command)
 - [Integration Status](#integration-status)
 - [Register Your Keys](#register-your-keys)
-- [Transcript Intelligence](#transcript-intelligence)
 - [Transcript Webhook](#transcript-webhook)
 - [Meeting prep](#meeting-prep)
 - [Follow-ups and drafts](#follow-ups-and-drafts)
 - [Approval Queue](#approval-queue)
 - [Tasks by relationship](#tasks-by-relationship)
-- [Calendarized Tasks](#calendarized-tasks)
 - [Contact Command Center](#contact-command-center)
 - [Integrity Tracker](#integrity-tracker)
 - [Use My Saved Time](#use-my-saved-time)
@@ -193,21 +189,6 @@ Use it for:
 
 If Gmail is not connected or does not have the right permissions, VAL will now show that clearly instead of silently returning nothing.
 
-### Inbox Command
-
-What you can do with it: ask VAL to find, summarize, and prepare action on specific emails in plain English.
-
-How this helps: instead of searching Gmail or Outlook manually, you can say what you remember and let VAL bring back the likely thread with safe next actions.
-
-Try asking:
-
-- "Find the email from Bill about next week's event."
-- "Summarize the thread with Jordan about the intro."
-- "Draft a reply to the investor email from yesterday."
-- "Create a task from that email."
-
-Inbox Command can search Gmail and Outlook when connected. It can summarize a selected message, create an internal task, prepare a reply draft, or prepare a forward draft. It does not directly send email; drafts stay in VAL for review.
-
 ### Integration Status
 
 What you can do with it: check whether VAL's key data pipes are working.
@@ -224,23 +205,6 @@ Use it when:
 - a client says something feels disconnected
 
 The status view shows connection state, missing scopes, recent Gmail counts, recent Calendar counts, transcript counts, matched meeting transcripts, and whether task/draft creation is available.
-
-### Transcript Intelligence
-
-What you can do with it: open every saved transcript, see the summary, trace extracted tasks, review participant matches, approve uncertain CRM updates, and create follow-up drafts.
-
-How this helps: meetings stop becoming loose notes. VAL turns conversation into usable memory, visible commitments, recap drafts, and reviewable actions with evidence attached.
-
-Use it for:
-
-- recent meeting transcript review
-- action items extracted from calls
-- participant and contact matching
-- contact updates suggested from the conversation
-- recap drafts and follow-up emails
-- asking VAL questions about one specific transcript
-
-The transcript inbox shows received transcripts, review count, task count, summary status, and processing status. The review queue keeps uncertain participant matches, tasks, and contact updates waiting for approval instead of silently changing the CRM.
 
 ### Transcript Webhook
 
@@ -335,21 +299,6 @@ Try asking:
 - "What tasks are tied to Sarah?"
 - "Show me open loops by contact."
 - "What did I promise this person?"
-
-### Calendarized Tasks
-
-What you can do with it: turn an open VAL task into a protected private work block on the calendar.
-
-How this helps: important commitments stop sitting passively in a task list. VAL suggests time, creates a private busy block with no attendees or meeting link, and keeps the task connected to the calendar evidence.
-
-Use it when:
-
-- a task needs focused time instead of another reminder
-- open loops are piling up
-- you want VAL to protect a work block before the day fills up
-- a transcript or email created a task that now needs execution time
-
-Calendarized tasks can be rescheduled. Completing the task keeps the calendar history attached so VAL can still see what happened.
 
 ### Contact Command Center
 
@@ -752,20 +701,6 @@ For each task, VAL can:
 - propose CRM updates
 - create talking points
 - help decide whether to do, delegate, defer, or delete
-
-### Calendarize A Task
-
-Task cards include Calendarize or Reschedule when the task is still open.
-
-Flow:
-
-1. VAL looks for a suggested work block.
-2. The user confirms the time.
-3. VAL creates a private busy calendar event.
-4. The task shows its scheduled time.
-5. Completing the task preserves the scheduling evidence.
-
-This is intentionally not a meeting. It has no attendees, no conference link, and private visibility.
 
 ## 7. Meetings and Calendar
 
@@ -1249,22 +1184,6 @@ Common body fields:
 
 Deletes a task.
 
-`GET /api/val/tasks/open-loops`
-
-Returns open, overdue, unscheduled, and calendarized task context.
-
-`POST /api/val/tasks/:id/suggest-time`
-
-Suggests protected work blocks for a task.
-
-`POST /api/val/tasks/:id/calendarize`
-
-Creates or updates a private busy calendar block for a task. These blocks have no attendees and no meeting link.
-
-`POST /api/val/tasks/:id/complete`
-
-Marks the task complete and keeps the calendar evidence attached.
-
 ### VAL Chat
 
 `POST /api/val/chat`
@@ -1310,10 +1229,6 @@ Common body fields:
 
 ### VAL Transcripts
 
-`GET /api/val/transcripts`
-
-Returns saved transcript inbox records with processing, review, summary, and task counts.
-
 `POST /api/val/transcripts`
 
 Receives transcripts from a transcription app, Make.com, or another automation.
@@ -1343,56 +1258,6 @@ Common body fields:
 - `title`
 - `source`
 - `metadata`
-
-`GET /api/val/transcripts/review`
-
-Returns transcript participant matches, staged tasks, and contact updates that need approval.
-
-`GET /api/val/transcripts/:transcriptId`
-
-Returns the transcript detail view, including full transcript text when available, summary, participants, staged tasks, contact updates, action log, and linked recap drafts.
-
-`POST /api/val/transcripts/tasks/:taskId/approve`
-
-Approves a staged transcript task and promotes it into the main VAL task system.
-
-`POST /api/val/transcripts/participants/:participantId/approve`
-
-Approves or confirms the matched CRM contact for a transcript participant.
-
-`POST /api/val/transcripts/contact-updates/:updateId/approve`
-
-Approves a suggested CRM contact update from transcript evidence.
-
-`POST /api/val/transcripts/:transcriptId/actions`
-
-Runs user-approved transcript actions such as creating a task or creating a recap/follow-up draft.
-
-### Email Intelligence
-
-`GET /api/email/intelligence`
-
-Returns classified email buckets such as priority inbox, drafts prepared, waiting on response, forwarding suggestions, ignored/low priority, rule suggestions, and saved rules.
-
-`POST /api/email/gmail/refresh`
-
-Refreshes Gmail sync and analysis.
-
-`POST /api/email/inbox-command`
-
-Searches connected Gmail and Outlook using a natural-language user command.
-
-`POST /api/email/inbox-command/action`
-
-Runs safe follow-up actions on a selected email, such as summarize, create task, prepare reply draft, or prepare forward draft.
-
-`POST /api/email/actions`
-
-Runs a suggested action from Email Intelligence and logs the action.
-
-`POST /api/email/automation-rule`
-
-Creates a user-confirmed rule for repeated email patterns.
 
 ### VAL Memory
 
