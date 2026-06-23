@@ -63,6 +63,7 @@ const CLIENT_CONFIG = {
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
 const DEMO_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_DEMO_MODE || ''));
+const IS_PRODUCTION = process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
 const VAL_SIGNUP_URL = process.env.VAL_SIGNUP_URL || 'https://graceintelligence.com/val';
 const GHL_KEY = process.env.GHL_KEY || process.env.GHL_API_KEY;
 const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
@@ -190,6 +191,13 @@ const WESTWOOD_PRIORITY_INDUSTRIES = [
 ];
 let rocketReachLimitedUntil = 0;
 const requestContext = new AsyncLocalStorage();
+const SECURITY_ROLE_PERMISSIONS = {
+  owner:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage','support:manage','data:export','data:delete'],
+  admin:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage'],
+  member:['email:read','calendar:read','transcript:read','contact:read','contact:write'],
+  assistant:['email:read','calendar:read','transcript:read','contact:read'],
+  read_only:['calendar:read','transcript:read','contact:read']
+};
 const GHL_LEAD_FIELD_IDS = {
   lead_source_system: process.env.GHL_FIELD_LEAD_SOURCE_SYSTEM || '',
   lead_ingested_at: process.env.GHL_FIELD_LEAD_INGESTED_AT || '',
@@ -1154,6 +1162,50 @@ function authLog(event,details={}){
   if(safe.token) delete safe.token;
   console.log(`[auth] ${event}`,safe);
 }
+function requestIp(req){
+  return String(req.headers['x-forwarded-for']||req.socket?.remoteAddress||'').split(',')[0].trim();
+}
+function requestUserAgent(req){
+  return String(req.headers['user-agent']||'').slice(0,500);
+}
+function redactSecurityValue(value){
+  if(value==null) return value;
+  if(typeof value==='string'){
+    if(/ya29\.|refresh_token|access_token|id_token|Bearer\s+|sk-[A-Za-z0-9]|gho_|ghp_|xox[baprs]-/i.test(value)) return '[REDACTED]';
+    if(value.length>1200) return value.slice(0,1200)+'…';
+    return value;
+  }
+  if(Array.isArray(value)) return value.map(redactSecurityValue);
+  if(typeof value==='object'){
+    const out={};
+    for(const [k,v] of Object.entries(value)){
+      out[k]=/(token|secret|password|authorization|api[_-]?key|refresh|access)/i.test(k)?'[REDACTED]':redactSecurityValue(v);
+    }
+    return out;
+  }
+  return value;
+}
+function userHasPermission(user,permission){
+  const role=String(user?.role||'owner').toLowerCase();
+  return (SECURITY_ROLE_PERMISSIONS[role]||SECURITY_ROLE_PERMISSIONS.read_only||[]).includes(permission);
+}
+function requirePermission(permission){
+  return function(req,res,next){
+    if(DEMO_MODE) return next();
+    if(userHasPermission(req.valUser,permission)) return next();
+    auditLog({req,action:'permission_denied',resourceType:'security',resourceId:permission,metadata:{role:req.valUser?.role||''},success:false}).catch(()=>{});
+    return res.status(403).json({ok:false,error:'Permission denied'});
+  };
+}
+async function auditLog({tenantId:tenant=tenantId(),userId=currentUserId(),action,resourceType='',resourceId='',metadata={},success=true,req=null}={}){
+  const record={id:uuid('audit'),tenantId:tenant,userId:userId||'',action:String(action||'unknown'),resourceType:String(resourceType||''),resourceId:String(resourceId||''),ipAddress:req?requestIp(req):'',userAgent:req?requestUserAgent(req):'',metadata:redactSecurityValue(metadata||{}),success:success!==false,createdAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery('insert into security_audit_logs (id,tenant_id,user_id,action,resource_type,resource_id,ip_address,user_agent,metadata,success,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[record.id,record.tenantId,record.userId,record.action,record.resourceType,record.resourceId,record.ipAddress,record.userAgent,JSON.stringify(record.metadata),record.success,record.createdAt]);
+  }else{
+    const store=valStore();store.securityAuditLogs=store.securityAuditLogs||[];store.securityAuditLogs.push(record);saveValStore(store);
+  }
+  return record;
+}
 function publicUser(user){
   if(!user) return null;
   return {id:user.id,email:user.email,name:user.name,role:user.role||'owner'};
@@ -1312,6 +1364,9 @@ function encryptionKeyBuffer(){
   }catch(e){}
   return crypto.createHash('sha256').update(raw).digest();
 }
+function encryptionConfigured(){
+  return !!encryptionKeyBuffer();
+}
 function encryptSecret(value){
   const key=encryptionKeyBuffer();
   if(!key) throw new Error('ENCRYPTION_KEY is required to save credentials');
@@ -1334,6 +1389,43 @@ function maskSecret(value){
   if(!v) return '';
   if(v.length<=8) return '••••';
   return `${v.slice(0,Math.min(4,v.length-4))}...${v.slice(-4)}`;
+}
+const OAUTH_SECRET_FIELDS=['access_token','refresh_token','id_token'];
+function encryptOAuthTokens(tokens){
+  const copy={...(tokens||{})};
+  for(const field of OAUTH_SECRET_FIELDS){
+    if(typeof copy[field]==='string'&&copy[field]){
+      if(!encryptionConfigured()){
+        if(IS_PRODUCTION) throw new Error('ENCRYPTION_KEY is required to save OAuth tokens in production');
+        console.warn('ENCRYPTION_KEY missing; storing OAuth token without encryption in non-production.');
+        continue;
+      }
+      copy[field]={encrypted:true,value:encryptSecret(copy[field])};
+    }
+  }
+  copy.secret_storage=encryptionConfigured()?'encrypted':'legacy_plaintext';
+  return copy;
+}
+function decryptOAuthTokens(tokens){
+  const copy={...(tokens||{})};
+  for(const field of OAUTH_SECRET_FIELDS){
+    if(copy[field]&&typeof copy[field]==='object'&&copy[field].encrypted){
+      copy[field]=decryptSecret(copy[field].value);
+    }
+  }
+  return copy;
+}
+function publicOAuthTokens(tokens){
+  const t=tokens||{};
+  return {
+    scope:t.scope||'',
+    issued_at:t.issued_at||0,
+    expires_in:t.expires_in||0,
+    token_type:t.token_type||'',
+    hasAccessToken:!!t.access_token,
+    hasRefreshToken:!!t.refresh_token,
+    secretStorage:t.secret_storage||(/object/.test(typeof t.refresh_token)?'encrypted':'legacy_plaintext')
+  };
 }
 function normalizeCredentialRow(row){
   if(!row) return null;
@@ -1455,15 +1547,15 @@ async function markCredentialStatus(provider,status){
   });
   saveValStore(store);
 }
-async function createSession(userId){
+async function createSession(userId,req=null){
   const id=uuid('sess');
   const expires=new Date(Date.now()+14*24*60*60*1000).toISOString();
   if(pgPool){
-    await dbQuery('insert into val_sessions (id,user_id,client_slug,expires_at) values ($1,$2,$3,$4)',[id,userId,CLIENT_CONFIG.clientSlug,expires]);
+    await dbQuery('insert into val_sessions (id,user_id,client_slug,tenant_id,ip_address,user_agent,expires_at) values ($1,$2,$3,$4,$5,$6,$7)',[id,userId,CLIENT_CONFIG.clientSlug,tenantId(),req?requestIp(req):'',req?requestUserAgent(req):'',expires]);
   }else{
     const store=valStore();
     store.sessions=store.sessions||[];
-    store.sessions.push({id,userId,clientSlug:CLIENT_CONFIG.clientSlug,expiresAt:expires});
+    store.sessions.push({id,userId,clientSlug:CLIENT_CONFIG.clientSlug,tenantId:tenantId(),ipAddress:req?requestIp(req):'',userAgent:req?requestUserAgent(req):'',lastActiveAt:new Date().toISOString(),expiresAt:expires});
     saveValStore(store);
   }
   return id;
@@ -1473,23 +1565,149 @@ async function getSessionUser(req){
   const sessionId=verifySignedSession(signed);
   if(!sessionId) return null;
   if(pgPool){
-    const r=await dbQuery(`select u.id,u.email,u.name,u.role from val_sessions s join val_users u on u.id=s.user_id where s.id=$1 and s.expires_at>now() limit 1`,[sessionId]);
+    await dbQuery('update val_sessions set last_active_at=now() where id=$1 and tenant_id=$2',[sessionId,tenantId()]).catch(()=>{});
+    const r=await dbQuery(`select u.id,u.email,u.name,u.role from val_sessions s join val_users u on u.id=s.user_id where s.id=$1 and s.tenant_id=$2 and s.expires_at>now() limit 1`,[sessionId,tenantId()]);
     return r&&r.rows&&r.rows[0]?publicUser(r.rows[0]):null;
   }
   const store=valStore();
-  const session=(store.sessions||[]).find(s=>s.id===sessionId&&new Date(s.expiresAt).getTime()>Date.now());
+  const session=(store.sessions||[]).find(s=>s.id===sessionId&&(s.tenantId||CLIENT_CONFIG.clientSlug)===tenantId()&&new Date(s.expiresAt).getTime()>Date.now());
   if(!session) return null;
+  session.lastActiveAt=new Date().toISOString();saveValStore(store);
   return publicUser((store.users||[]).find(u=>u.id===session.userId));
 }
 async function destroySession(req){
   const sessionId=verifySignedSession(parseCookies(req)[SESSION_COOKIE]);
   if(!sessionId) return;
-  if(pgPool) await dbQuery('delete from val_sessions where id=$1',[sessionId]);
+  if(pgPool) await dbQuery('delete from val_sessions where id=$1 and tenant_id=$2',[sessionId,tenantId()]);
   else{
     const store=valStore();
     store.sessions=(store.sessions||[]).filter(s=>s.id!==sessionId);
     saveValStore(store);
   }
+}
+function currentSessionId(req){
+  return verifySignedSession(parseCookies(req)[SESSION_COOKIE]);
+}
+function rowToSecurityAudit(row){
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId,
+    userId:row.user_id||row.userId||'',
+    action:row.action,
+    resourceType:row.resource_type||row.resourceType||'',
+    resourceId:row.resource_id||row.resourceId||'',
+    ipAddress:row.ip_address||row.ipAddress||'',
+    userAgent:row.user_agent||row.userAgent||'',
+    metadata:row.metadata||{},
+    success:row.success!==false,
+    createdAt:row.created_at?row.created_at.toISOString():row.createdAt
+  };
+}
+async function listSecurityAuditLogs(limit=100){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from security_audit_logs where tenant_id=$1 order by created_at desc limit $2',[tenantId(),Math.min(Number(limit)||100,250)]);
+    return r.rows.map(rowToSecurityAudit);
+  }
+  return (valStore().securityAuditLogs||[]).filter(a=>a.tenantId===tenantId()).slice(-Math.min(Number(limit)||100,250)).reverse();
+}
+async function getSupportAccess(){
+  await valDbReady;
+  const fallback={supportAccessEnabled:false,supportAccessExpiresAt:null,supportAccessGrantedBy:'',supportAccessReason:''};
+  if(pgPool){
+    const r=await dbQuery('select * from tenant_support_access where tenant_id=$1 limit 1',[tenantId()]);
+    const row=r.rows[0];
+    if(!row)return fallback;
+    const expired=row.support_access_expires_at&&new Date(row.support_access_expires_at).getTime()<Date.now();
+    return {supportAccessEnabled:!!row.support_access_enabled&&!expired,supportAccessExpiresAt:row.support_access_expires_at?row.support_access_expires_at.toISOString():null,supportAccessGrantedBy:row.support_access_granted_by||'',supportAccessReason:row.support_access_reason||'',expired};
+  }
+  const row=(valStore().supportAccess||{})[tenantId()]||fallback;
+  const expired=row.supportAccessExpiresAt&&new Date(row.supportAccessExpiresAt).getTime()<Date.now();
+  return {...fallback,...row,supportAccessEnabled:!!row.supportAccessEnabled&&!expired,expired};
+}
+async function setSupportAccess({enabled,expiresAt='',reason='',grantedBy=''}){
+  const record={supportAccessEnabled:!!enabled,supportAccessExpiresAt:enabled?(expiresAt||new Date(Date.now()+2*60*60*1000).toISOString()):null,supportAccessGrantedBy:grantedBy||currentUserId(),supportAccessReason:enabled?String(reason||'Temporary support access requested by owner'):'',updatedAt:new Date().toISOString()};
+  if(pgPool){
+    await dbQuery(`insert into tenant_support_access (tenant_id,support_access_enabled,support_access_expires_at,support_access_granted_by,support_access_reason,updated_at)
+      values ($1,$2,$3,$4,$5,now())
+      on conflict (tenant_id) do update set support_access_enabled=excluded.support_access_enabled,support_access_expires_at=excluded.support_access_expires_at,support_access_granted_by=excluded.support_access_granted_by,support_access_reason=excluded.support_access_reason,updated_at=now()`,[tenantId(),record.supportAccessEnabled,record.supportAccessExpiresAt,record.supportAccessGrantedBy,record.supportAccessReason]);
+  }else{
+    const store=valStore();store.supportAccess=store.supportAccess||{};store.supportAccess[tenantId()]=record;saveValStore(store);
+  }
+  return getSupportAccess();
+}
+async function listActiveSecuritySessions(){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select s.id,s.user_id,u.email,u.name,u.role,s.ip_address,s.user_agent,s.last_active_at,s.created_at,s.expires_at
+      from val_sessions s left join val_users u on u.id=s.user_id
+      where s.tenant_id=$1 and s.expires_at>now()
+      order by s.last_active_at desc nulls last limit 100`,[tenantId()]);
+    return r.rows.map(row=>({id:row.id,userId:row.user_id,email:row.email||'',name:row.name||'',role:row.role||'',ipAddress:row.ip_address||'',userAgent:row.user_agent||'',lastActiveAt:row.last_active_at?row.last_active_at.toISOString():null,createdAt:row.created_at?row.created_at.toISOString():null,expiresAt:row.expires_at?row.expires_at.toISOString():null}));
+  }
+  const users=valStore().users||[];
+  return (valStore().sessions||[]).filter(s=>(s.tenantId||CLIENT_CONFIG.clientSlug)===tenantId()&&new Date(s.expiresAt||0)>new Date()).map(s=>{const u=users.find(x=>x.id===s.userId)||{};return {id:s.id,userId:s.userId,email:u.email||'',name:u.name||'',role:u.role||'',ipAddress:s.ipAddress||'',userAgent:s.userAgent||'',lastActiveAt:s.lastActiveAt||s.createdAt||'',createdAt:s.createdAt||'',expiresAt:s.expiresAt||''};}).reverse();
+}
+async function revokeSecuritySession(sessionId){
+  if(pgPool) await dbQuery('delete from val_sessions where id=$1 and tenant_id=$2',[sessionId,tenantId()]);
+  else{
+    const store=valStore();store.sessions=(store.sessions||[]).filter(s=>!(s.id===sessionId&&(s.tenantId||CLIENT_CONFIG.clientSlug)===tenantId()));saveValStore(store);
+  }
+}
+async function securityCenterPayload(req){
+  const [googleStatus,microsoftSaved,credentials,sessions,auditLogs,support]=await Promise.all([
+    getGoogleConnectionStatus(GOOGLE_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:GOOGLE_SCOPES})),
+    loadOAuthTokens('microsoft').catch(()=>null),
+    listIntegrationCredentials(currentUserId()).catch(()=>[]),
+    listActiveSecuritySessions().catch(()=>[]),
+    listSecurityAuditLogs(120).catch(()=>[]),
+    getSupportAccess().catch(()=>({supportAccessEnabled:false}))
+  ]);
+  const microsoftToken=await getMicrosoftToken().catch(()=>null);
+  const lastSecurityActivity=auditLogs[0]?.createdAt||'';
+  const gmailConnected=googleStatus.connected&&!googleStatus.missingScopes?.includes('https://www.googleapis.com/auth/gmail.readonly');
+  const googleCalendarConnected=googleStatus.connected&&!googleStatus.missingScopes?.includes('https://www.googleapis.com/auth/calendar.readonly');
+  const ghlConnected=credentials.some(c=>c.provider==='ghl'&&/connected|saved|not tested/i.test(String(c.status||'')))||!!(GHL_KEY&&GHL_LOC);
+  const connectedAccounts=[
+    {provider:'gmail',label:'Gmail',connected:!!gmailConnected,lastSuccessfulSync:gmailSyncStatus.lastSuccessfulSyncAt||'',lastFailedSync:gmailSyncStatus.lastError?gmailSyncStatus.lastAttemptAt:'',error:gmailSyncStatus.lastError||googleStatus.error||'',reconnectUrl:'/auth/google',disconnectProvider:'google'},
+    {provider:'google_calendar',label:'Google Calendar',connected:!!googleCalendarConnected,lastSuccessfulSync:'',lastFailedSync:googleStatus.error?new Date().toISOString():'',error:googleStatus.error||'',reconnectUrl:'/auth/google',disconnectProvider:'google'},
+    {provider:'outlook',label:'Outlook Mail',connected:!!microsoftToken,lastSuccessfulSync:'',lastFailedSync:'',error:microsoftSaved?'':'Microsoft not connected',reconnectUrl:'/auth/microsoft',disconnectProvider:'microsoft'},
+    {provider:'microsoft_calendar',label:'Microsoft Calendar',connected:!!microsoftToken,lastSuccessfulSync:'',lastFailedSync:'',error:microsoftSaved?'':'Microsoft not connected',reconnectUrl:'/auth/microsoft',disconnectProvider:'microsoft'},
+    {provider:'ghl',label:'GHL / CRM',connected:!!ghlConnected,lastSuccessfulSync:'',lastFailedSync:'',error:ghlConnected?'':'GHL not configured',reconnectUrl:'',disconnectProvider:'ghl'}
+  ];
+  const dataSources=[
+    {name:'Email',access:!!(gmailConnected||microsoftToken),scope:'Read/search connected inbox metadata and snippets; drafts require approval.'},
+    {name:'Calendar',access:!!(googleCalendarConnected||microsoftToken),scope:'Read events and create private task blocks when approved.'},
+    {name:'Contacts',access:true,scope:'Tenant-scoped CRM/contact context.'},
+    {name:'Transcripts',access:true,scope:'Tenant-scoped transcript inbox, summaries, staged tasks, and review items.'},
+    {name:'CRM/GHL',access:!!ghlConnected,scope:'Configured GHL location only.'},
+    {name:'Tasks',access:true,scope:'Tenant-scoped VAL tasks and calendarized task blocks.'},
+    {name:'Opportunities',access:!!ghlConnected,scope:'GHL opportunities when configured.'},
+    {name:'Files/documents',access:credentials.some(c=>/google|drive|docs/i.test(c.provider))||googleStatus.connected,scope:'Uploaded VAL files and authorized Google Docs/Drive scopes.'}
+  ];
+  return {
+    ok:true,
+    tenantId:tenantId(),
+    user:req.valUser||currentValUser(),
+    securityStatus:{
+      tenantIsolation:'active',
+      oauthTokenEncryption:encryptionConfigured()?'active':'not_configured',
+      auditLogging:'active',
+      supportAccess:support.supportAccessEnabled?'on':'off',
+      supportAccessExpiresAt:support.supportAccessExpiresAt||null,
+      lastSecurityActivity,
+      connectedAccountsCount:connectedAccounts.filter(a=>a.connected).length,
+      warnings:clientIsolationWarnings()
+    },
+    connectedAccounts,
+    dataSources,
+    sessions,
+    loginHistory:auditLogs.filter(a=>a.action==='login').slice(0,20),
+    auditLogs,
+    supportAccess:support,
+    dataControls:{exportReady:true,deleteReady:false,deleteTodo:'Tenant deletion requires a confirmed destructive workflow and retention policy approval before activation.'},
+    rolePermissions:SECURITY_ROLE_PERMISSIONS
+  };
 }
 function memoryChunks(text){
   const clean = String(text||'').replace(/\r\n/g,'\n').trim();
@@ -1759,8 +1977,33 @@ async function initValDb(){
       id text primary key,
       user_id text references val_users(id) on delete cascade,
       client_slug text not null default 'default',
+      tenant_id text not null default 'default',
+      ip_address text,
+      user_agent text,
+      last_active_at timestamptz not null default now(),
       expires_at timestamptz not null,
       created_at timestamptz not null default now()
+    );
+    create table if not exists security_audit_logs (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text,
+      action text not null,
+      resource_type text,
+      resource_id text,
+      ip_address text,
+      user_agent text,
+      metadata jsonb not null default '{}',
+      success boolean not null default true,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists tenant_support_access (
+      tenant_id text primary key,
+      support_access_enabled boolean not null default false,
+      support_access_expires_at timestamptz,
+      support_access_granted_by text,
+      support_access_reason text,
+      updated_at timestamptz not null default now()
     );
     create table if not exists user_integration_credentials (
       id text primary key,
@@ -1820,6 +2063,7 @@ async function initValDb(){
     create index if not exists transcript_action_log_transcript_idx on transcript_action_log(transcript_id,created_at);
     create index if not exists val_memory_user_created_idx on val_memory_items(user_id,created_at desc);
     create index if not exists val_sessions_user_expires_idx on val_sessions(user_id,expires_at);
+    create index if not exists security_audit_logs_lookup_idx on security_audit_logs(tenant_id,created_at desc,action);
     create index if not exists user_integration_credentials_lookup_idx on user_integration_credentials(tenant_id,user_id,provider,credential_type);
     create index if not exists email_rules_lookup_idx on email_rules(tenant_id,user_id,is_active,rule_type);
     create index if not exists email_action_log_lookup_idx on email_action_log(tenant_id,user_id,action_type,created_at desc);
@@ -1843,6 +2087,10 @@ async function initValDb(){
   await dbQuery('alter table meeting_transcript_links add column if not exists updated_at timestamptz not null default now()');
   await dbQuery('alter table val_tasks add column if not exists completed_at timestamptz');
   await dbQuery('alter table val_tasks add column if not exists completed_by text');
+  await dbQuery("alter table val_sessions add column if not exists tenant_id text not null default 'default'");
+  await dbQuery('alter table val_sessions add column if not exists ip_address text');
+  await dbQuery('alter table val_sessions add column if not exists user_agent text');
+  await dbQuery('alter table val_sessions add column if not exists last_active_at timestamptz not null default now()');
   await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
@@ -1987,6 +2235,7 @@ function clientIsolationWarnings(){
   if(!process.env.VAL_CLIENT_BRAND_NAME) warnings.push('VAL_CLIENT_BRAND_NAME is missing. Dashboard may show generic brand identity.');
   if(process.env.VAL_PUBLIC_BASE_URL && process.env.VAL_PUBLIC_BASE_URL!==CLIENT_CONFIG.publicBaseUrl) warnings.push(`VAL_PUBLIC_BASE_URL was normalized from "${process.env.VAL_PUBLIC_BASE_URL}" to "${CLIENT_CONFIG.publicBaseUrl}". Fix the Railway variable.`);
   if(!process.env.DATABASE_URL) warnings.push('DATABASE_URL is missing. Deployment will use temporary file storage and is not safe for production.');
+  if(!process.env.ENCRYPTION_KEY) warnings.push('ENCRYPTION_KEY is missing. OAuth tokens and integration secrets cannot be encrypted for new saves in production.');
   if(CLIENT_CONFIG.clientSlug==='val-core') warnings.push('Client slug is still val-core. This is unsafe for production client isolation.');
   if(process.env.GOOGLE_REFRESH_TOKEN) warnings.push('GOOGLE_REFRESH_TOKEN is set. Remove it from Railway and reconnect Google through the dashboard so OAuth is tenant/user scoped.');
   return warnings;
@@ -2041,12 +2290,13 @@ app.post('/api/auth/login',async(req,res)=>{
   const email=String(req.body.email||'').trim().toLowerCase();
   authLog('login requested',{email});
   const user=await findUserByEmail(email);
-  if(!user){authLog('login failed: unknown email',{email});return res.status(401).json({ok:false,error:'Invalid email or password'});}
+  if(!user){authLog('login failed: unknown email',{email});await auditLog({req,tenantId:tenantId(),userId:'',action:'login',resourceType:'user',metadata:{email,reason:'unknown_email'},success:false}).catch(()=>{});return res.status(401).json({ok:false,error:'Invalid email or password'});}
   if(!user.passwordHash){authLog('login requires password setup',{email,userId:user.id});return res.status(403).json({ok:false,requiresPasswordSetup:true,message:'Password setup required'});}
-  if(!(await verifyPassword(req.body.password,user.passwordHash))){authLog('login failed: bad password',{email,userId:user.id});return res.status(401).json({ok:false,error:'Invalid email or password'});}
-  const sessionId=await createSession(user.id);
+  if(!(await verifyPassword(req.body.password,user.passwordHash))){authLog('login failed: bad password',{email,userId:user.id});await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email,reason:'bad_password'},success:false}).catch(()=>{});return res.status(401).json({ok:false,error:'Invalid email or password'});}
+  const sessionId=await createSession(user.id,req);
   setSessionCookie(res,sessionId);
   authLog('login succeeded',{email,userId:user.id});
+  await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email},success:true}).catch(()=>{});
   res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
 });
 app.post('/api/auth/request-password-setup',async(req,res)=>{
@@ -2077,12 +2327,14 @@ app.post('/api/auth/set-password',async(req,res)=>{
   const user=await findUserByPasswordSetupToken(token);
   if(!user){authLog('set password failed: invalid or expired token',{tokenHashPrefix:hashPasswordSetupToken(token).slice(0,10)});return res.status(400).json({ok:false,error:'Invalid or expired setup link'});}
   await setUserPassword(user.id,await hashPassword(password));
-  const sessionId=await createSession(user.id);
+  const sessionId=await createSession(user.id,req);
   setSessionCookie(res,sessionId);
   authLog('set password succeeded',{email:user.email,userId:user.id});
+  await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{method:'set_password'},success:true}).catch(()=>{});
   res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
 });
 app.post('/api/auth/logout',async(req,res)=>{
+  await auditLog({req,action:'logout',resourceType:'session',resourceId:verifySignedSession(parseCookies(req)[SESSION_COOKIE])||'',success:true}).catch(()=>{});
   await destroySession(req);
   clearSessionCookie(res);
   res.json({ok:true});
@@ -2097,6 +2349,43 @@ app.use(requireAuth);
 app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI)}));
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
+app.get('/api/security/privacy-center',requirePermission('security:view'),async(req,res)=>{
+  try{
+    await auditLog({req,action:'security_center_viewed',resourceType:'security_center',success:true}).catch(()=>{});
+    res.json(await securityCenterPayload(req));
+  }catch(e){res.status(500).json({ok:false,error:'Security center could not be loaded.'});}
+});
+app.get('/api/security/audit-log',requirePermission('audit:view'),async(req,res)=>{
+  try{res.json({ok:true,auditLogs:await listSecurityAuditLogs(Number(req.query.limit)||150)});}
+  catch(e){res.status(500).json({ok:false,error:'Audit log could not be loaded.'});}
+});
+app.post('/api/security/support-access',requirePermission('support:manage'),async(req,res)=>{
+  try{
+    const enabled=!!req.body.enabled;
+    const support=await setSupportAccess({enabled,expiresAt:req.body.expiresAt,reason:req.body.reason,grantedBy:currentUserId()});
+    await auditLog({req,action:enabled?'support_access_granted':'support_access_revoked',resourceType:'support_access',metadata:{expiresAt:support.supportAccessExpiresAt,reason:req.body.reason||''},success:true});
+    res.json({ok:true,supportAccess:support});
+  }catch(e){res.status(500).json({ok:false,error:'Support access could not be updated.'});}
+});
+app.delete('/api/security/sessions/:id',requirePermission('security:view'),async(req,res)=>{
+  try{
+    await revokeSecuritySession(req.params.id);
+    await auditLog({req,action:'session_revoked',resourceType:'session',resourceId:req.params.id,success:true});
+    res.json({ok:true});
+  }catch(e){res.status(500).json({ok:false,error:'Session could not be revoked.'});}
+});
+app.get('/api/security/export',requirePermission('data:export'),async(req,res)=>{
+  try{
+    const payload={tenantId:tenantId(),exportedAt:new Date().toISOString(),user:req.valUser,tasks:await loadTasks().catch(()=>[]),drafts:await listDrafts().catch(()=>[]),templates:[await loadTemplate(MEETING_RECAP_TEMPLATE_KEY).catch(()=>null)].filter(Boolean),auditLogs:await listSecurityAuditLogs(250).catch(()=>[])};
+    await auditLog({req,action:'data_export_created',resourceType:'tenant_export',metadata:{sections:Object.keys(payload)},success:true});
+    res.setHeader('Content-Disposition',`attachment; filename="${tenantId()}-val-export.json"`);
+    res.json(payload);
+  }catch(e){res.status(500).json({ok:false,error:'Data export could not be created.'});}
+});
+app.delete('/api/security/delete-my-data',requirePermission('data:delete'),async(req,res)=>{
+  await auditLog({req,action:'data_delete_requested',resourceType:'tenant',metadata:{implemented:false},success:false}).catch(()=>{});
+  res.status(501).json({ok:false,error:'Delete my data is not enabled yet. This requires a confirmed destructive workflow, retention policy, and owner confirmation before activation.'});
+});
 app.get('/api/val/transcripts/webhook',async(req,res)=>{
   try{
     const [transcripts,matched]=await Promise.all([
@@ -2262,6 +2551,7 @@ app.delete('/api/integrations/oauth/:provider',async(req,res)=>{
       saveValStore(store);
     }
     if(provider==='google'){ googleTokens={}; googleTokensLoaded=true; lastGoogleAuthError='Google disconnected. Reconnect required.'; }
+    await auditLog({req,action:'oauth_account_disconnected',resourceType:'oauth',resourceId:provider,metadata:{deleted},success:true}).catch(()=>{});
     res.json({ok:true,deleted});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
@@ -2452,12 +2742,14 @@ async function emailIntelligencePayload(req,{force=false}={}){
 app.get('/api/email/intelligence',async(req,res)=>{
   try{
     const data=await emailIntelligencePayload(req,{force:req.query.force==='1'||req.query.refresh==='1'});
+    await auditLog({req,action:'email_searched',resourceType:'email_intelligence',metadata:{force:req.query.force==='1'||req.query.refresh==='1',count:data.summary?.total||0},success:data.ok!==false}).catch(()=>{});
     res.status(data.ok===false?400:200).json(data);
   }catch(e){res.status(500).json({ok:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
 });
 app.post('/api/email/gmail/refresh',async(req,res)=>{
   try{
     const data=await emailIntelligencePayload(req,{force:true});
+    await auditLog({req,action:'email_sync_refreshed',resourceType:'gmail',metadata:{count:data.summary?.total||0},success:data.ok!==false}).catch(()=>{});
     res.status(data.ok===false?400:200).json({...data,refreshed:true});
   }catch(e){res.status(500).json({ok:false,refreshed:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
 });
@@ -2465,12 +2757,15 @@ app.post('/api/email/inbox-command',async(req,res)=>{
   try{
     const query=String(req.body.query||req.body.message||'').trim();
     if(!query)return res.status(400).json({ok:false,error:'Inbox Command needs a search question.'});
-    res.json(await runInboxCommand(query,{maxResults:Number(req.body.maxResults)||8}));
+    const result=await runInboxCommand(query,{maxResults:Number(req.body.maxResults)||8});
+    await auditLog({req,action:'email_searched',resourceType:'inbox_command',metadata:{query,resultCount:result.results?.length||0,providers:['gmail','outlook']},success:true}).catch(()=>{});
+    res.json(result);
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/email/inbox-command/action',async(req,res)=>{
   try{
     const result=await inboxCommandAction(req.body||{},req.valUser?.id||currentUserId());
+    await auditLog({req,action:result.action==='forward_draft'?'email_forward_draft_created':(result.action==='draft_reply'?'draft_created':(result.action==='create_task'?'task_created':'email_action')),resourceType:'inbox_command',resourceId:result.draft?.id||result.task?.id||'',metadata:{action:result.action||req.body.action},success:result.ok!==false}).catch(()=>{});
     res.status(result.ok===false?400:200).json(result);
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
@@ -2693,7 +2988,7 @@ async function saveOAuthTokens(provider,tokens){
   if(!tokens||!Object.keys(tokens).length) return;
   const userId=currentUserId();
   const tenant=tenantId();
-  const scopedTokens={...tokens,user_id:userId,tenant_id:tenant,client_slug:CLIENT_CONFIG.clientSlug};
+  const scopedTokens=encryptOAuthTokens({...tokens,user_id:userId,tenant_id:tenant,client_slug:CLIENT_CONFIG.clientSlug});
   if(pgPool){
     await valDbReady;
     await dbQuery(`
@@ -2716,10 +3011,10 @@ async function loadOAuthTokens(provider){
   const tenant=tenantId();
   if(pgPool){
     const r=await dbQuery('select tokens from val_oauth_tokens where provider=$1 and tenant_id=$2 and user_id=$3 order by updated_at desc limit 1',[provider,tenant,userId]);
-    return r.rows[0]?.tokens || null;
+    return r.rows[0]?.tokens ? decryptOAuthTokens(r.rows[0].tokens) : null;
   }
   const tokens=valStore().oauthTokens||{};
-  return tokens[`${tenant}:${userId}:${provider}`] || null;
+  return tokens[`${tenant}:${userId}:${provider}`] ? decryptOAuthTokens(tokens[`${tenant}:${userId}:${provider}`]) : null;
 }
 
 async function ensureGoogleTokensLoaded(){
@@ -2880,6 +3175,7 @@ app.get('/auth/callback', async (req, res) => {
     lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token, 'scope count:', googleScopeList().length);
+    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'google',metadata:{scopes:googleScopeList(),hasRefreshToken:!!googleTokens.refresh_token},success:true}).catch(()=>{});
     res.send(`<h2 style="font-family:sans-serif;padding:2rem">Google Calendar, Gmail, Drive, and Docs connected to VAL.<br><br>You can close this tab.</h2>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
@@ -3038,6 +3334,7 @@ app.get('/auth/microsoft/callback',async(req,res)=>{
     const tokens=await readJsonResponse(r);
     if(!r.ok||tokens.error) throw new Error(tokens.error_description||tokens.error||`Microsoft token exchange failed (${r.status})`);
     await saveOAuthTokens('microsoft',{...tokens,issued_at:Date.now(),scope:tokens.scope||MICROSOFT_SCOPES.join(' ')});
+    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'microsoft',metadata:{scopes:String(tokens.scope||MICROSOFT_SCOPES.join(' ')).split(/\s+/),hasRefreshToken:!!tokens.refresh_token},success:true}).catch(()=>{});
     res.send('<h2 style="font-family:sans-serif;padding:2rem">Microsoft Outlook connected to VAL. You can close this tab.</h2>');
   }catch(e){
     res.status(500).send('Microsoft auth failed: '+e.message);
@@ -6201,13 +6498,13 @@ async function openLoopsSummary(){
   return {openCount:open.length,unscheduledCount:unscheduled.length,overdueCount:overdue.length,scheduledTodayCount:scheduledToday.length,unscheduled:unscheduled.slice(0,12),overdue:overdue.slice(0,8),scheduledToday:scheduledToday.slice(0,8)};
 }
 app.get('/api/val/tasks',async(req,res)=>{try{res.json(await loadTasks());}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!task.id)return res.status(400).json({error:'Missing task id'});await saveTask(task);res.json({ok:true,task});}catch(e){res.status(500).json({error:e.message});}});
-app.put('/api/val/tasks',async(req,res)=>{try{if(!Array.isArray(req.body))return res.status(400).json({error:'Expected array'});await replaceTasks(req.body);res.json({ok:true,count:req.body.length});}catch(e){res.status(500).json({error:e.message});}});
-app.delete('/api/val/tasks/:id',async(req,res)=>{try{await deleteTask(req.params.id);res.json({ok:true});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!task.id)return res.status(400).json({error:'Missing task id'});await saveTask(task);await auditLog({req,action:'task_created',resourceType:'task',resourceId:task.id,metadata:{title:task.title,source:task.source||''},success:true}).catch(()=>{});res.json({ok:true,task});}catch(e){res.status(500).json({error:e.message});}});
+app.put('/api/val/tasks',async(req,res)=>{try{if(!Array.isArray(req.body))return res.status(400).json({error:'Expected array'});await replaceTasks(req.body);await auditLog({req,action:'task_bulk_updated',resourceType:'task',metadata:{count:req.body.length},success:true}).catch(()=>{});res.json({ok:true,count:req.body.length});}catch(e){res.status(500).json({error:e.message});}});
+app.delete('/api/val/tasks/:id',async(req,res)=>{try{await deleteTask(req.params.id);await auditLog({req,action:'task_deleted',resourceType:'task',resourceId:req.params.id,success:true}).catch(()=>{});res.json({ok:true});}catch(e){res.status(500).json({error:e.message});}});
 app.get('/api/val/tasks/open-loops',async(req,res)=>{try{res.json({ok:true,...await openLoopsSummary()});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/val/tasks/:id/suggest-time',async(req,res)=>{try{const task=await findTaskById(req.params.id);if(!task)return res.status(404).json({ok:false,error:'Task not found'});res.json({ok:true,task,suggestedSlots:await suggestTaskSlots(task,req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
-app.post('/api/val/tasks/:id/calendarize',async(req,res)=>{try{res.json(await calendarizeTask(req.params.id,req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
-app.post('/api/val/tasks/:id/complete',async(req,res)=>{try{res.json({ok:true,task:await completeCalendarizedTask(req.params.id,req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/tasks/:id/calendarize',async(req,res)=>{try{const result=await calendarizeTask(req.params.id,req.body||{});await auditLog({req,action:result.updated?'calendar_event_updated':'calendar_event_created',resourceType:'task_calendar_block',resourceId:result.task?.calendarEventId||req.params.id,metadata:{taskId:req.params.id,provider:result.task?.calendarProvider||''},success:result.ok!==false}).catch(()=>{});res.json(result);}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/tasks/:id/complete',async(req,res)=>{try{const task=await completeCalendarizedTask(req.params.id,req.body||{});await auditLog({req,action:'task_completed',resourceType:'task',resourceId:req.params.id,metadata:{calendarEventId:task.calendarEventId||''},success:true}).catch(()=>{});res.json({ok:true,task});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 
 const MEETING_RECAP_TEMPLATE_KEY='meeting_recap';
 const DEFAULT_MEETING_RECAP_TEMPLATE={
@@ -6356,13 +6653,16 @@ async function saveInternalDraft(payload){
       on conflict (id) do update set draft_type=excluded.draft_type,contact_id=excluded.contact_id,provider=excluded.provider,subject=excluded.subject,body=excluded.body,status=excluded.status,source_context_json=excluded.source_context_json,updated_at=now()
       returning *
     `,[draft.id,draft.userId,draft.tenantId,draft.draftType,draft.contactId,draft.provider,draft.subject,draft.body,draft.status,JSON.stringify(draft.sourceContext)]);
-    return rowToDraft(r.rows[0]);
+    const saved=rowToDraft(r.rows[0]);
+    await auditLog({tenantId:draft.tenantId,userId:draft.userId,action:'draft_created',resourceType:'draft',resourceId:saved.id,metadata:{draftType:saved.draftType,provider:saved.provider,status:saved.status,source:saved.sourceContext?.source||''},success:true}).catch(()=>{});
+    return saved;
   }
   const store=valStore();store.drafts=store.drafts||[];
   const idx=store.drafts.findIndex(d=>d.id===draft.id);
   const record={...draft,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(idx>=0)store.drafts[idx]={...store.drafts[idx],...record}; else store.drafts.unshift(record);
   saveValStore(store);
+  await auditLog({tenantId:draft.tenantId,userId:draft.userId,action:'draft_created',resourceType:'draft',resourceId:record.id,metadata:{draftType:record.draftType,provider:record.provider,status:record.status,source:record.sourceContext?.source||''},success:true}).catch(()=>{});
   return record;
 }
 async function listDrafts(status=''){
@@ -10806,10 +11106,10 @@ app.get('/api/val/transcripts/review',async(req,res)=>{
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));return res.json({ok:true,transcript});}
+    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=transcriptUiRecord(record,{includeText:true});transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));res.json({ok:true,transcript});
+    const transcript=transcriptUiRecord(record,{includeText:true});transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts',async(req,res)=>{
@@ -10818,6 +11118,7 @@ app.post('/api/val/transcripts',async(req,res)=>{
   if(!transcriptText.trim())return res.status(400).json({ok:false,error:'A usable transcript text field is required. Accepted fields include transcript, rawText, transcriptText, text, content, body, or speaker segments.'});
   try{
     const saved=await saveTranscript({...payload,reviewStatus:payload.reviewStatus||payload.review_status||'new'});
+    await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title:payload.title,source:payload.source},success:true}).catch(()=>{});
     console.log('[transcripts] saved successfully',{id:saved.id,title:payload.title,source:payload.source});
     const transcriptRecord={id:saved.id,title:payload.title||saved.type,rawText:transcriptText,metadata:payload,createdAt:payload.timestamp||payload.createdAt||payload.receivedAt};
     const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.warn('[transcripts] meeting link failed',e.message);return null;});
