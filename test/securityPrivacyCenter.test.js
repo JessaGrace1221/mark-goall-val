@@ -35,6 +35,15 @@ test('rbac protects security and data control endpoints',()=>{
   assert.match(server,/requirePermission\('data:delete'\)/);
 });
 
+test('delete my data workflow is active but confirmation-gated',()=>{
+  assert.match(server,/async function purgeTenantData/);
+  assert.match(server,/DELETE MY VAL DATA/);
+  assert.match(server,/action:'data_deleted'/);
+  assert.match(server,/deleteReady:true/);
+  assert.match(dashboard,/Delete workflow is active/);
+  assert.match(dashboard,/Final confirmation/);
+});
+
 test('security privacy ui is available under settings navigation',()=>{
   assert.match(commandCenter,/settings_security/);
   assert.match(commandCenter,/Security & Privacy/);

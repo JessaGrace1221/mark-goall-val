@@ -1451,7 +1451,7 @@ function renderSecurityPrivacyCenter(data){
     +'<section class="exec-card relationship-profile-wide"><h3>Active Sessions</h3><table class="security-table"><thead><tr><th>User</th><th>IP</th><th>Browser</th><th>Last active</th><th></th></tr></thead><tbody>'+(sessions||'<tr><td colspan="5">No active sessions found.</td></tr>')+'</tbody></table></section>'
     +'<section class="exec-card relationship-profile-wide"><h3>Login History</h3><table class="security-table"><thead><tr><th>Time</th><th>IP</th><th>Device/browser</th><th>Status</th><th>User</th></tr></thead><tbody>'+(logins||'<tr><td colspan="5">No login history yet.</td></tr>')+'</tbody></table></section>'
     +'<section class="exec-card relationship-profile-wide"><h3>Audit Log</h3><p>Audit logs are immutable from the normal UI.</p><table class="security-table"><thead><tr><th>Time</th><th>Action</th><th>Resource</th><th>ID</th><th>Status</th></tr></thead><tbody>'+(audit||'<tr><td colspan="5">No audit activity yet.</td></tr>')+'</tbody></table></section>'
-    +'<section class="exec-card relationship-profile-wide"><h3>Data Controls</h3><div class="email-actions"><button class="primary" onclick="exportValData()">Export My Data</button><button onclick="securityDisconnectAccount(\'google\')">Disconnect Gmail/Google</button><button onclick="securityDisconnectAccount(\'microsoft\')">Disconnect Outlook</button><button class="danger" onclick="requestDataDelete()">Delete My Data</button></div><p class="email-reason">Delete is intentionally not live yet: '+docSafe(data.dataControls&&data.dataControls.deleteTodo||'Destructive workflow pending.')+'</p></section>'
+    +'<section class="exec-card relationship-profile-wide"><h3>Data Controls</h3><div class="email-actions"><button class="primary" onclick="exportValData()">Export My Data</button><button onclick="securityDisconnectAccount(\'google\')">Disconnect Gmail/Google</button><button onclick="securityDisconnectAccount(\'microsoft\')">Disconnect Outlook</button><button class="danger" onclick="requestDataDelete()">Delete My Data</button></div><p class="email-reason"><strong>Delete workflow is active.</strong> '+docSafe(data.dataControls&&data.dataControls.deleteWarning||'This permanently deletes tenant-scoped VAL data.')+'<br>Required confirmation phrase: <strong>'+docSafe(data.dataControls&&data.dataControls.confirmationPhrase||'DELETE MY VAL DATA')+'</strong></p></section>'
     +'</div>';
 }
 function securityReconnectAccount(path){window.open(PROXY+path,'_blank','noopener');}
@@ -1470,8 +1470,13 @@ function revokeValSession(id){
 }
 function exportValData(){window.open(PROXY+'/api/security/export','_blank','noopener');}
 function requestDataDelete(){
-  if(!confirm('Delete my data is not enabled yet. Do you want VAL to record a delete request attempt and show the current status?'))return;
-  apiFetch(PROXY+'/api/security/delete-my-data',{method:'DELETE'}).then(function(){}).catch(function(e){addSys(e.message||'Delete my data is not enabled yet.');});
+  var phrase='DELETE MY VAL DATA';
+  var typed=prompt('This permanently deletes tenant-scoped VAL data and disconnects saved integrations. External Gmail, Microsoft, and GHL records are not deleted. Type exactly: '+phrase);
+  if(typed!==phrase){addSys('Delete cancelled. Confirmation phrase did not match.');return;}
+  if(!confirm('Final confirmation: permanently delete VAL data for this tenant now?'))return;
+  apiFetch(PROXY+'/api/security/delete-my-data',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:phrase})})
+    .then(function(result){addSys(result.message||'VAL tenant data deleted.');loadSecurityPrivacyCenter();})
+    .catch(function(e){addSys(e.message||'Delete my data failed.');});
 }
 function openTemplatesPage(){
   var body='<div class="exec-workspace-grid" style="grid-template-columns:minmax(260px,.8fr) minmax(320px,1.2fr)">'

@@ -1705,9 +1705,72 @@ async function securityCenterPayload(req){
     loginHistory:auditLogs.filter(a=>a.action==='login').slice(0,20),
     auditLogs,
     supportAccess:support,
-    dataControls:{exportReady:true,deleteReady:false,deleteTodo:'Tenant deletion requires a confirmed destructive workflow and retention policy approval before activation.'},
+    dataControls:{exportReady:true,deleteReady:true,confirmationPhrase:'DELETE MY VAL DATA',deleteWarning:'This permanently deletes tenant-scoped VAL tasks, transcripts, drafts, memory, templates, local calendar blocks, OAuth tokens, integration credentials, email rules/logs, and prior audit logs. External Gmail, Microsoft, and GHL records are not deleted.'},
     rolePermissions:SECURITY_ROLE_PERMISSIONS
   };
+}
+async function purgeTenantData({req,confirmation}={}){
+  const expected='DELETE MY VAL DATA';
+  if(String(confirmation||'').trim()!==expected) throw new Error(`Type exactly "${expected}" to confirm.`);
+  const tenant=tenantId(), userId=currentUserId(), currentSession=currentSessionId(req);
+  const deleted={}, count=async(table,where,params)=>{try{if(!pgPool)return 0;const r=await dbQuery(`select count(*)::int as count from ${table} where ${where}`,params);return Number(r.rows?.[0]?.count||0);}catch(e){return 0;}};
+  if(pgPool){
+    const tables=[
+      ['transcript_contact_updates','transcript_id in (select transcript_id from transcripts where tenant_id=$1)',[tenant]],
+      ['transcript_tasks','transcript_id in (select transcript_id from transcripts where tenant_id=$1)',[tenant]],
+      ['transcript_summaries','transcript_id in (select transcript_id from transcripts where tenant_id=$1)',[tenant]],
+      ['transcript_participants','transcript_id in (select transcript_id from transcripts where tenant_id=$1)',[tenant]],
+      ['transcript_action_log','transcript_id in (select transcript_id from transcripts where tenant_id=$1)',[tenant]],
+      ['meeting_transcript_links','tenant_id=$1',[tenant]],
+      ['transcripts','tenant_id=$1',[tenant]],
+      ['val_transcripts','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_task_calendar_blocks','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_tasks','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['drafts','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_templates','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_memory_items','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_calendar_events','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['val_messages','conversation_id in (select id from val_conversations where tenant_id=$1 and user_id=$2)',[tenant,userId]],
+      ['val_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
+      ['email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['user_integration_credentials','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
+      ['val_oauth_tokens','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['tenant_support_access','tenant_id=$1',[tenant]],
+      ['val_sessions','tenant_id=$1 and id<>$2',[tenant,currentSession||'']]
+    ];
+    for(const [table,where,params] of tables){
+      deleted[table]=await count(table,where,params);
+      await dbQuery(`delete from ${table} where ${where}`,params);
+    }
+    deleted.security_audit_logs=await count('security_audit_logs','tenant_id=$1',[tenant]);
+    await dbQuery('delete from security_audit_logs where tenant_id=$1',[tenant]);
+  }else{
+    const store=valStore();
+    const keepUser=(row)=>row.userId!==userId&&row.user_id!==userId;
+    const keepTenant=(row)=>row.tenantId!==tenant&&row.tenant_id!==tenant;
+    for(const key of ['transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','meetingTranscriptLinks']){
+      const arr=store[key]||[];
+      deleted[key]=arr.length;
+      store[key]=key==='transcriptIndex'?arr.filter(keepTenant):[];
+    }
+    for(const key of ['drafts','templates','memoryItems','conversations','messages','emailRules','emailActionLog','securityAuditLogs']){
+      const arr=store[key]||[];
+      const before=arr.length;
+      store[key]=arr.filter(row=>keepTenant(row)&&keepUser(row));
+      deleted[key]=before-store[key].length;
+    }
+    const tasks=readTasks(), beforeTasks=tasks.length;writeTasks(tasks.filter(keepUser));deleted.val_tasks=beforeTasks-readTasks().length;
+    store.oauthTokens={};
+    store.integrationCredentials=(store.integrationCredentials||[]).filter(row=>keepTenant(row)&&keepUser(row));
+    if(store.supportAccess) delete store.supportAccess[tenant];
+    store.sessions=(store.sessions||[]).filter(s=>(s.tenantId||CLIENT_CONFIG.clientSlug)!==tenant||s.id===currentSession);
+    saveValStore(store);
+  }
+  googleTokens={};googleTokensLoaded=true;lastGoogleAuthError='Google disconnected because tenant data was deleted.';
+  gmailSyncStatus={lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',lastFetchedCount:0,lastAnalyzedCount:0,lastQuery:''};
+  const tombstone=await auditLog({req,tenantId:tenant,userId,action:'data_deleted',resourceType:'tenant',resourceId:tenant,metadata:{deleted,externalSystems:'External Gmail, Microsoft, and GHL records were not deleted; VAL access tokens/credentials were removed.'},success:true});
+  return {ok:true,tenantId:tenant,deleted,tombstoneId:tombstone.id,message:'VAL tenant data deleted. External provider records were not deleted, but VAL access credentials were removed.'};
 }
 function memoryChunks(text){
   const clean = String(text||'').replace(/\r\n/g,'\n').trim();
@@ -2383,8 +2446,13 @@ app.get('/api/security/export',requirePermission('data:export'),async(req,res)=>
   }catch(e){res.status(500).json({ok:false,error:'Data export could not be created.'});}
 });
 app.delete('/api/security/delete-my-data',requirePermission('data:delete'),async(req,res)=>{
-  await auditLog({req,action:'data_delete_requested',resourceType:'tenant',metadata:{implemented:false},success:false}).catch(()=>{});
-  res.status(501).json({ok:false,error:'Delete my data is not enabled yet. This requires a confirmed destructive workflow, retention policy, and owner confirmation before activation.'});
+  try{
+    await auditLog({req,action:'data_delete_requested',resourceType:'tenant',metadata:{confirmed:!!req.body?.confirmation},success:true}).catch(()=>{});
+    res.json(await purgeTenantData({req,confirmation:req.body?.confirmation}));
+  }catch(e){
+    await auditLog({req,action:'data_delete_failed',resourceType:'tenant',metadata:{reason:e.message},success:false}).catch(()=>{});
+    res.status(400).json({ok:false,error:e.message});
+  }
 });
 app.get('/api/val/transcripts/webhook',async(req,res)=>{
   try{
