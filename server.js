@@ -2961,38 +2961,55 @@ function guideHtml(markdown){
 .dash-float{position:fixed;right:18px;bottom:18px;z-index:20;box-shadow:0 18px 50px rgba(0,0,0,.32)}
 .demo-banner{border:1px solid rgba(215,181,109,.35);background:rgba(215,181,109,.08);border-radius:12px;padding:14px 16px;margin-bottom:18px;color:var(--muted);display:${DEMO_MODE?'flex':'none'};gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.demo-banner strong{color:var(--text)}
 </style></head><body><div class="top"><a href="/dashboard">Back to VAL</a></div><main class="wrap">
-<a class="btn dash-float" href="/dashboard">Back To Dashboard</a>
+<a class="btn dash-float" href="/dashboard">Keep Exploring</a>
 <div class="demo-banner"><div><strong>Demo Mode</strong><br>Explore VAL with sample meetings, emails, tasks, relationships, drafts, transcripts, and pipeline data. Reset any time.</div><div class="actions"><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a><button class="btn secondary" onclick="resetDemo()">Reset Demo</button></div></div>
-<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard">Open Demo</a><a class="btn secondary" href="/dashboard">Run Relationship Review</a><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a></div></div></section>
+<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard">Keep Exploring</a><a class="btn secondary" href="/dashboard">Run Relationship Review</a><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a></div></div></section>
 <section><div class="section-head"><div><h2>Your Priorities</h2><p>Start with the moves that create clarity fastest.</p></div></div><div class="grid">
 <a class="card" href="/dashboard"><span class="icon">${icon.calendar}</span><h3>Prepare For Today</h3><p>Know who matters before your next conversation.</p><div class="status" id="meetingStatus">Loading meetings</div></a>
 <a class="card" href="/dashboard"><span class="icon">${icon.radar}</span><h3>Relationship Review</h3><p>See who matters most, which relationships are cooling, and where hidden opportunity exists.</p><div class="status" id="radarStatus">Checking signals</div></a>
 <a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Approval Queue</h3><p>Review drafts, promises, and pending actions.</p><div class="status" id="queueStatus">Loading drafts</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, and safe draft opportunities.</p><div class="status">Review inbox signals</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, safe drafts, and repeatable rules.</p><div class="status" id="emailStatus">Review inbox signals</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Inbox Command</h3><p>Ask for the email you remember, then summarize, draft, forward, or task it safely.</p><div class="status">Natural language email search</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.voice}</span><h3>Transcript Intelligence</h3><p>Open call memory, summaries, staged tasks, recap drafts, and review queues.</p><div class="status" id="transcriptStatus">Loading transcripts</div></a>
+<a class="card" href="/dashboard"><span class="icon">${icon.calendar}</span><h3>Calendarized Tasks</h3><p>Turn important tasks into private protected work blocks with no meeting link.</p><div class="status" id="taskScheduleStatus">Checking open loops</div></a>
 <a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
 <a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Register Your Keys</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
 </div></section>
-<section><div class="section-head"><div><h2>Your First 3 Minutes</h2><p>A short path that helps VAL understand you and start creating momentum.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard">Run Relationship Review</a></div></div></section>
+<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Email AI</h3><p>Use Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard">Open Email AI</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Calendarize A Task</h3><p>Turn one open commitment into a private protected work block so it actually gets done.</p><a class="btn secondary" href="/dashboard">Calendarize Tasks</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard">Run Relationship Review</a></div></div></section>
 <section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard">Meeting Prep</a><a href="/dashboard">Daily Rhythm</a><a href="/dashboard">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard">Relationship Review</a><a href="/dashboard">Follow-Ups</a><a href="/dashboard">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard">Approval Queue</a><a href="/dashboard">Drafts</a><a href="/dashboard">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard">Email Intelligence</a><a href="/dashboard">Integration Status</a><a href="/dashboard">Register Your Keys</a></div></div></section>
-<section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div></div></section>
+<section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div><div id="activityTranscripts">Transcripts loading</div><div id="activityEmail">Email intelligence loading</div><div id="activityCalendarized">Calendarized work loading</div></div></section>
 <section><div class="section-head"><div><h2>Learn VAL</h2><p>The full reference is here when you want depth. You do not need to study it first.</p></div></div><details><summary>See Full Reference</summary><div class="reference"><p>${referenceHtml}</p></div></details></section>
 </main><script>
 async function json(url){try{const r=await fetch(url);return r.ok?await r.json():null}catch(e){return null}}
 function set(id,text){const el=document.getElementById(id);if(el)el.textContent=text}
 (async()=>{
-  const [tasks,cal,comms,props]=await Promise.all([json('/api/val/tasks'),json('/api/calendar'),json('/api/comms'),json('/api/proposals')]);
+  const [tasks,cal,comms,props,transcripts,loops,email]=await Promise.all([json('/api/val/tasks'),json('/api/calendar'),json('/api/comms'),json('/api/proposals'),json('/api/val/transcripts?days=3650&limit=25'),json('/api/val/tasks/open-loops'),json('/api/email/intelligence?limit=20')]);
   const open=Array.isArray(tasks)?tasks.filter(t=>!t.completed):[];
   const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<new Date());
+  const unscheduled=(loops&&loops.unscheduled&&loops.unscheduled.length)||open.filter(t=>!t.scheduledStart&&!t.calendarEventId).length;
+  const calendarized=open.filter(t=>t.scheduledStart||t.calendarEventId).length;
   const events=(cal&&cal.calendarEvents)||[];
   const today=events.filter(e=>{const raw=e.startTime||e.date||(e.start&&(e.start.dateTime||e.start.date));return raw&&new Date(raw).toDateString()===new Date().toDateString()});
   const unread=(comms&&comms.total)||0;
   const drafts=(props&&props.draft)||0;
+  const trCounts=(transcripts&&transcripts.counts)||{};
+  const trTotal=trCounts.total||((transcripts&&transcripts.transcripts&&transcripts.transcripts.length)||0);
+  const trReview=trCounts.needsReview||0;
+  const emailSummary=(email&&email.summary)||{};
+  const emailTotal=emailSummary.total||((email&&email.emails&&email.emails.length)||0);
+  const emailDrafts=emailSummary.draftsPrepared||0;
   set('meetingStatus',today.length?today.length+' meetings today':'No meetings today');
   set('radarStatus',(unread+overdue.length)?(unread+overdue.length)+' signals need attention':'All clear right now');
   set('queueStatus',drafts?drafts+' drafts waiting':'No drafts waiting');
+  set('emailStatus',emailDrafts?emailDrafts+' drafts prepared':emailTotal?emailTotal+' emails analyzed':'Connect inbox');
+  set('transcriptStatus',trReview?trReview+' need review':trTotal?trTotal+' transcripts saved':'Webhook ready');
+  set('taskScheduleStatus',unscheduled?unscheduled+' tasks need time':calendarized?calendarized+' protected blocks':'No unscheduled tasks');
   set('activityMeetings',today.length?today.length+' meetings on deck':'Calendar is clear today');
   set('activityTasks',overdue.length?overdue.length+' overdue tasks':open.length+' open tasks');
   set('activityFollowups',unread?unread+' unread conversations':'No unread conversations');
+  set('activityTranscripts',trTotal?trTotal+' transcripts in memory':'No transcripts received yet');
+  set('activityEmail',emailTotal?emailTotal+' emails analyzed':'Email Intelligence ready after connection');
+  set('activityCalendarized',calendarized?calendarized+' tasks have protected time':unscheduled+' tasks still need calendar time');
 })();
 async function resetDemo(){await fetch('/api/demo/reset',{method:'POST'});location.href='/guide';}
 </script></body></html>`;
