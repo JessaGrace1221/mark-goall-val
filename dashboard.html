@@ -5949,50 +5949,5 @@ document.addEventListener('DOMContentLoaded',valSignalInit);
 setTimeout(valSignalInit,0);
 </script>
 <script src="/command-center.js?v=20260623-recap-drafts"></script>
-<script>
-(function(){
-  var opened=false;
-  function openRequestedGuideView(){
-    if(opened)return;
-    var params=new URLSearchParams(window.location.search||'');
-    var view=(params.get('view')||params.get('open')||'').toLowerCase().replace(/[^a-z0-9_/-]/g,'');
-    if(!view)return;
-    var aliases={
-      approval:'drafts',approvals:'drafts',approval_queue:'drafts',
-      email:'email_intelligence',email_ai:'email_intelligence',inbox:'email_intelligence',inbox_command:'email_intelligence',
-      transcript:'transcripts',transcript_intelligence:'transcripts',
-      calendarized_tasks:'tasks',calendarized:'tasks',task_board:'tasks',
-      relationship_review:'relationships',relationship_radar:'relationships',
-      meeting_prep:'meetings',calendar:'meetings',
-      integration:'integration_status',keys:'settings',register_keys:'settings',today:'intelligence'
-    };
-    view=aliases[view]||view;
-    var direct={
-      integration_status:'openIntegrationStatus',
-      settings:'openKeysPanel',
-      drafts:'openDraftsPage',
-      email_intelligence:'openEmailIntelligence',
-      relationships:'openRelationshipReview',
-      meetings:'openMeetingBriefing',
-      tasks:'openTaskBoard',
-      chat:'openGeneralChat',
-      intelligence:'openPriorityReview'
-    };
-    function fire(){
-      if(opened)return;
-      if(view==='dashboard'){opened=true;return;}
-      if(view==='transcripts'&&typeof window.openTranscripts==='function'){opened=true;window.openTranscripts();return;}
-      if(typeof window.commandCenterNavigate==='function'&&['relationships','meetings','email_intelligence','tasks','drafts','chat','intelligence'].includes(view)){opened=true;window.commandCenterNavigate(view);return;}
-      var fn=direct[view]&&window[direct[view]];
-      if(typeof fn==='function'){opened=true;fn();return;}
-    }
-    fire();
-    setTimeout(fire,350);
-    setTimeout(fire,900);
-    setTimeout(fire,1600);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',openRequestedGuideView);else openRequestedGuideView();
-})();
-</script>
 </body>
 </html>
