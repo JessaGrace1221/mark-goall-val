@@ -1575,27 +1575,51 @@ function openOpportunityIntelligence(){
 }
 var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null};
 function openEmailIntelligence(){
-  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
+  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Register Keys</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
 function connectGmail(){
   window.open(PROXY+'/auth/google','_blank','noopener');
   addSys('Opening Gmail connection. Choose the Google account, approve Gmail permissions, then return here and click Email AI.');
 }
-function loadEmailIntelligence(){
-  apiFetch(PROXY+'/api/email/intelligence?limit=30').then(function(d){
+function connectMicrosoft(){
+  window.open(PROXY+'/auth/microsoft','_blank','noopener');
+  addSys('Opening Outlook connection. Choose the Microsoft account, approve Outlook permissions, then return here and check Integration Status.');
+}
+function loadEmailIntelligence(force){
+  var status=document.getElementById('emailSyncStatus');
+  if(status)status.innerHTML=force?'Refreshing Gmail now. Pulling at least the last 48 hours...':'Loading Gmail sync status...';
+  apiFetch(PROXY+(force?'/api/email/gmail/refresh':'/api/email/intelligence?limit=30'),force?{method:'POST'}:undefined).then(function(d){
     if(!d.ok){
       emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
       var msg=(d.errors&&d.errors.length?d.errors.join('<br>'):(d.error||'Connect Gmail to activate Email AI.'));
+      renderEmailSyncStatus(d);
       document.getElementById('emailTabs').innerHTML='';
       document.getElementById('emailList').innerHTML='<div class="email-item active"><div class="email-item-subject">Gmail needs connection</div><div class="email-item-meta">'+docSafe(msg)+'</div></div>';
-      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">Register Keys</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
       return;
     }
     emailIntel.emails=d.emails||[];emailIntel.rules=d.rules||[];emailIntel.summary=d.summary||{};
+    emailIntel.providers=d.providers||{};
     emailIntel.selected=emailIntel.emails[0]||null;
+    renderEmailSyncStatus(d);
+    if(force)addSys('Gmail refreshed: '+((d.providers&&d.providers.gmail&&d.providers.gmail.fetchedCount)||0)+' fetched, '+((d.providers&&d.providers.gmail&&d.providers.gmail.analyzedCount)||emailIntel.emails.length)+' analyzed.');
     renderEmailIntelligence();
   }).catch(function(e){document.getElementById('emailList').innerHTML='<div class="email-item">Email intelligence failed: '+docSafe(e.message)+'</div>';});
+}
+function refreshGmailNow(){loadEmailIntelligence(true);}
+function renderEmailSyncStatus(data){
+  var el=document.getElementById('emailSyncStatus');if(!el)return;
+  var g=(data&&data.providers&&data.providers.gmail)||{};
+  var bits=[
+    'Gmail: '+(g.status||'unknown'),
+    g.lastSuccessfulSyncAt||g.lastSyncAt?'Last successful sync: '+new Date(g.lastSuccessfulSyncAt||g.lastSyncAt).toLocaleString():'No successful sync recorded yet',
+    'Fetched: '+(g.fetchedCount!=null?g.fetchedCount:(g.recentInboxCount||0)),
+    'Analyzed: '+(g.analyzedCount!=null?g.analyzedCount:((data&&data.emails&&data.emails.length)||0)),
+    g.lastQuery?'Query: '+g.lastQuery:'',
+    g.error?'Error: '+g.error:''
+  ].filter(Boolean);
+  el.innerHTML='<strong>Gmail Sync</strong><div style="font-size:12px;line-height:1.55;color:#334155;margin-top:4px">'+bits.map(docSafe).join(' · ')+'</div>';
 }
 function emailTabs(){
   return [
