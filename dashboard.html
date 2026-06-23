@@ -2158,7 +2158,15 @@ function valCompleteTask(id,quiet){
     t.completedBy='you';
     if(!t.details)t.details=[];
     t.details.push({text:'Marked complete.',ts:t.completedAt});
-    valTaskSaveOne(t);
+    fetch(PROXY+'/api/val/tasks/'+encodeURIComponent(id)+'/complete',{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({completedAt:t.completedAt,completedBy:t.completedBy})
+    }).then(function(r){return apiTextOrJson(r);}).then(function(d){
+      if(d&&d.task){var idx=valTasks.findIndex(function(x){return x.id===id;});if(idx>=0)valTasks[idx]=d.task;cacheValTasks();}
+      refreshTaskUI();
+    }).catch(function(){valTaskSaveOne(t);});
     refreshTaskUI();
     if(!quiet){
       showTaskCompletionToast(t);
@@ -2271,20 +2279,80 @@ function taskContextPreview(t){
   if(notes.length>190)notes=notes.slice(0,190).trim()+'...';
   return notes;
 }
+function taskScheduleLabel(t){
+  if(t&&t.scheduledStart){
+    var d=new Date(t.scheduledStart);
+    if(!isNaN(d.getTime()))return 'Scheduled '+d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }
+  if(t&&t.schedulingStatus==='completion_sync_failed')return 'Calendar sync needs review';
+  if(t&&t.calendarEventId)return 'Calendarized';
+  return 'Unscheduled';
+}
+function upsertValTask(task){
+  if(!task||!task.id)return;
+  var idx=valTasks.findIndex(function(t){return t.id===task.id;});
+  if(idx>=0)valTasks[idx]=task;else valTasks.push(task);
+  cacheValTasks();
+  refreshTaskUI();
+}
+function calendarizeTask(id,reschedule){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(!t)return;
+  fetch(PROXY+'/api/val/tasks/'+encodeURIComponent(id)+'/suggest-time',{
+    method:'POST',
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({})
+  }).then(function(r){return apiTextOrJson(r);}).then(function(d){
+    var slots=(d&&d.suggestedSlots)||[];
+    var chosen=slots[0];
+    if(slots.length){
+      var msg='Calendarize "'+taskDisplayTitle(t)+'" at '+chosen.label+'?';
+      if(!confirm(msg+'\n\nVAL will create a private busy task block with no attendees or meeting link.')){
+        return;
+      }
+    }else{
+      var raw=prompt('No open slot was found automatically. Enter a start time for this task block, or leave blank to cancel. Example: 2026-06-24 10:00');
+      if(!raw)return;
+      var dt=new Date(raw);
+      if(isNaN(dt.getTime())){alert('That time was not recognized.');return;}
+      chosen={start:dt.toISOString()};
+    }
+    return fetch(PROXY+'/api/val/tasks/'+encodeURIComponent(id)+'/calendarize',{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scheduledStart:chosen.start,scheduledEnd:chosen.end})
+    }).then(function(r){return apiTextOrJson(r);}).then(function(result){
+      if(!result||result.ok===false)throw new Error((result&&result.error)||'Calendarize failed');
+      upsertValTask(result.task);
+      if(typeof valSignalSet==='function')valSignalSet('done',(result.updated?'Rescheduled':'Calendarized')+': '+taskDisplayTitle(result.task));
+      if(document.getElementById('taskDetailPanel')){document.getElementById('taskDetailPanel').remove();openTaskDetail(id);}
+    });
+  }).catch(function(e){
+    alert('VAL could not calendarize this task: '+(e.message||e));
+  });
+}
+function calendarizeOpenTasks(){
+  var open=sortTaskList(valTasks.filter(function(t){return !t.completed&&!t.scheduledStart&&!t.calendarEventId;}),false);
+  if(!open.length){alert('No unscheduled open tasks found.');return;}
+  calendarizeTask(open[0].id);
+}
 function taskCardHtml(t,done){
   var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'No due date';
   var overdue=!done&&t.dueDate&&new Date(t.dueDate)<new Date();
   var context=taskContextPreview(t);
+  var schedule=taskScheduleLabel(t);
   var id=docSafe(JSON.stringify(t.id));
   return '<article class="task-card '+(done?'done':'')+'">'
     +'<button class="task-check" aria-label="'+(done?'Move back to To Do':'Mark complete')+'" onclick="'+(done?'valReopenTask':'valCompleteTask')+'('+id+')">✓</button>'
     +'<div>'
       +'<div class="task-title">'+docSafe(taskDisplayTitle(t))+'</div>'
-      +'<div class="task-meta">'+(done?'Completed by '+docSafe(t.completedBy||'you'):'To do')+' · '+docSafe(due)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
+      +'<div class="task-meta">'+(done?'Completed by '+docSafe(t.completedBy||'you'):'To do')+' · '+docSafe(due)+' · '+docSafe(schedule)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
       +(context?'<div class="task-notes">'+docSafe(context)+'</div>':'')
       +'<div class="task-actions">'
         +'<button class="primary" onclick="openTaskDetail('+id+')">Context</button>'
-        +(done?'<button onclick="valReopenTask('+id+')">Move To Do</button>':'<button onclick="brainstormTask('+id+')">Plan With VAL</button>')
+        +(done?'<button onclick="valReopenTask('+id+')">Move To Do</button>':'<button onclick="brainstormTask('+id+')">Plan With VAL</button><button onclick="calendarizeTask('+id+','+(t.calendarEventId?'true':'false')+')">'+docSafe(t.calendarEventId?'Reschedule':'Calendarize')+'</button>')
       +'</div>'
     +'</div>'
   +'</article>';
@@ -2313,7 +2381,7 @@ function openTaskBoard(){
     id:'taskWorkspace',
     title:isBookEditorMode()?'Editorial Tasks':'Tasks',
     body:'<div id="taskWorkspaceBody"></div>',
-    footer:"<button class=\"alert-btn primary\" onclick=\"ask('What should I work on next? Put every action in the to-do list with context.')\">Ask What Next</button><button class=\"alert-btn\" onclick=\"valTasksLoad()\">Refresh</button><button class=\"alert-btn\" onclick=\"closeExecutiveWorkspace('taskWorkspace')\">Close</button>"
+    footer:"<button class=\"alert-btn primary\" onclick=\"ask('What should I work on next? Put every action in the to-do list with context.')\">Ask What Next</button><button class=\"alert-btn\" onclick=\"calendarizeOpenTasks()\">Calendarize Tasks</button><button class=\"alert-btn\" onclick=\"valTasksLoad()\">Refresh</button><button class=\"alert-btn\" onclick=\"closeExecutiveWorkspace('taskWorkspace')\">Close</button>"
   });
   renderTaskBoard();
 }
@@ -2415,6 +2483,7 @@ function openTaskDetail(id){
 
   var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'No due date';
   var overdue=t.dueDate&&new Date(t.dueDate)<new Date();
+  var schedule=taskScheduleLabel(t);
   var detailsHtml=(t.details&&t.details.length)
     ? t.details.map(function(d){
         var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
@@ -2433,6 +2502,7 @@ function openTaskDetail(id){
       +'<div>'
         +'<div style="font-family:var(--serif);font-size:16px;color:#f8f5ee;line-height:1.3;max-width:280px;">'+docSafe(taskDisplayTitle(t))+'</div>'
         +'<div style="font-size:11px;color:'+(overdue?'#e57373':'var(--gold)')+';margin-top:5px;font-family:var(--mono);">'+due+(overdue?' · OVERDUE':'')+(t.completed?' · Completed by '+docSafe(t.completedBy||'you'):'')+'</div>'
+        +'<div style="font-size:11px;color:#f8f5ee;margin-top:5px;line-height:1.5;">'+docSafe(schedule)+(t.calendarProvider?' · '+docSafe(t.calendarProvider):'')+'</div>'
       +'</div>'
       +'<button onclick="document.getElementById(\'taskDetailPanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;">✕</button>'
     +'</div>'
@@ -2443,6 +2513,7 @@ function openTaskDetail(id){
       +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
         +'<button class="chip" onclick="saveTaskDetail(\''+id+'\')">+ Add note</button>'
         +'<button class="chip" onclick="brainstormTask(\''+id+'\')">💡 Brainstorm with VAL</button>'
+        +'<button class="chip" onclick="calendarizeTask(\''+id+'\','+(t.calendarEventId?'true':'false')+')">'+(t.calendarEventId?'↻ Reschedule':'📅 Calendarize')+'</button>'
         +'<button class="chip" onclick="valCompleteTask(\''+id+'\');document.getElementById(\'taskDetailPanel\').remove()">✓ Complete</button>'
       +'</div>'
     +'</div>';

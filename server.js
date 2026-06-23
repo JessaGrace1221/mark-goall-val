@@ -90,7 +90,7 @@ const GHL_PARTNER_STAGE_NAME = process.env.GHL_PARTNER_STAGE_NAME || 'New Limitl
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || '';
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || '';
 const MICROSOFT_REDIRECT_URI = process.env.MICROSOFT_REDIRECT_URI || (CLIENT_CONFIG.publicBaseUrl ? `${CLIENT_CONFIG.publicBaseUrl.replace(/\/$/,'')}/auth/microsoft/callback` : '');
-const MICROSOFT_SCOPES = String(process.env.MICROSOFT_SCOPES || 'offline_access User.Read Mail.Read Calendars.Read').split(/\s+/).filter(Boolean);
+const MICROSOFT_SCOPES = String(process.env.MICROSOFT_SCOPES || 'offline_access User.Read Mail.Read Calendars.Read Calendars.ReadWrite').split(/\s+/).filter(Boolean);
 const GOALL_LEAD_SEARCH_MAX = Number(process.env.GOALL_LEAD_SEARCH_MAX) || 200;
 const GOALL_LEAD_RAW_SEARCH_MAX = Number(process.env.GOALL_LEAD_RAW_SEARCH_MAX) || Math.max(GOALL_LEAD_SEARCH_MAX*4,200);
 const GOALL_LEAD_SEARCH_CALLS_MAX = Number(process.env.GOALL_LEAD_SEARCH_CALLS_MAX) || 28;
@@ -1719,6 +1719,28 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists val_task_calendar_blocks (
+      id text primary key,
+      task_id text not null,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      scheduled_start timestamptz,
+      scheduled_end timestamptz,
+      calendar_provider text,
+      calendar_id text,
+      calendar_event_id text,
+      estimated_duration_minutes integer not null default 45,
+      source_type text,
+      source_id text,
+      related_transcript_id text,
+      related_email_id text,
+      related_contact_id text,
+      scheduling_status text not null default 'unscheduled',
+      settings_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,task_id)
+    );
     create table if not exists val_users (
       id text primary key,
       client_slug text not null default 'default',
@@ -1805,6 +1827,7 @@ async function initValDb(){
     create index if not exists val_templates_lookup_idx on val_templates(tenant_id,user_id,template_key,is_active);
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
     create index if not exists val_calendar_events_lookup_idx on val_calendar_events(tenant_id,user_id,start_time desc);
+    create index if not exists val_task_calendar_blocks_lookup_idx on val_task_calendar_blocks(tenant_id,user_id,scheduling_status,scheduled_start);
   `);
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
@@ -2630,6 +2653,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI         = process.env.GOOGLE_REDIRECT_URI || process.env.REDIRECT_URI || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
 const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/drive.readonly',
@@ -2640,7 +2664,8 @@ const GOOGLE_SCOPES = String(process.env.GOOGLE_SCOPES||'').trim()
   ? Array.from(new Set(String(process.env.GOOGLE_SCOPES).split(/\s+/).map(s=>s.trim()).filter(Boolean).concat([
       'https://www.googleapis.com/auth/drive.readonly',
       'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/documents'
+      'https://www.googleapis.com/auth/documents',
+      'https://www.googleapis.com/auth/calendar.events'
     ])))
   : DEFAULT_GOOGLE_SCOPES;
 const REQUIRED_GMAIL_SCOPES = [
@@ -3102,6 +3127,128 @@ async function fetchGoogleCalendarEvents(start,end,maxResults=50){
     raw:e
   }));
 }
+
+function defaultTaskCalendarSettings(){
+  return {
+    task_calendarization_mode:'suggest',
+    default_duration_minutes:Number(process.env.VAL_TASK_BLOCK_MINUTES||45),
+    default_reminder_minutes:Number(process.env.VAL_TASK_REMINDER_MINUTES||10),
+    default_provider:String(process.env.VAL_TASK_CALENDAR_PROVIDER||'auto').toLowerCase(),
+    workday_start_hour:Number(process.env.VAL_WORKDAY_START_HOUR||9),
+    workday_end_hour:Number(process.env.VAL_WORKDAY_END_HOUR||17),
+    avoid_weekends:String(process.env.VAL_TASK_AVOID_WEEKENDS||'true')!=='false',
+    completion_behavior:String(process.env.VAL_TASK_COMPLETION_BEHAVIOR||'keep_event_as_done')
+  };
+}
+function taskBlockTitle(task,prefix='TASK'){
+  const raw=String(task?.title||task?.taskTitle||'VAL task').replace(/^(TASK|FOCUS|DONE):\s*/i,'').trim()||'VAL task';
+  return `${prefix}: ${raw}`;
+}
+function doneTaskBlockTitle(task){
+  const raw=String(task?.title||task?.taskTitle||'VAL task').replace(/^(TASK|FOCUS|DONE):\s*/i,'').trim()||'VAL task';
+  return `DONE: ${raw}`;
+}
+function taskBlockDescription(task){
+  return [
+    'Protected work block created by VAL.',
+    'No attendees were invited. No meeting link was created.',
+    task?.contactName?`Related contact: ${task.contactName}`:'',
+    task?.notes?`\nTask notes:\n${String(task.notes).slice(0,1800)}`:''
+  ].filter(Boolean).join('\n');
+}
+function pickTaskProvider(preferred){
+  preferred=String(preferred||'auto').toLowerCase();
+  if(preferred==='google'||preferred==='outlook') return preferred;
+  if(googleTokens?.refresh_token||googleTokens?.access_token) return 'google';
+  return 'outlook';
+}
+function parseTaskDate(value){
+  if(!value)return null;
+  const d=new Date(value);
+  return isNaN(d.getTime())?null:d;
+}
+function addMinutes(date,minutes){return new Date(date.getTime()+Number(minutes||0)*60000);}
+function intervalsOverlap(aStart,aEnd,bStart,bEnd){return aStart<bEnd&&bStart<aEnd;}
+async function createGoogleTaskBlock(task,{start,end,calendarId='primary',durationMinutes,focus=false}={}){
+  const token=await getGoogleToken();
+  if(!token) throw new Error(lastGoogleAuthError||'Google auth required');
+  const event={
+    summary:taskBlockTitle(task,focus?'FOCUS':'TASK'),
+    description:taskBlockDescription(task),
+    start:{dateTime:start.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    end:{dateTime:end.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    transparency:'opaque',
+    visibility:'private',
+    attendees:[],
+    reminders:{useDefault:false,overrides:[{method:'popup',minutes:Number(defaultTaskCalendarSettings().default_reminder_minutes||10)}]},
+    extendedProperties:{private:{val_task_id:task.id,val_block_type:'task',estimated_duration_minutes:String(durationMinutes||'')}}
+  };
+  const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=none`;
+  const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(event)});
+  const d=await readJsonResponse(r);
+  if(!r.ok||d.error) throw new Error(d.error?.message||`Google task block failed (${r.status})`);
+  return {provider:'google',calendarId,eventId:d.id,webLink:d.htmlLink||'',raw:d};
+}
+async function updateGoogleTaskBlock(task,{eventId,calendarId='primary',start,end,completed=false,focus=false}={}){
+  const token=await getGoogleToken();
+  if(!token) throw new Error(lastGoogleAuthError||'Google auth required');
+  const event={
+    summary:completed?doneTaskBlockTitle(task):taskBlockTitle(task,focus?'FOCUS':'TASK'),
+    description:taskBlockDescription(task),
+    start:{dateTime:start.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    end:{dateTime:end.toISOString(),timeZone:CLIENT_CONFIG.timezone},
+    transparency:'opaque',
+    visibility:'private',
+    attendees:[]
+  };
+  const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=none`;
+  const r=await fetch(url,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(event)});
+  const d=await readJsonResponse(r);
+  if(!r.ok||d.error) throw new Error(d.error?.message||`Google task block update failed (${r.status})`);
+  return {provider:'google',calendarId,eventId:d.id||eventId,webLink:d.htmlLink||'',raw:d};
+}
+async function createOutlookTaskBlock(task,{start,end,calendarId='',durationMinutes,focus=false}={}){
+  const token=await getMicrosoftToken();
+  if(!token) throw new Error('Microsoft auth required');
+  const event={
+    subject:taskBlockTitle(task,focus?'FOCUS':'TASK'),
+    body:{contentType:'text',content:taskBlockDescription(task)},
+    start:{dateTime:start.toISOString(),timeZone:'UTC'},
+    end:{dateTime:end.toISOString(),timeZone:'UTC'},
+    showAs:'busy',
+    sensitivity:'private',
+    isReminderOn:true,
+    reminderMinutesBeforeStart:Number(defaultTaskCalendarSettings().default_reminder_minutes||10),
+    attendees:[],
+    singleValueExtendedProperties:[{id:'String {00020329-0000-0000-C000-000000000046} Name val_task_id',value:String(task.id)}]
+  };
+  const url=calendarId?`https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(calendarId)}/events`:'https://graph.microsoft.com/v1.0/me/events';
+  const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`},body:JSON.stringify(event)});
+  const d=await readJsonResponse(r);
+  if(!r.ok) throw new Error(d.error?.message||`Outlook task block failed (${r.status})`);
+  return {provider:'outlook',calendarId,eventId:d.id,webLink:d.webLink||'',raw:d};
+}
+async function updateOutlookTaskBlock(task,{eventId,start,end,completed=false,focus=false}={}){
+  const token=await getMicrosoftToken();
+  if(!token) throw new Error('Microsoft auth required');
+  const event={
+    subject:completed?doneTaskBlockTitle(task):taskBlockTitle(task,focus?'FOCUS':'TASK'),
+    body:{contentType:'text',content:taskBlockDescription(task)},
+    start:{dateTime:start.toISOString(),timeZone:'UTC'},
+    end:{dateTime:end.toISOString(),timeZone:'UTC'},
+    showAs:'busy',
+    sensitivity:'private',
+    attendees:[]
+  };
+  const r=await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`},body:JSON.stringify(event)});
+  const d=await readJsonResponse(r);
+  if(!r.ok) throw new Error(d.error?.message||`Outlook task block update failed (${r.status})`);
+  return {provider:'outlook',eventId,webLink:d.webLink||'',raw:d};
+}
+const calendarProviders={
+  google:{createTaskBlock:createGoogleTaskBlock,updateTaskBlock:updateGoogleTaskBlock},
+  outlook:{createTaskBlock:createOutlookTaskBlock,updateTaskBlock:updateOutlookTaskBlock}
+};
 
 async function fetchGhlCalendarEvents(start,end){
   const accounts=await resolvedGhlAccounts();
@@ -5701,12 +5848,83 @@ function writeTasks(tasks){ writeJson(TASKS_FILE,tasks); }
 function rowToTask(row){
   return {id:row.id,title:row.title,contactName:row.contact_name||'',dueDate:row.due_date?row.due_date.toISOString():null,notes:row.notes||'',details:row.details||[],completed:!!row.completed,completedAt:row.completed_at?row.completed_at.toISOString():null,completedBy:row.completed_by||'',createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString()};
 }
+function rowToTaskCalendarBlock(row){
+  return {
+    calendarBlockId:row.id,
+    scheduledStart:row.scheduled_start?row.scheduled_start.toISOString():null,
+    scheduledEnd:row.scheduled_end?row.scheduled_end.toISOString():null,
+    calendarProvider:row.calendar_provider||'',
+    calendarId:row.calendar_id||'',
+    calendarEventId:row.calendar_event_id||'',
+    estimatedDurationMinutes:Number(row.estimated_duration_minutes||45),
+    schedulingStatus:row.scheduling_status||'unscheduled',
+    sourceType:row.source_type||'',
+    sourceId:row.source_id||'',
+    relatedTranscriptId:row.related_transcript_id||'',
+    relatedEmailId:row.related_email_id||'',
+    relatedContactId:row.related_contact_id||'',
+    schedulingSettings:row.settings_json||{}
+  };
+}
+async function mergeTaskCalendarBlocks(tasks){
+  tasks=Array.isArray(tasks)?tasks:[];
+  if(!tasks.length||DEMO_MODE)return tasks;
+  if(pgPool){
+    const ids=tasks.map(t=>t.id).filter(Boolean);
+    if(!ids.length)return tasks;
+    const r=await dbQuery('select * from val_task_calendar_blocks where tenant_id=$1 and user_id=$2 and task_id = any($3)',[tenantId(),VAL_USER_ID,ids]);
+    const byTask=new Map((r.rows||[]).map(row=>[row.task_id,rowToTaskCalendarBlock(row)]));
+    return tasks.map(t=>byTask.has(t.id)?{...t,...byTask.get(t.id)}:t);
+  }
+  return tasks;
+}
+async function getTaskCalendarBlock(taskId){
+  if(!taskId)return null;
+  if(pgPool){
+    const r=await dbQuery('select * from val_task_calendar_blocks where tenant_id=$1 and user_id=$2 and task_id=$3 limit 1',[tenantId(),VAL_USER_ID,taskId]);
+    return r.rows[0]?{taskId:r.rows[0].task_id,...rowToTaskCalendarBlock(r.rows[0])}:null;
+  }
+  const task=readTasks().find(t=>t.id===taskId);
+  return task?.calendarEventId?task:null;
+}
+async function saveTaskCalendarBlock(taskId,block){
+  if(!taskId)return null;
+  const clean={
+    id:block.calendarBlockId||uuid('task-block'),
+    taskId,
+    scheduledStart:block.scheduledStart||block.scheduled_start||null,
+    scheduledEnd:block.scheduledEnd||block.scheduled_end||null,
+    calendarProvider:block.calendarProvider||block.calendar_provider||'',
+    calendarId:block.calendarId||block.calendar_id||'',
+    calendarEventId:block.calendarEventId||block.calendar_event_id||'',
+    estimatedDurationMinutes:Number(block.estimatedDurationMinutes||block.estimated_duration_minutes||45),
+    sourceType:block.sourceType||block.source_type||'',
+    sourceId:block.sourceId||block.source_id||'',
+    relatedTranscriptId:block.relatedTranscriptId||block.related_transcript_id||'',
+    relatedEmailId:block.relatedEmailId||block.related_email_id||'',
+    relatedContactId:block.relatedContactId||block.related_contact_id||'',
+    schedulingStatus:block.schedulingStatus||block.scheduling_status||'scheduled',
+    settings:block.schedulingSettings||block.settings_json||{}
+  };
+  if(pgPool){
+    await dbQuery(`
+      insert into val_task_calendar_blocks (id,task_id,user_id,tenant_id,scheduled_start,scheduled_end,calendar_provider,calendar_id,calendar_event_id,estimated_duration_minutes,source_type,source_id,related_transcript_id,related_email_id,related_contact_id,scheduling_status,settings_json,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+      on conflict (tenant_id,user_id,task_id) do update set scheduled_start=excluded.scheduled_start,scheduled_end=excluded.scheduled_end,calendar_provider=excluded.calendar_provider,calendar_id=excluded.calendar_id,calendar_event_id=excluded.calendar_event_id,estimated_duration_minutes=excluded.estimated_duration_minutes,source_type=excluded.source_type,source_id=excluded.source_id,related_transcript_id=excluded.related_transcript_id,related_email_id=excluded.related_email_id,related_contact_id=excluded.related_contact_id,scheduling_status=excluded.scheduling_status,settings_json=excluded.settings_json,updated_at=now()
+    `,[clean.id,taskId,VAL_USER_ID,tenantId(),clean.scheduledStart,clean.scheduledEnd,clean.calendarProvider,clean.calendarId,clean.calendarEventId,clean.estimatedDurationMinutes,clean.sourceType,clean.sourceId,clean.relatedTranscriptId,clean.relatedEmailId,clean.relatedContactId,clean.schedulingStatus,JSON.stringify(clean.settings)]);
+  }else{
+    const tasks=readTasks();
+    const idx=tasks.findIndex(t=>t.id===taskId);
+    if(idx>=0){tasks[idx]={...tasks[idx],...clean};writeTasks(tasks);}
+  }
+  return clean;
+}
 async function loadTasks(){
   if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.tasks || []);
   await valDbReady;
   if(pgPool){
     const r=await dbQuery('select * from val_tasks where user_id=$1 order by completed asc, due_date asc nulls last, created_at desc',[VAL_USER_ID]);
-    return r.rows.map(rowToTask);
+    return mergeTaskCalendarBlocks(r.rows.map(rowToTask));
   }
   return readTasks();
 }
@@ -5863,10 +6081,133 @@ async function persistAutoTasksFromValResponse({content,userQuery='',action='cha
   }
   return created;
 }
+async function findTaskById(taskId){
+  return (await loadTasks()).find(t=>String(t.id)===String(taskId));
+}
+async function busyEventsForTaskWindow(start,end){
+  const calendars=await Promise.all([
+    fetchGoogleCalendarEvents(start,end,150).catch(()=>[]),
+    fetchOutlookCalendarEvents(start,end,150).catch(()=>[]),
+    fetchValCalendarEvents(start,end).catch(()=>[])
+  ]);
+  return calendars.flat().filter(e=>!/^free$/i.test(String(e.transparency||e.showAs||''))).map(e=>({
+    start:parseTaskDate(e.startTime||e.start||e.date),
+    end:parseTaskDate(e.endTime||e.end||e.date)
+  })).filter(e=>e.start&&e.end);
+}
+async function suggestTaskSlots(task,opts={}){
+  const settings={...defaultTaskCalendarSettings(),...(opts.settings||{})};
+  const duration=Number(opts.durationMinutes||task.estimatedDurationMinutes||settings.default_duration_minutes||45);
+  const now=new Date();
+  let searchStart=parseTaskDate(opts.searchStart)||new Date(now.getTime()+30*60000);
+  let searchEnd=parseTaskDate(opts.searchEnd)||parseTaskDate(task.dueDate)||new Date(now.getTime()+14*24*60*60*1000);
+  if(searchEnd<searchStart) searchEnd=new Date(searchStart.getTime()+7*24*60*60*1000);
+  const busy=await busyEventsForTaskWindow(searchStart,searchEnd);
+  const slots=[];
+  const cursor=new Date(searchStart);
+  cursor.setMinutes(cursor.getMinutes()<30?30:60,0,0);
+  while(cursor<searchEnd&&slots.length<6){
+    const day=cursor.getDay();
+    const dayStart=new Date(cursor);dayStart.setHours(settings.workday_start_hour,0,0,0);
+    const dayEnd=new Date(cursor);dayEnd.setHours(settings.workday_end_hour,0,0,0);
+    if(settings.avoid_weekends&&(day===0||day===6)){
+      cursor.setDate(cursor.getDate()+1);cursor.setHours(settings.workday_start_hour,0,0,0);continue;
+    }
+    if(cursor<dayStart){cursor.setTime(dayStart.getTime());}
+    const candidateEnd=addMinutes(cursor,duration);
+    if(candidateEnd<=dayEnd&&!busy.some(b=>intervalsOverlap(cursor,candidateEnd,b.start,b.end))){
+      slots.push({start:cursor.toISOString(),end:candidateEnd.toISOString(),durationMinutes:duration,label:cursor.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:CLIENT_CONFIG.timezone})});
+      cursor.setTime(candidateEnd.getTime()+15*60000);
+    }else{
+      cursor.setMinutes(cursor.getMinutes()+30,0,0);
+    }
+    if(cursor>=dayEnd){cursor.setDate(cursor.getDate()+1);cursor.setHours(settings.workday_start_hour,0,0,0);}
+  }
+  return slots;
+}
+async function calendarizeTask(taskId,opts={}){
+  const task=await findTaskById(taskId);
+  if(!task) throw new Error('Task not found');
+  const existing=await getTaskCalendarBlock(taskId);
+  const settings={...defaultTaskCalendarSettings(),...(existing?.schedulingSettings||{}),...(opts.settings||{})};
+  const duration=Number(opts.durationMinutes||existing?.estimatedDurationMinutes||task.estimatedDurationMinutes||settings.default_duration_minutes||45);
+  let start=parseTaskDate(opts.scheduledStart||opts.start||task.scheduledStart);
+  let end=parseTaskDate(opts.scheduledEnd||opts.end||task.scheduledEnd);
+  if(start&&!end) end=addMinutes(start,duration);
+  if(!start){
+    const suggestedSlots=await suggestTaskSlots(task,{durationMinutes:duration,settings});
+    return {ok:true,needsApproval:true,task,suggestedSlots,message:'Choose a protected work block for this task.'};
+  }
+  if(!end||end<=start) end=addMinutes(start,duration);
+  const provider=pickTaskProvider(opts.provider||existing?.calendarProvider||settings.default_provider);
+  const providerApi=calendarProviders[provider];
+  if(!providerApi) throw new Error('Calendar provider not supported');
+  let created;
+  if(existing?.calendarEventId){
+    created=await providerApi.updateTaskBlock(task,{eventId:existing.calendarEventId,calendarId:existing.calendarId||opts.calendarId||'primary',start,end,focus:!!opts.focus});
+  }else{
+    created=await providerApi.createTaskBlock(task,{start,end,calendarId:opts.calendarId||existing?.calendarId||'primary',durationMinutes:duration,focus:!!opts.focus});
+  }
+  const block=await saveTaskCalendarBlock(taskId,{
+    calendarBlockId:existing?.calendarBlockId,
+    scheduledStart:start.toISOString(),
+    scheduledEnd:end.toISOString(),
+    calendarProvider:created.provider||provider,
+    calendarId:created.calendarId||opts.calendarId||existing?.calendarId||'primary',
+    calendarEventId:created.eventId,
+    estimatedDurationMinutes:duration,
+    sourceType:opts.sourceType||task.source||existing?.sourceType||'manual',
+    sourceId:opts.sourceId||task.sourceId||existing?.sourceId||'',
+    relatedTranscriptId:opts.relatedTranscriptId||task.transcriptId||task.sourceTranscriptId||existing?.relatedTranscriptId||'',
+    relatedEmailId:opts.relatedEmailId||task.emailId||existing?.relatedEmailId||'',
+    relatedContactId:opts.relatedContactId||task.contactId||existing?.relatedContactId||'',
+    schedulingStatus:task.completed?'completed':'scheduled',
+    schedulingSettings:settings
+  });
+  return {ok:true,task:{...task,...block},calendarEvent:created,updated:!!existing?.calendarEventId};
+}
+async function completeCalendarizedTask(taskId,taskPatch={}){
+  const task=await findTaskById(taskId);
+  if(!task) throw new Error('Task not found');
+  const completed={...task,...taskPatch,completed:true,completedAt:taskPatch.completedAt||task.completedAt||new Date().toISOString(),completedBy:taskPatch.completedBy||task.completedBy||'you'};
+  await saveTask(completed);
+  const block=await getTaskCalendarBlock(taskId);
+  if(block?.calendarEventId&&block.scheduledStart&&block.scheduledEnd){
+    const settings={...defaultTaskCalendarSettings(),...(block.schedulingSettings||{})};
+    if(settings.completion_behavior!=='delete_event'){
+      try{
+        const api=calendarProviders[block.calendarProvider]||calendarProviders[pickTaskProvider(block.calendarProvider)];
+        if(api?.updateTaskBlock){
+          await api.updateTaskBlock(completed,{eventId:block.calendarEventId,calendarId:block.calendarId||'primary',start:new Date(block.scheduledStart),end:new Date(block.scheduledEnd),completed:true});
+        }
+        await saveTaskCalendarBlock(taskId,{...block,schedulingStatus:'completed'});
+      }catch(e){
+        await saveTaskCalendarBlock(taskId,{...block,schedulingStatus:'completion_sync_failed',schedulingSettings:{...settings,lastCompletionSyncError:e.message}});
+      }
+    }else{
+      await saveTaskCalendarBlock(taskId,{...block,schedulingStatus:'completed'});
+    }
+  }
+  return {...completed,...(await getTaskCalendarBlock(taskId)||{})};
+}
+async function openLoopsSummary(){
+  const tasks=await loadTasks();
+  const now=new Date();
+  const open=tasks.filter(t=>!t.completed&&t.status!=='completed');
+  const unscheduled=open.filter(t=>!t.calendarEventId&&!t.scheduledStart);
+  const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<now);
+  const todayEnd=new Date();todayEnd.setHours(23,59,59,999);
+  const scheduledToday=open.filter(t=>t.scheduledStart&&new Date(t.scheduledStart)>=now&&new Date(t.scheduledStart)<=todayEnd);
+  return {openCount:open.length,unscheduledCount:unscheduled.length,overdueCount:overdue.length,scheduledTodayCount:scheduledToday.length,unscheduled:unscheduled.slice(0,12),overdue:overdue.slice(0,8),scheduledToday:scheduledToday.slice(0,8)};
+}
 app.get('/api/val/tasks',async(req,res)=>{try{res.json(await loadTasks());}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!task.id)return res.status(400).json({error:'Missing task id'});await saveTask(task);res.json({ok:true,task});}catch(e){res.status(500).json({error:e.message});}});
 app.put('/api/val/tasks',async(req,res)=>{try{if(!Array.isArray(req.body))return res.status(400).json({error:'Expected array'});await replaceTasks(req.body);res.json({ok:true,count:req.body.length});}catch(e){res.status(500).json({error:e.message});}});
 app.delete('/api/val/tasks/:id',async(req,res)=>{try{await deleteTask(req.params.id);res.json({ok:true});}catch(e){res.status(500).json({error:e.message});}});
+app.get('/api/val/tasks/open-loops',async(req,res)=>{try{res.json({ok:true,...await openLoopsSummary()});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/tasks/:id/suggest-time',async(req,res)=>{try{const task=await findTaskById(req.params.id);if(!task)return res.status(404).json({ok:false,error:'Task not found'});res.json({ok:true,task,suggestedSlots:await suggestTaskSlots(task,req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/tasks/:id/calendarize',async(req,res)=>{try{res.json(await calendarizeTask(req.params.id,req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/tasks/:id/complete',async(req,res)=>{try{res.json({ok:true,task:await completeCalendarizedTask(req.params.id,req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 
 const MEETING_RECAP_TEMPLATE_KEY='meeting_recap';
 const DEFAULT_MEETING_RECAP_TEMPLATE={
@@ -10835,6 +11176,19 @@ app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
     if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}
+    if(/\b(show|list|find)\b[\s\S]{0,40}\bunscheduled tasks|open loops\b/i.test(lastUser)){
+      const loops=await openLoopsSummary();
+      const lines=(loops.unscheduled||[]).slice(0,10).map((t,i)=>`${i+1}. ${t.title}${t.dueDate?` — due ${new Date(t.dueDate).toLocaleDateString()}`:''}`).join('\n')||'No unscheduled open tasks found.';
+      return res.json({message:{role:'assistant',content:`Open loops: ${loops.openCount} open, ${loops.unscheduledCount} unscheduled, ${loops.overdueCount} overdue.\n\n${lines}`},openLoops:loops});
+    }
+    if(/\b(calendarize|schedule time|put .*calendar|block time)\b/i.test(lastUser)&&/\btask|tasks|open loops|follow[- ]?up/i.test(lastUser)){
+      const loops=await openLoopsSummary();
+      const task=(loops.unscheduled||[])[0];
+      if(!task)return res.json({message:{role:'assistant',content:'I do not see any unscheduled open tasks right now.'},openLoops:loops});
+      const suggestedSlots=await suggestTaskSlots(task).catch(()=>[]);
+      const slotLines=suggestedSlots.slice(0,3).map((s,i)=>`${i+1}. ${s.label}`).join('\n');
+      return res.json({message:{role:'assistant',content:`I found the next unscheduled task: ${task.title}.\n\nSuggested protected work blocks:\n${slotLines||'No safe slot found yet.'}\n\nOpen Tasks and press Calendarize to confirm a private busy block with no attendees or meeting link.`},taskScheduling:{task,suggestedSlots}});
+    }
     if(inboxCommandIntent(lastUser)){
       const inbox=await runInboxCommand(lastUser,{maxResults:5});
       const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
