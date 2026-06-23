@@ -2438,6 +2438,19 @@ app.post('/api/email/gmail/refresh',async(req,res)=>{
     res.status(data.ok===false?400:200).json({...data,refreshed:true});
   }catch(e){res.status(500).json({ok:false,refreshed:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
 });
+app.post('/api/email/inbox-command',async(req,res)=>{
+  try{
+    const query=String(req.body.query||req.body.message||'').trim();
+    if(!query)return res.status(400).json({ok:false,error:'Inbox Command needs a search question.'});
+    res.json(await runInboxCommand(query,{maxResults:Number(req.body.maxResults)||8}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/email/inbox-command/action',async(req,res)=>{
+  try{
+    const result=await inboxCommandAction(req.body||{},req.valUser?.id||currentUserId());
+    res.status(result.ok===false?400:200).json(result);
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.get('/api/email/rules',async(req,res)=>{
   try{res.json({ok:true,rules:await listEmailRules(req.valUser.id)});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
@@ -3441,6 +3454,105 @@ async function fetchUnifiedOutlookEmails(limit=20){
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
   return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
+}
+
+function inboxCommandIntent(text=''){
+  return /\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|what did|find|search)\b/i.test(String(text||''))&&/\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|said|sent|from|about|find|search)\b/i.test(String(text||''));
+}
+function inboxSearchTerms(text=''){
+  const raw=String(text||'');
+  const quoted=[...raw.matchAll(/"([^"]+)"/g)].map(m=>m[1].trim()).filter(Boolean);
+  const email=[...raw.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)].map(m=>m[0].toLowerCase());
+  const fromMatch=raw.match(/\bfrom\s+([A-Z][A-Za-z0-9._%+-]*(?:\s+[A-Z][A-Za-z0-9._%+-]*)?|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+  const aboutMatch=raw.match(/\b(?:about|regarding|re:|on)\s+([^?.!,;]+)/i);
+  const cleaned=raw.toLowerCase().replace(/"[^"]+"/g,' ').replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g,' ').replace(/\b(find|search|show|pull|open|what|did|does|say|said|email|emails|message|messages|thread|gmail|outlook|inbox|from|about|regarding|last|this|that|the|a|an|to|for|me|my|please|can|you|forward|draft|reply|summarize|summary|next|week|month|today|yesterday)\b/g,' ').replace(/[^a-z0-9\s-]/g,' ');
+  const terms=[...quoted,...email];
+  if(fromMatch)terms.push(fromMatch[1].trim());
+  if(aboutMatch)terms.push(...aboutMatch[1].split(/\s+/).filter(Boolean).slice(0,5));
+  terms.push(...cleaned.split(/\s+/).filter(w=>w.length>2).slice(0,8));
+  return [...new Set(terms.map(t=>String(t||'').trim()).filter(Boolean))].slice(0,12);
+}
+function inboxWindowQuery(text=''){
+  const lower=String(text||'').toLowerCase();
+  if(/\btoday\b/.test(lower))return 'newer_than:2d';
+  if(/\byesterday\b/.test(lower))return 'newer_than:3d';
+  if(/\blast\s+month\b/.test(lower))return 'newer_than:60d';
+  if(/\blast\s+week\b|\bnext\s+week\b|\bthis\s+week\b/.test(lower))return 'newer_than:21d';
+  return 'newer_than:90d';
+}
+function gmailQueryFromInboxCommand(text=''){
+  const terms=inboxSearchTerms(text).filter(t=>!/@/.test(t)||/from|to/i.test(text));
+  const sender=(String(text||'').match(/\bfrom\s+([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|[A-Za-z][A-Za-z0-9._%+-]*)/i)||[])[1]||'';
+  const parts=[inboxWindowQuery(text)];
+  if(sender)parts.push(`from:${sender.replace(/"/g,'')}`);
+  for(const term of terms.slice(0,6)){
+    const clean=term.replace(/"/g,'').trim();
+    if(clean&&clean.toLowerCase()!==sender.toLowerCase())parts.push(/\s/.test(clean)?`"${clean}"`:clean);
+  }
+  return parts.join(' ');
+}
+function emailSearchScore(email,terms){
+  const hay=[email.subject,email.from?.name,email.from?.email,email.snippet,email.bodyPreview,email.bodyText,(email.to||[]).map(t=>t.email).join(' ')].join(' ').toLowerCase();
+  return terms.reduce((score,term)=>score+(hay.includes(String(term).toLowerCase())?1:0),0);
+}
+function inboxEmailSource(email){
+  return {provider:email.provider,messageId:email.messageId,threadId:email.threadId,subject:email.subject,from:email.from,date:email.date||email.receivedAt,snippet:email.bodyPreview||email.snippet||'',webLink:email.webLink||'',hasAttachments:!!email.hasAttachments,labels:email.labels||[]};
+}
+const emailProviders={
+  gmail:{async search({query,maxResults=15}){return fetchGmailMessages({query:gmailQueryFromInboxCommand(query),maxResults,includeBody:true});}},
+  outlook:{async search({query,maxResults=15}){
+    const result=await fetchUnifiedOutlookEmails(Math.max(maxResults,75));
+    const terms=inboxSearchTerms(query);
+    const emails=sortEmailsNewestFirst((result.emails||[]).map(e=>({...e,_score:emailSearchScore(e,terms)}))).filter(e=>!terms.length||e._score>0).slice(0,maxResults);
+    return {...result,emails,query};
+  }}
+};
+async function runInboxCommand(query,{maxResults=8}={}){
+  const terms=inboxSearchTerms(query);
+  const [gmail,outlook]=await Promise.all([
+    emailProviders.gmail.search({query,maxResults:Math.max(maxResults,15)}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    emailProviders.outlook.search({query,maxResults:Math.max(maxResults,15)}).catch(e=>({emails:[],error:e.message,provider:'outlook'}))
+  ]);
+  const emails=sortEmailsNewestFirst([...(gmail.emails||[]),...(outlook.emails||[])].map(e=>({...e,_score:emailSearchScore(e,terms)}))).filter(e=>!terms.length||e._score>0).slice(0,maxResults);
+  const sources=emails.map(inboxEmailSource);
+  const answer=emails.length?`I found ${emails.length} likely email${emails.length===1?'':'s'}. The best match is "${emails[0].subject||'(No subject)'}" from ${emails[0].from?.name||emails[0].from?.email||'unknown sender'}.`:'I could not find a matching email in the connected inbox windows. Try a sender, subject word, or date range.';
+  const errors=[gmail.error&&`Gmail: ${gmail.error}`,outlook.error&&`Outlook: ${outlook.error}`].filter(Boolean);
+  return {ok:true,query,gmailQuery:gmailQueryFromInboxCommand(query),terms,answer,results:sources,emails:sources,sources,errors,needsChoice:emails.length>1};
+}
+async function resolveInboxRecipient(value=''){
+  const raw=String(value||'').trim();
+  const email=(raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)||[])[0];
+  if(email)return {ok:true,email:email.toLowerCase(),name:raw.replace(email,'').replace(/[<>"]/g,'').trim()};
+  const current=currentValUser();
+  if(raw&&current?.email&&new RegExp(`\\b(${current.name||current.email.split('@')[0]||'me'}|me)\\b`,'i').test(raw))return {ok:true,email:current.email,name:current.name||current.email};
+  const resolved=await resolveContactFromContext({name:raw,email:raw}).catch(()=>null);
+  const contact=resolved?.contact||{};
+  if(contact.email)return {ok:true,email:contact.email,name:contact.name||raw,contact};
+  return {ok:false,error:`I could not resolve "${raw}" to one email address. Please provide the recipient email.`};
+}
+async function inboxCommandAction(body={},userId=currentUserId()){
+  const action=String(body.action||body.actionType||'').trim();
+  const email=body.email||body.message||{};
+  if(!email.messageId&&!email.subject)return {ok:false,error:'Choose an email first.'};
+  if(action==='draft_reply'){
+    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:'Re: '+(email.subject||''),body:body.body||`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review before sending.]\n\nBest,`,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
+    return {ok:true,action,draft,requiresApproval:true};
+  }
+  if(action==='forward_draft'||action==='forward'){
+    const recipient=await resolveInboxRecipient(body.to||body.recipient||'');
+    if(!recipient.ok)return {ok:false,needsRecipient:true,error:recipient.error};
+    const sensitive=/invoice|contract|legal|financial|payment|confidential|medical|hr/i.test([email.subject,email.snippet].join(' '));
+    const draft=await saveInternalDraft({draftType:'email_forward',provider:'internal',subject:'Fwd: '+(email.subject||''),body:body.body||`Forwarding this for review.\n\nOriginal from: ${email.from?.email||email.from?.name||''}\nSubject: ${email.subject||''}\nDate: ${email.date||''}\n\n${email.snippet||''}`,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,forwardTo:recipient.email,recipientName:recipient.name||'',hasAttachments:!!email.hasAttachments,sensitive}});
+    return {ok:true,action:'forward_draft',draft,recipient,requiresApproval:true,warning:email.hasAttachments?'This email has attachments. VAL created a safe forward draft; verify attachments before sending.':(sensitive?'Sensitive content may be present. Review before sending.':'')};
+  }
+  if(action==='create_task'){
+    const task={id:uuid('task'),title:body.title||`Review email: ${email.subject||'(No subject)'}`,contactName:email.from?.name||email.from?.email||'',dueDate:body.dueDate||null,notes:[`Created from Inbox Command.`,email.snippet||'',email.webLink||''].filter(Boolean).join('\n'),details:[{text:`Source email ${email.provider||''}:${email.messageId||''}`,ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+    await saveTask(task);return {ok:true,action,task};
+  }
+  if(action==='summarize'){
+    return {ok:true,action,summary:`${email.subject||'(No subject)'} — ${email.snippet||'No preview available.'}`,source:email};
+  }
+  return {ok:false,error:'Unsupported Inbox Command action.'};
 }
 
 function normalizeAttendee(attendee){
@@ -10723,6 +10835,11 @@ app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
     if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}
+    if(inboxCommandIntent(lastUser)){
+      const inbox=await runInboxCommand(lastUser,{maxResults:5});
+      const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
+      return res.json({message:{role:'assistant',content:[inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n')},inboxCommand:inbox});
+    }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();
       return res.json({message:{role:'assistant',content:goallTestContactSummary(result)},ghlContact:result});

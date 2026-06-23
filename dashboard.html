@@ -1575,7 +1575,7 @@ function openOpportunityIntelligence(){
 }
 var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null};
 function openEmailIntelligence(){
-  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Register Keys</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
+  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the email from Bill about next week’s event..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find emails, summarize a thread, draft a reply, or prepare a safe forward draft.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Register Keys</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
 function connectGmail(){
@@ -1620,6 +1620,47 @@ function renderEmailSyncStatus(data){
     g.error?'Error: '+g.error:''
   ].filter(Boolean);
   el.innerHTML='<strong>Gmail Sync</strong><div style="font-size:12px;line-height:1.55;color:#334155;margin-top:4px">'+bits.map(docSafe).join(' · ')+'</div>';
+}
+function runInboxCommand(){
+  var input=document.getElementById('inboxCommandInput'),q=input&&input.value.trim(),status=document.getElementById('inboxCommandStatus');
+  if(!q)return;
+  if(status)status.textContent='Searching Gmail and Outlook...';
+  apiFetch(PROXY+'/api/email/inbox-command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,maxResults:8})}).then(function(d){
+    emailIntel.inbox={query:q,results:d.results||[],selected:(d.results||[])[0]||null,answer:d.answer||''};
+    renderInboxCommandResults(d);
+  }).catch(function(e){if(status)status.textContent='Inbox Command failed: '+e.message;});
+}
+function renderInboxCommandResults(data){
+  var status=document.getElementById('inboxCommandStatus'),box=document.getElementById('inboxCommandResults');
+  if(status)status.textContent=(data.answer||'Search complete.')+(data.errors&&data.errors.length?' Errors: '+data.errors.join('; '):'');
+  if(!box)return;
+  var rows=(data.results||[]).map(function(e,i){return '<div class="email-item '+(i===0?'active':'')+'" onclick="selectInboxCommandResult('+i+')"><div class="email-item-top"><span>'+docSafe(e.provider||'email')+'</span><span>'+docSafe(e.date?new Date(e.date).toLocaleDateString():'')+'</span></div><div class="email-item-subject">'+docSafe(e.subject||'(No subject)')+'</div><div class="email-item-meta">'+docSafe((e.from&&((e.from.name||'')+' '+(e.from.email||'')))||'Unknown sender')+' · '+docSafe(e.snippet||'')+'</div></div>';}).join('');
+  box.innerHTML='<div style="display:grid;grid-template-columns:minmax(220px,.85fr) minmax(260px,1.15fr);gap:10px;margin-top:10px"><div>'+(rows||'<div class="email-item">No matching emails found.</div>')+'</div><div id="inboxCommandDetail"></div></div>';
+  renderInboxCommandDetail(emailIntel.inbox.selected);
+}
+function selectInboxCommandResult(index){
+  emailIntel.inbox.selected=(emailIntel.inbox.results||[])[index]||null;
+  renderInboxCommandDetail(emailIntel.inbox.selected);
+}
+function renderInboxCommandDetail(e){
+  var detail=document.getElementById('inboxCommandDetail');if(!detail)return;
+  if(!e){detail.innerHTML='<div class="email-card"><h3>No email selected</h3></div>';return;}
+  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span>${e.hasAttachments?'<span class="email-pill">Has attachments</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Date:</strong> ${docSafe(e.date?new Date(e.date).toLocaleString():'')}<br><strong>Snippet:</strong> ${docSafe(e.snippet||'')}</div><div class="email-actions"><button class="primary" onclick="inboxCommandAction('draft_reply')">Draft Reply</button><button onclick="inboxCommandForward()">Forward Draft</button><button onclick="inboxCommandAction('summarize')">Summarize</button><button onclick="inboxCommandAction('create_task')">Create Task</button>${e.webLink?`<button onclick="window.open('${docSafe(e.webLink)}','_blank','noopener')">Open Email</button>`:''}</div></div>`;
+}
+function inboxCommandForward(){
+  var to=prompt('Forward draft to which person or email?');
+  if(!to)return;
+  inboxCommandAction('forward_draft',{to:to});
+}
+function inboxCommandAction(action,extra){
+  var email=emailIntel.inbox.selected;if(!email){addSys('Choose an email first.');return;}
+  apiFetch(PROXY+'/api/email/inbox-command/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:action,email:email},extra||{}))}).then(function(d){
+    if(!d.ok){addSys(d.error||'Inbox Command action failed.');return;}
+    if(d.draft)addMsg((d.warning?d.warning+'\\n\\n':'')+'Draft created for review:\\n\\nSubject: '+(d.draft.subject||'')+'\\n\\n'+(d.draft.body||''),false);
+    else if(d.task)addSys('Task created: '+d.task.title);
+    else if(d.summary)addMsg('Email summary:\\n\\n'+d.summary,false);
+    else addSys('Inbox Command action prepared.');
+  }).catch(function(e){addSys('Inbox Command action failed: '+e.message);});
 }
 function emailTabs(){
   return [
