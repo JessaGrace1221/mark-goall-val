@@ -2409,7 +2409,7 @@ app.get('/api/auth/me',async(req,res)=>{
   res.status(user?200:401).json(user?{ok:true,user}:{ok:false,error:'Authentication required'});
 });
 app.use(requireAuth);
-app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI)}));
+app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot()}));
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
 app.get('/api/security/privacy-center',requirePermission('security:view'),async(req,res)=>{
@@ -3011,9 +3011,19 @@ app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'dashboard.html
 // GOOGLE OAUTH
 // ════════════════════════════════════════════════════════
 
-const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI         = process.env.GOOGLE_REDIRECT_URI || process.env.REDIRECT_URI || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
+function firstEnvValue(names){
+  for(const name of names){
+    const value=String(process.env[name]||'').trim();
+    if(value) return value;
+  }
+  return '';
+}
+const GOOGLE_CLIENT_ID_ENV_NAMES = ['GOOGLE_CLIENT_ID','GOOGLE_OAUTH_CLIENT_ID','GOOGLE_AUTH_CLIENT_ID'];
+const GOOGLE_CLIENT_SECRET_ENV_NAMES = ['GOOGLE_CLIENT_SECRET','GOOGLE_OAUTH_CLIENT_SECRET','GOOGLE_AUTH_CLIENT_SECRET'];
+const GOOGLE_REDIRECT_URI_ENV_NAMES = ['GOOGLE_REDIRECT_URI','GOOGLE_OAUTH_REDIRECT_URI','REDIRECT_URI'];
+const GOOGLE_CLIENT_ID     = firstEnvValue(GOOGLE_CLIENT_ID_ENV_NAMES);
+const GOOGLE_CLIENT_SECRET = firstEnvValue(GOOGLE_CLIENT_SECRET_ENV_NAMES);
+const REDIRECT_URI         = firstEnvValue(GOOGLE_REDIRECT_URI_ENV_NAMES) || `${CLIENT_CONFIG.publicBaseUrl}/auth/callback`;
 const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
@@ -3044,6 +3054,37 @@ let googleTokens = {}; // hot cache; durable copy lives in Postgres scoped by te
 let googleTokensLoaded = false;
 let lastGoogleAuthError = null;
 let gmailSyncStatus = {lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',lastFetchedCount:0,lastAnalyzedCount:0,lastQuery:''};
+
+function validGoogleClientId(id=GOOGLE_CLIENT_ID){
+  return /^\d+[-\w]*\.apps\.googleusercontent\.com$/.test(String(id||'').trim());
+}
+function googleOAuthConfigProblems(){
+  const problems=[];
+  if(!GOOGLE_CLIENT_ID) problems.push(`Missing ${GOOGLE_CLIENT_ID_ENV_NAMES.join(' or ')}`);
+  else if(!validGoogleClientId()) problems.push('GOOGLE_CLIENT_ID does not look like a Google OAuth web client ID ending in .apps.googleusercontent.com');
+  if(!GOOGLE_CLIENT_SECRET) problems.push(`Missing ${GOOGLE_CLIENT_SECRET_ENV_NAMES.join(' or ')}`);
+  if(!REDIRECT_URI) problems.push(`Missing ${GOOGLE_REDIRECT_URI_ENV_NAMES.join(' or ')} or VAL_PUBLIC_BASE_URL`);
+  if(IS_PRODUCTION&&!encryptionConfigured()) problems.push('Missing ENCRYPTION_KEY in this Railway service/environment; production OAuth token saves are blocked until it is available at runtime');
+  return problems;
+}
+function googleOAuthConfigSnapshot(){
+  return {
+    ok:googleOAuthConfigProblems().length===0,
+    clientIdConfigured:!!GOOGLE_CLIENT_ID,
+    clientIdLooksValid:validGoogleClientId(),
+    clientId:maskSecret(GOOGLE_CLIENT_ID),
+    clientSecretConfigured:!!GOOGLE_CLIENT_SECRET,
+    redirectUri:REDIRECT_URI,
+    encryptionConfigured:encryptionConfigured(),
+    envNames:{
+      clientId:GOOGLE_CLIENT_ID_ENV_NAMES,
+      clientSecret:GOOGLE_CLIENT_SECRET_ENV_NAMES,
+      redirectUri:GOOGLE_REDIRECT_URI_ENV_NAMES,
+      encryptionKey:'ENCRYPTION_KEY'
+    },
+    problems:googleOAuthConfigProblems()
+  };
+}
 
 // Optional legacy fallback only. Prefer OAuth reconnect so tokens are scoped to this VAL tenant/user.
 if(process.env.GOOGLE_REFRESH_TOKEN && /^(1|true|yes)$/i.test(String(process.env.ALLOW_GOOGLE_REFRESH_TOKEN_ENV||''))){
@@ -3210,8 +3251,13 @@ app.post('/api/claude',async(req,res)=>{
 });
 
 app.get('/auth/google', (req, res) => {
+  const problems=googleOAuthConfigProblems();
+  if(problems.length){
+    lastGoogleAuthError=problems.join('; ');
+    return res.status(503).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth is not ready</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(REDIRECT_URI)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(baseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
+  }
   const scopes = GOOGLE_SCOPES.join(' ');
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
   res.redirect(url);
 });
 
@@ -3220,6 +3266,8 @@ app.get('/auth/callback', async (req, res) => {
   const {code} = req.query;
   if(!code) return res.status(400).send('No code received');
   try {
+    const problems=googleOAuthConfigProblems();
+    if(problems.length) throw new Error(problems.join('; '));
     const existingTokens = await loadOAuthTokens('google') || googleTokens || {};
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
