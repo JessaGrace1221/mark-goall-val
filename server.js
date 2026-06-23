@@ -1355,7 +1355,7 @@ function transcriptWebhookInfo(req){
   };
 }
 function encryptionKeyBuffer(){
-  const raw=String(process.env.ENCRYPTION_KEY||'').trim();
+  const raw=firstEnvValue(['ENCRYPTION_KEY','VAL_ENCRYPTION_KEY','ENCRYPTION_SECRET','encryption_key','ENCRIPTION_KEY','encription_key']);
   if(!raw) return null;
   if(/^[a-f0-9]{64}$/i.test(raw)) return Buffer.from(raw,'hex');
   try{
@@ -2298,7 +2298,7 @@ function clientIsolationWarnings(){
   if(!process.env.VAL_CLIENT_BRAND_NAME) warnings.push('VAL_CLIENT_BRAND_NAME is missing. Dashboard may show generic brand identity.');
   if(process.env.VAL_PUBLIC_BASE_URL && process.env.VAL_PUBLIC_BASE_URL!==CLIENT_CONFIG.publicBaseUrl) warnings.push(`VAL_PUBLIC_BASE_URL was normalized from "${process.env.VAL_PUBLIC_BASE_URL}" to "${CLIENT_CONFIG.publicBaseUrl}". Fix the Railway variable.`);
   if(!process.env.DATABASE_URL) warnings.push('DATABASE_URL is missing. Deployment will use temporary file storage and is not safe for production.');
-  if(!process.env.ENCRYPTION_KEY) warnings.push('ENCRYPTION_KEY is missing. OAuth tokens and integration secrets cannot be encrypted for new saves in production.');
+  if(!encryptionConfigured()) warnings.push('ENCRYPTION_KEY is missing. OAuth tokens and integration secrets cannot be encrypted for new saves in production. Accepted variable names: ENCRYPTION_KEY, VAL_ENCRYPTION_KEY, ENCRYPTION_SECRET.');
   if(CLIENT_CONFIG.clientSlug==='val-core') warnings.push('Client slug is still val-core. This is unsafe for production client isolation.');
   if(process.env.GOOGLE_REFRESH_TOKEN) warnings.push('GOOGLE_REFRESH_TOKEN is set. Remove it from Railway and reconnect Google through the dashboard so OAuth is tenant/user scoped.');
   return warnings;
