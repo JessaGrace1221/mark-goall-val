@@ -283,17 +283,17 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .task-count-pill{border:1px solid rgba(199,146,43,.28);border-radius:999px;padding:4px 8px;color:var(--gold);font:700 .55rem var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
 .task-list{display:grid;gap:8px;padding:10px}
 .task-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:flex-start;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(248,245,238,.97);color:var(--navy);padding:11px 12px;box-shadow:0 8px 18px rgba(0,0,0,.08)}
-.task-card.done{opacity:.72;background:rgba(248,245,238,.82)}
+.task-card.done{opacity:1;background:#f8fafc}
 .task-check{width:24px;height:24px;border:1px solid rgba(199,146,43,.52);border-radius:7px;background:white;color:transparent;font-weight:900;line-height:1;cursor:pointer;margin-top:1px}
 .task-check:hover{background:var(--gold-dim);color:var(--gold)}
 .task-card.done .task-check{background:var(--gold);border-color:var(--gold);color:var(--navy)}
 .task-title{font-size:.88rem;font-weight:700;line-height:1.35;color:var(--navy);overflow-wrap:anywhere}
 .task-card.done .task-title{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:rgba(22,38,62,.45)}
-.task-meta{font-size:.68rem;color:var(--text-3);line-height:1.45;margin-top:4px}
-.task-notes{font-size:.72rem;color:var(--text-2);line-height:1.45;margin-top:7px;max-height:54px;overflow:hidden}
+.task-meta{font-size:.68rem;color:#1f2937;line-height:1.45;margin-top:4px;opacity:1}
+.task-notes{font-size:.72rem;color:#1f2937;line-height:1.45;margin-top:7px;max-height:54px;overflow:hidden;opacity:1}
 .task-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.task-actions button{height:27px;border:1px solid rgba(199,146,43,.25);border-radius:7px;background:#fff;color:var(--navy);font:700 .52rem var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0 8px}
-.task-actions button.primary{background:var(--gold-dim);color:var(--gold)}
+.task-actions button{height:27px;border:1px solid rgba(199,146,43,.42);border-radius:7px;background:#fff;color:#111827;font:700 .52rem var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0 8px;opacity:1;text-shadow:none}
+.task-actions button.primary{background:var(--gold);color:#111827;border-color:var(--gold)}
 .task-empty{border:1px dashed rgba(255,255,255,.15);border-radius:8px;padding:18px;color:rgba(248,245,238,.72);font-size:.82rem;line-height:1.5;background:rgba(255,255,255,.025)}
 .task-complete-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2600;border:1px solid rgba(199,146,43,.38);background:rgba(248,245,238,.98);color:var(--navy);border-radius:8px;padding:12px 16px;box-shadow:0 18px 50px rgba(0,0,0,.22);font-size:.9rem;font-weight:700;animation:taskToastIn .22s ease}
 @keyframes taskToastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -2109,10 +2109,35 @@ function compactTaskPayload(limit){
     openCount:open.length,
     completedCount:done.length,
     open:open.slice(0,limit).map(function(t){
-      return {id:t.id,title:t.title,contactName:t.contactName||'',dueDate:t.dueDate||null,overdue:!!(t.dueDate&&new Date(t.dueDate)<new Date())};
+      return {id:t.id,title:taskDisplayTitle(t),contactName:t.contactName||'',dueDate:t.dueDate||null,overdue:!!(t.dueDate&&new Date(t.dueDate)<new Date())};
     }),
-    completedRecent:done.slice(0,8).map(function(t){return {id:t.id,title:t.title,completedAt:t.completedAt||t.createdAt||null};})
+    completedRecent:done.slice(0,8).map(function(t){return {id:t.id,title:taskDisplayTitle(t),completedAt:t.completedAt||t.createdAt||null};})
   };
+}
+function taskSourceContext(t){
+  if(!t)return '';
+  var details=Array.isArray(t.details)?t.details:[];
+  var detailContext='';
+  details.some(function(d){
+    if(!d)return false;
+    detailContext=d.calendarEventTitle||d.meetingTitle||d.transcriptTitle||d.sourceTitle||'';
+    if(!detailContext&&typeof d.text==='string'){
+      var m=d.text.match(/(?:Created from transcript|Transcript title|Source meeting|Calendar event):\s*(.+)$/i);
+      if(m)detailContext=m[1];
+    }
+    return !!detailContext;
+  });
+  return t.calendarEventTitle||t.meetingTitle||t.transcriptTitle||detailContext||'';
+}
+function taskDisplayTitle(t){
+  var title=String((t&&t.title)||'Untitled task').replace(/\s+/g,' ').trim()||'Untitled task';
+  if(title.indexOf(' — ')>0)return title;
+  var hasMeetingSource=!!(t&&(t.source==='transcript'||t.transcriptId||t.sourceId||taskSourceContext(t)));
+  if(!hasMeetingSource)return title;
+  var context=String(taskSourceContext(t)||t.contactName||'').replace(/\s+/g,' ').trim();
+  if(!context)return title;
+  if(title.toLowerCase().indexOf(context.toLowerCase())===0)return title;
+  return context+' — '+title;
 }
 function taskContextPreview(t){
   var notes=String((t&&t.notes)||'').replace(/Auto-created from VAL [\s\S]*?response\.\s*/i,'').trim();
@@ -2129,7 +2154,7 @@ function taskCardHtml(t,done){
   return '<article class="task-card '+(done?'done':'')+'">'
     +'<button class="task-check" aria-label="'+(done?'Move back to To Do':'Mark complete')+'" onclick="'+(done?'valReopenTask':'valCompleteTask')+'('+id+')">✓</button>'
     +'<div>'
-      +'<div class="task-title">'+docSafe(t.title||'Untitled task')+'</div>'
+      +'<div class="task-title">'+docSafe(taskDisplayTitle(t))+'</div>'
       +'<div class="task-meta">'+(done?'Completed by '+docSafe(t.completedBy||'you'):'To do')+' · '+docSafe(due)+(overdue?' · OVERDUE':'')+(t.contactName?' · '+docSafe(t.contactName):'')+'</div>'
       +(context?'<div class="task-notes">'+docSafe(context)+'</div>':'')
       +'<div class="task-actions">'
@@ -2230,7 +2255,7 @@ function updateDynamicSuggestions(){
     suggestions.push({label:'Prep '+t, prompt:'Prep me for '+t+' at '+time+'. Include attendees, relationship context, open promises, likely objective, and the best questions to ask.'});
   }
   if(overdue.length) suggestions.push({label:overdue.length+' overdue tasks', prompt:'Prioritize my '+overdue.length+' overdue tasks. Group them by relationship, urgency, and what should be done, delegated, deferred, or clarified.'});
-  else if(dueToday.length) suggestions.push({label:'Due today: '+dueToday[0].title, prompt:'Help me complete this task today: '+dueToday[0].title+'. Give me the next step and any message or follow-up I should draft.'});
+  else if(dueToday.length) suggestions.push({label:'Due today: '+taskDisplayTitle(dueToday[0]), prompt:'Help me complete this task today: '+taskDisplayTitle(dueToday[0])+'. Give me the next step and any message or follow-up I should draft.'});
   if(dashData.followups>0) suggestions.push({label:'Draft replies', prompt:'Review my unread conversations and draft the replies that should go out now. Put anything sensitive in the Approval Queue.'});
   suggestions.push({label:'Lead Scrape', prompt:'Lead scrape'});
   suggestions.push({label:'Relationship Radar', prompt:'Open Relationship Radar. Who needs attention now based on my calendar, tasks, follow-ups, and pipeline?'});
@@ -2269,11 +2294,11 @@ function openTaskDetail(id){
     ? t.details.map(function(d){
         var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
         return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
-          +'<div style="color:var(--cream);opacity:0.9;">'+d.text+'</div>'
-          +'<div style="color:var(--cream);opacity:0.4;font-size:10px;margin-top:2px;">'+ts+'</div>'
+          +'<div style="color:#f8f5ee;">'+docSafe(d.text||'')+'</div>'
+          +'<div style="color:#d6dde8;font-size:10px;margin-top:2px;">'+ts+'</div>'
           +'</div>';
       }).join('')
-    : '<div style="opacity:0.4;font-size:12px;padding:6px 0;">No notes yet — add ideas, steps, or context below.</div>';
+    : '<div style="color:#d6dde8;font-size:12px;padding:6px 0;">No notes yet — add ideas, steps, or context below.</div>';
 
   var panel=document.createElement('div');
   panel.id='taskDetailPanel';
@@ -2281,7 +2306,7 @@ function openTaskDetail(id){
   panel.innerHTML=
     '<div style="padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:flex-start;justify-content:space-between;">'
       +'<div>'
-        +'<div style="font-family:var(--serif);font-size:16px;color:var(--cream);line-height:1.3;max-width:280px;">'+t.title+'</div>'
+        +'<div style="font-family:var(--serif);font-size:16px;color:#f8f5ee;line-height:1.3;max-width:280px;">'+docSafe(taskDisplayTitle(t))+'</div>'
         +'<div style="font-size:11px;color:'+(overdue?'#e57373':'var(--gold)')+';margin-top:5px;font-family:var(--mono);">'+due+(overdue?' · OVERDUE':'')+(t.completed?' · Completed by '+docSafe(t.completedBy||'you'):'')+'</div>'
       +'</div>'
       +'<button onclick="document.getElementById(\'taskDetailPanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;">✕</button>'
@@ -2289,7 +2314,7 @@ function openTaskDetail(id){
     +'<div id="taskDetailNotes" style="flex:1;overflow-y:auto;padding:14px 18px;">'+detailsHtml+'</div>'
     +'<div style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.08);">'
       +'<textarea id="taskDetailInput" placeholder="Add a note, idea, or step..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--cream);font-size:13px;padding:10px 12px;resize:none;height:72px;font-family:var(--body);box-sizing:border-box;outline:none;"></textarea>'
-      +'<label style="display:block;margin-top:10px;font-size:11px;color:var(--cream);">Due date <input type="datetime-local" id="taskDueInput" value="'+taskDueInputValue(t.dueDate)+'" onchange="valUpdateTaskDue(\''+id+'\',this.value)" style="display:block;width:100%;margin-top:5px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:8px;color:var(--cream);box-sizing:border-box;"></label>'
+      +'<label style="display:block;margin-top:10px;font-size:11px;color:#f8f5ee;">Due date <input type="datetime-local" id="taskDueInput" value="'+taskDueInputValue(t.dueDate)+'" onchange="valUpdateTaskDue(\''+id+'\',this.value)" style="display:block;width:100%;margin-top:5px;background:#f8fafc;border:1px solid rgba(255,255,255,.28);border-radius:7px;padding:8px;color:#111827;box-sizing:border-box;"></label>'
       +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
         +'<button class="chip" onclick="saveTaskDetail(\''+id+'\')">+ Add note</button>'
         +'<button class="chip" onclick="brainstormTask(\''+id+'\')">💡 Brainstorm with VAL</button>'
@@ -2330,8 +2355,8 @@ function saveTaskDetail(id){
     notesEl.innerHTML=t.details.map(function(d){
       var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
       return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
-        +'<div style="color:var(--cream);opacity:0.9;">'+d.text+'</div>'
-        +'<div style="color:var(--cream);opacity:0.4;font-size:10px;margin-top:2px;">'+ts+'</div>'
+        +'<div style="color:#f8f5ee;">'+docSafe(d.text||'')+'</div>'
+        +'<div style="color:#d6dde8;font-size:10px;margin-top:2px;">'+ts+'</div>'
         +'</div>';
     }).join('');
     notesEl.scrollTop=notesEl.scrollHeight;
@@ -2342,8 +2367,8 @@ function brainstormTask(id){
   var t=valTasks.find(function(t){return t.id===id;});
   if(!t) return;
   var details=(t.details&&t.details.length)?t.details.map(function(d){return '- '+d.text;}).join('\n'):'';
-  openDetailWithTitle(t.title);
-  ask('Help me brainstorm and plan this task:\n\nTask: '+t.title+(t.dueDate?'\nDue: '+new Date(t.dueDate).toLocaleDateString():'')+(details?'\n\nNotes so far:\n'+details:'')+'\n\nBreak it into clear steps, flag anything I might be missing, and suggest the best way to start.');
+  openDetailWithTitle(taskDisplayTitle(t));
+  ask('Help me brainstorm and plan this task:\n\nTask: '+taskDisplayTitle(t)+(t.dueDate?'\nDue: '+new Date(t.dueDate).toLocaleDateString():'')+(details?'\n\nNotes so far:\n'+details:'')+'\n\nBreak it into clear steps, flag anything I might be missing, and suggest the best way to start.');
 }
 // valTasksLoad() called after all functions defined, near loadDashboard()
 

@@ -6190,8 +6190,56 @@ const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
 const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
 function transcriptFileArray(store,key){if(!Array.isArray(store[key]))store[key]=[];return store[key];}
 function transcriptDemoArray(key){const state=requestContext.getStore()?.demoState;if(!state)return null;if(!Array.isArray(state[key]))state[key]=[];return state[key];}
+function valTitleCandidate(value){
+  const title=String(value||'').replace(/\s+/g,' ').trim();
+  if(!title)return '';
+  const low=title.toLowerCase();
+  const generic=[
+    'transcript','webhook transcript','meeting transcript','call transcript','processed transcript','untitled transcript',
+    'zoom transcript','recording transcript','meeting notes','call notes','transcript notes'
+  ];
+  if(generic.includes(low))return '';
+  if(/^(prepare me for|summarize this past meeting|meeting prep|webhook|processed|untitled)(\b|:)/i.test(title))return '';
+  if(/^(transcript|meeting|call|zoom|recording)\s*#?\d*$/i.test(title))return '';
+  return title.slice(0,180);
+}
+function transcriptDateLabel(value){
+  const d=value?new Date(value):null;
+  if(!d||isNaN(d.getTime()))return '';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+function eventTitleFromContext(ctx={}){
+  const meta=ctx.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
+  const event=ctx.calendarEvent||ctx.event||ctx.meetingMatch?.event||ctx.meetingMatch?.calendarEvent||{};
+  return valTitleCandidate(ctx.calendarEventTitle||ctx.calendar_event_title||ctx.eventTitle||ctx.event_title||ctx.meetingMatch?.meetingTitle||ctx.meetingMatch?.calendarEventTitle||ctx.meetingMatch?.eventTitle||ctx.meetingMatch?.title||event.title||event.summary||event.name||meta.calendarEventTitle||meta.calendar_event_title||meta.eventTitle||meta.event_title||sourceMeta.calendarEventTitle||sourceMeta.eventTitle);
+}
+function transcriptDisplayTitleFromPayload(payload={},rawText=''){
+  const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
+  const calendarTitle=eventTitleFromContext(payload);
+  if(calendarTitle)return calendarTitle;
+  const meetingTitle=valTitleCandidate(payload.meetingTitle||payload.meeting_title||payload.meetingName||payload.meeting_name||meta.meetingTitle||meta.meeting_name||sourceMeta.meetingTitle||sourceMeta.meeting_name);
+  if(meetingTitle)return meetingTitle;
+  const transcriptMetaTitle=valTitleCandidate(payload.callTitle||payload.call_title||payload.callName||payload.call_name||payload.title||meta.callTitle||meta.call_name||meta.title||sourceMeta.callTitle||sourceMeta.call_name||sourceMeta.title);
+  if(transcriptMetaTitle)return transcriptMetaTitle;
+  const contact=valTitleCandidate(payload.contactName||payload.contact_name||payload.personName||meta.contactName||meta.contact_name||meta.personName||sourceMeta.contactName||sourceMeta.personName);
+  const company=valTitleCandidate(payload.companyName||payload.company||meta.companyName||meta.company||sourceMeta.companyName||sourceMeta.company);
+  const date=transcriptDateLabel(payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||payload.receivedAt||meta.timestamp||meta.createdAt);
+  if(contact||company)return [contact||company,contact&&company?company:'',date].filter(Boolean).join(' · ');
+  const speakers=[...String(rawText||payload.transcript||'').matchAll(/^\s*([^:\n]{2,50}):\s*.+$/gm)].map(m=>m[1].trim()).filter(n=>!/^https?|meeting|transcript|speaker$/i.test(n));
+  const unique=[...new Set(speakers)].slice(0,3);
+  if(unique.length)return unique.join('/')+(date?' · '+date:'');
+  return 'Untitled Transcript';
+}
+function contextualTaskTitle(contextTitle,taskTitle){
+  const task=cleanTaskTitle(taskTitle);
+  const context=valTitleCandidate(contextTitle);
+  if(!task)return context||'Untitled task';
+  if(!context||task.toLowerCase().startsWith(context.toLowerCase()+' — '))return task;
+  return `${context} — ${task}`;
+}
 async function saveTranscriptIndexRaw(payload,id){
-  const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:payload.title||payload.meetingTitle||'Untitled transcript',meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript:payload.transcript||payload.rawText||payload.text||'',processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const rawTranscript=payload.transcript||payload.rawText||payload.text||'';
+  const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:transcriptDisplayTitleFromPayload(payload,rawTranscript),meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript,processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}return row;}
   await valDbReady;
   if(pgPool){await dbQuery(`insert into transcripts (transcript_id,user_id,tenant_id,source,meeting_title,meeting_datetime,calendar_event_id,raw_transcript,processing_status,summary_status,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,'received','pending',coalesce($9::timestamptz,now()),now()) on conflict (transcript_id) do update set source=excluded.source,meeting_title=excluded.meeting_title,meeting_datetime=coalesce(excluded.meeting_datetime,transcripts.meeting_datetime),calendar_event_id=coalesce(nullif(excluded.calendar_event_id,''),transcripts.calendar_event_id),raw_transcript=excluded.raw_transcript,updated_at=now()`,[id,VAL_USER_ID,CLIENT_CONFIG.clientSlug||'default',row.source,row.meetingTitle,row.meetingDatetime,row.calendarEventId,row.rawTranscript,row.createdAt]);}
@@ -6199,10 +6247,10 @@ async function saveTranscriptIndexRaw(payload,id){
   return row;
 }
 async function updateTranscriptIndexStatus(id,updates={}){
-  const clean={processingStatus:updates.processingStatus,summaryStatus:updates.summaryStatus,calendarEventId:updates.calendarEventId,meetingDatetime:updates.meetingDatetime,updatedAt:new Date().toISOString()};
+  const clean={processingStatus:updates.processingStatus,summaryStatus:updates.summaryStatus,calendarEventId:updates.calendarEventId,meetingDatetime:updates.meetingDatetime,meetingTitle:valTitleCandidate(updates.meetingTitle||updates.calendarEventTitle),updatedAt:new Date().toISOString()};
   if(DEMO_MODE){const row=(transcriptDemoArray('transcriptIndex')||[]).find(x=>x.transcriptId===id);if(row)Object.keys(clean).forEach(k=>clean[k]!==undefined&&(row[k]=clean[k]));return;}
   await valDbReady;
-  if(pgPool){await dbQuery(`update transcripts set processing_status=coalesce($1,processing_status),summary_status=coalesce($2,summary_status),calendar_event_id=coalesce(nullif($3,''),calendar_event_id),meeting_datetime=coalesce($4::timestamptz,meeting_datetime),updated_at=now() where transcript_id=$5 and user_id=$6`,[clean.processingStatus||null,clean.summaryStatus||null,clean.calendarEventId||'',clean.meetingDatetime||null,id,VAL_USER_ID]);}
+  if(pgPool){await dbQuery(`update transcripts set processing_status=coalesce($1,processing_status),summary_status=coalesce($2,summary_status),calendar_event_id=coalesce(nullif($3,''),calendar_event_id),meeting_datetime=coalesce($4::timestamptz,meeting_datetime),meeting_title=coalesce(nullif($5,''),meeting_title),updated_at=now() where transcript_id=$6 and user_id=$7`,[clean.processingStatus||null,clean.summaryStatus||null,clean.calendarEventId||'',clean.meetingDatetime||null,clean.meetingTitle||'',id,VAL_USER_ID]);}
   else{const store=valStore(),row=transcriptFileArray(store,'transcriptIndex').find(x=>x.transcriptId===id);if(row)Object.keys(clean).forEach(k=>clean[k]!==undefined&&(row[k]=clean[k]));saveValStore(store);}
 }
 async function logTranscriptAction(transcriptId,actionType,targetRecordId,status,errorMessage=''){
@@ -6260,7 +6308,8 @@ function transcriptDetailFromIndex(data,transcript){
   const id=transcript.transcriptId;
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
   const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
-  return {...transcript,id,title:transcript.meetingTitle,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
+  const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
+  return {...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
 }
 async function clearTranscriptStaging(transcriptId){
   if(DEMO_MODE){for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog']){const rows=transcriptDemoArray(key)||[];for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);}return;}
@@ -6487,7 +6536,7 @@ async function saveMeetingTranscriptLink({event,transcript,confidence,reason,con
     else store.meetingTranscriptLinks.push(record);
     saveValStore(store);
   }
-  return record;
+  return {...record,meetingTitle:event.title||event.summary||event.name||'',calendarEventTitle:event.title||event.summary||event.name||'',calendarEventId:event.id||''};
 }
 async function linkTranscriptToBestMeeting(transcript,options={}){
   const now=new Date(transcript.createdAt||Date.now());
@@ -10010,12 +10059,16 @@ async function matchTranscriptParticipants(payload,transcriptId,transcript){
   await replaceTranscriptParticipants(transcriptId,participants);return participants;
 }
 async function promoteTranscriptTask(staged){
-  const mainTask={id:uuid('task'),title:staged.taskTitle,notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
+  const data=await transcriptIndexData(staged.transcriptId).catch(()=>({transcripts:[]}));
+  const transcript=data.transcripts?.[0]||{};
+  const transcriptTitle=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:staged.calendarEventTitle},transcript.rawTranscript);
+  const mainTask={id:uuid('task'),title:contextualTaskTitle(staged.calendarEventTitle||transcriptTitle,staged.taskTitle),notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,transcriptTitle?`Transcript title: ${transcriptTitle}`:'',`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,transcriptId:staged.transcriptId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
   await saveTask(mainTask);await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
 }
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
-  const title=payload.title||'Processed transcript',sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
+  const title=transcriptDisplayTitleFromPayload(payload,transcript),sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
+  await updateTranscriptIndexStatus(sourceId,{meetingTitle:title,calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',meetingDatetime:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||null});
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript);
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
@@ -10032,7 +10085,7 @@ async function processTranscriptPayload(payload){
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
     const assignedName=item.assignedToName||item.assignedPerson||item.person||item.contactName||'',participant=participants.find(p=>looseNameScore(assignedName,p.speakerNameRaw)>=0.8||looseNameScore(assignedName,p.matchedContactName)>=0.8),confidence=Math.max(0,Math.min(1,Number(item.confidence)||0));
     const owner=isOwnerRelationship({name:assignedName,email:participant?.matchedEmail||''}),safeMatch=!!participant&&!participant.needsReview&&participant.matchConfidence>=TRANSCRIPT_SAFE_MATCH_CONFIDENCE;
-    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:cleanTaskTitle(item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'staged',needsApproval:!(owner||safeMatch),sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),createdAt:new Date().toISOString()};
+    const staged={taskId:uuid('tr_task'),transcriptId:sourceId,assignedToContactId:safeMatch?participant.matchedContactId:'',assignedToName:assignedName||participant?.matchedContactName||'',taskTitle:contextualTaskTitle(title,item.taskTitle||item.title),taskDescription:item.taskDescription||item.description||item.notes||'',dueDate:item.dueDate||null,priority:item.priority||'medium',confidence,status:'staged',needsApproval:!(owner||safeMatch),sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote||item.evidence),calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',calendarEventTitle:title,createdAt:new Date().toISOString()};
     if(!staged.taskTitle)continue;await saveStagedTranscriptTask(staged);stagedTasks.push(staged);if(owner||safeMatch)createdTasks.push(await promoteTranscriptTask(staged));
   }
   for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20)){
@@ -10054,8 +10107,9 @@ function transcriptUiRecord(record,{includeText=false}={}){
   const reviewStatus=String(metadata.reviewStatus||metadata.review_status||metadata.status||(openActions.length?'needs_review':'unreviewed')).toLowerCase().replace(/\s+/g,'_');
   const createdAt=record.createdAt||metadata.created_at||metadata.timestamp||'';
   const receivedAt=metadata.receivedAt||metadata.received_at||createdAt;
+  const title=transcriptDisplayTitleFromPayload({...metadata,...record,title:record.title||metadata.title,metadata},rawText);
   return {
-    id:record.id,type:record.type||'transcript',title:record.title||metadata.title||metadata.meetingName||metadata.callName||'Untitled transcript',
+    id:record.id,type:record.type||'transcript',title,
     createdAt,receivedAt,source,status:reviewStatus,reviewStatus,
     summary,preview:rawText.replace(/\s+/g,' ').trim().slice(0,260),contactId:metadata.contact_id||metadata.contactId||'',
     contactName:metadata.contact_name||metadata.contactName||metadata.personName||'',company:metadata.company||metadata.companyName||'',opportunityId:metadata.opportunity_id||metadata.opportunityId||'',
@@ -10070,7 +10124,7 @@ function normalizedTranscriptWebhookPayload(body={}){
   const segments=root.segments||root.sentences||transcriptObject.segments||transcriptObject.sentences||[];
   const segmentText=Array.isArray(segments)?segments.map(segment=>typeof segment==='string'?segment:[segment.speaker||segment.speakerName||'',segment.text||segment.content||segment.transcript||''].filter(Boolean).join(': ')).filter(Boolean).join('\n'):'';
   const transcriptText=[root.transcript,root.rawText,root.raw_text,root.transcriptText,root.transcript_text,root.text,root.content,root.body,transcriptObject.text,transcriptObject.content,segmentText].find(value=>typeof value==='string'&&value.trim())||'';
-  const title=root.title||root.meetingTitle||root.meeting_name||root.callTitle||root.call_name||transcriptObject.title||body.title||'Webhook transcript';
+  const rawTitle=root.title||root.meetingTitle||root.meeting_name||root.callTitle||root.call_name||transcriptObject.title||body.title||'';
   const source=root.source||root.provider||root.platform||body.source||'webhook';
   const sourcePayloadMetadata={};
   for(const [key,value] of Object.entries(body)){
@@ -10078,6 +10132,7 @@ function normalizedTranscriptWebhookPayload(body={}){
     sourcePayloadMetadata[key]=value&&typeof value==='object'?JSON.parse(JSON.stringify(value,(nestedKey,nestedValue)=>/^(transcript|raw_?text|transcript_?text|text|content|body|segments|sentences)$/i.test(nestedKey)?undefined:nestedValue)):value;
   }
   const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata};
+  const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.createdAt||root.created_at||root.date||body.timestamp||null};
 }
 app.get('/api/val/transcripts',async(req,res)=>{
@@ -10111,6 +10166,7 @@ app.post('/api/val/transcripts',async(req,res)=>{
     console.log('[transcripts] saved successfully',{id:saved.id,title:payload.title,source:payload.source});
     const transcriptRecord={id:saved.id,title:payload.title||saved.type,rawText:transcriptText,metadata:payload,createdAt:payload.timestamp||payload.createdAt||payload.receivedAt};
     const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.warn('[transcripts] meeting link failed',e.message);return null;});
+    if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});
     try{
       const processed=await processTranscriptPayload({...payload,savedTranscriptId:saved.id,meetingMatch});
       await updateTranscriptMetadata(saved.id,{analysis:processed.analysis,summary:processed.analysis?.summary||'',actionItems:processed.analysis?.actionItems||[],people:processed.analysis?.people||[],reviewStatus:'needs_review',processedAt:new Date().toISOString()});
@@ -10149,7 +10205,7 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     if(action==='create_task'){
       const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
       const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:title,taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),createdAt:new Date().toISOString()};
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
     if(action==='draft_followup'){
@@ -10161,7 +10217,7 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/conversations/:id',async(req,res)=>{
