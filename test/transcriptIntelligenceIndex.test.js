@@ -41,6 +41,14 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Approve & Create/);
 });
 
+test('transcript detail exposes recap workflow sections and actions',()=>{
+  for(const label of ['Summary','Key Points','Decisions','Action Items','Created Tasks','Recap Draft','Processing Status','Review Recap Draft','Regenerate Recap Draft','Ask VAL About This Transcript']){
+    assert.ok(ui.includes(label),`missing ${label}`);
+  }
+  assert.match(server,/transcript\.drafts=\(await listDrafts\(\)\)\.filter/);
+  assert.match(server,/req\.query\.transcriptId/);
+});
+
 test('stores meeting recap templates and renders transcript recap drafts from them',()=>{
   assert.match(server,/create table if not exists val_templates \(/);
   assert.match(server,/DEFAULT_MEETING_RECAP_TEMPLATE/);
@@ -62,4 +70,6 @@ test('exposes drafts and settings templates navigation',()=>{
   assert.match(dashboard,/meetingRecapSubjectTemplate/);
   assert.match(dashboard,/api\/val\/templates\/meeting_recap/);
   assert.match(dashboard,/api\/val\/drafts/);
+  assert.match(ui,/Meeting Recaps & Drafts/);
+  assert.match(dashboard,/Related|Transcript:|Meeting:|Recipients:/);
 });

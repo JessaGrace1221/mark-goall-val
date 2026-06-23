@@ -5815,7 +5815,8 @@ async function renderMeetingRecapTemplate({transcriptId,title,summary,participan
 async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText}){
   const rendered=await renderMeetingRecapTemplate({transcriptId,title,summary,participants,tasks,sourceQuote:transcriptSupportingQuote(transcriptText,'')});
   const existing=(await listDrafts()).find(d=>d.draftType==='meeting_recap'&&d.sourceContext?.transcriptId===transcriptId);
-  return saveInternalDraft({id:existing?.id,draftType:'meeting_recap',provider:'internal',subject:rendered.subject,body:rendered.textBody,status:'draft',sourceContext:{...(existing?.sourceContext||{}),source:'transcript_intelligence',transcriptId,transcriptTitle:title,templateKey:MEETING_RECAP_TEMPLATE_KEY,templateId:rendered.template.id,htmlBody:rendered.htmlBody,plainTextBody:rendered.textBody}});
+  const recipients=(participants||[]).map(p=>p.matchedEmail||p.email||p.matchedContactName||p.speakerNameRaw||'').filter(Boolean);
+  return saveInternalDraft({id:existing?.id,draftType:'meeting_recap',provider:'internal',subject:rendered.subject,body:rendered.textBody,status:'draft',sourceContext:{...(existing?.sourceContext||{}),source:'transcript_intelligence',transcriptId,transcriptTitle:title,meetingTitle:title,recipients,templateKey:MEETING_RECAP_TEMPLATE_KEY,templateId:rendered.template.id,htmlBody:rendered.htmlBody,plainTextBody:rendered.textBody}});
 }
 app.get('/api/val/templates/:templateKey',async(req,res)=>{
   try{const template=await getActiveTemplate(req.params.templateKey);if(!template)return res.status(404).json({ok:false,error:'Template not found'});res.json({ok:true,template});}
@@ -5873,7 +5874,13 @@ async function listDrafts(status=''){
   }
   return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
 }
-app.get('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,drafts:await listDrafts(req.query.status||'')});}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.get('/api/val/drafts',async(req,res)=>{
+  try{
+    let drafts=await listDrafts(req.query.status||'');
+    if(req.query.transcriptId)drafts=drafts.filter(d=>String(d.sourceContext?.transcriptId||'')===String(req.query.transcriptId));
+    res.json({ok:true,drafts});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/drafts',async(req,res)=>{try{res.json({ok:true,draft:await saveInternalDraft(req.body||{})});}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/drafts/:id',async(req,res)=>{
   try{
@@ -10281,9 +10288,9 @@ app.get('/api/val/transcripts',async(req,res)=>{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const data=await transcriptIndexData();
-    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length}});}
+    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length}});
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -10292,10 +10299,10 @@ app.get('/api/val/transcripts/review',async(req,res)=>{
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);if(data.transcripts[0])return res.json({ok:true,transcript:transcriptDetailFromIndex(data,data.transcripts[0])});
+    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    res.json({ok:true,transcript:transcriptUiRecord(record,{includeText:true})});
+    const transcript=transcriptUiRecord(record,{includeText:true});transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts',async(req,res)=>{

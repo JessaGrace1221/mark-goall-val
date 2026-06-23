@@ -923,7 +923,7 @@ body{font-size:1rem}
 
 .relationship-list-item{position:relative}.relationship-evidence-count{margin-top:8px;font-size:11px;font-weight:700;color:#64748b}.relationship-card{padding:20px!important}.relationship-card-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.relationship-context{color:#475569;font-size:13px;font-weight:650}.relationship-score{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#172740;color:#fff!important;font:700 20px var(--serif);flex:0 0 auto}.email-pill.vip{background:#fff3cd!important;border-color:#c4963a!important;color:#694d12!important}.relationship-summary{margin:16px 0;padding:15px;border-left:4px solid #c4963a;background:#f8fafc;color:#172033!important;font-size:15px;line-height:1.6}.relationship-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0}.relationship-facts div{display:grid;gap:5px;padding:11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}.relationship-facts strong{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#334155!important}.relationship-facts span{font-size:13px;line-height:1.45;color:#111827!important}.relationship-evidence{margin-top:14px;border-top:1px solid #e2e8f0;padding-top:12px}.relationship-evidence summary{font-weight:800;color:#334155!important;cursor:pointer}.relationship-evidence li{margin:8px 0}.relationship-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.relationship-actions button,.relationship-action-panel button{min-height:36px;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer}.relationship-actions button.primary,.relationship-action-panel button.primary{background:#172740;color:#fff!important;border:1px solid #172740}.relationship-actions button.secondary,.relationship-action-panel button.secondary{background:#fff;color:#172740!important;border:1px solid #64748b}.relationship-actions button.tertiary{background:#f1f5f9;color:#334155!important;border:1px solid #cbd5e1}.relationship-actions button:hover,.relationship-action-panel button:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(15,23,42,.18)}.relationship-actions button:active{transform:translateY(0)}.relationship-action-panel{margin-top:16px;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}.relationship-action-panel h4{font:700 18px var(--serif);margin-bottom:10px;color:#172740!important}.relationship-action-panel label{display:grid;gap:5px;margin:10px 0;font-size:12px;font-weight:800;color:#334155!important}.relationship-action-panel input,.relationship-action-panel textarea,.relationship-action-panel select{width:100%;padding:9px;border:1px solid #94a3b8;border-radius:7px;background:#fff;color:#111827!important;font:13px var(--body)}.relationship-action-panel input:disabled{background:#e2e8f0;color:#475569!important}.relationship-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.relationship-profile-wide{grid-column:1/-1}.relationship-timeline{max-height:42vh;overflow:auto;padding-left:19px}.relationship-timeline li{margin:10px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0}@media(max-width:800px){.relationship-facts,.relationship-profile-grid{grid-template-columns:1fr}.relationship-profile-wide{grid-column:auto}}
 </style>
-<link rel="stylesheet" href="/command-center.css?v=20260622-actions-chat">
+<link rel="stylesheet" href="/command-center.css?v=20260623-recap-drafts">
 <style id="relationship-review-contrast">
 .exec-workspace-modal .exec-workspace-footer .alert-btn{background:#f8fafc!important;color:#172740!important;border:1px solid #cbd5e1!important;opacity:1!important;text-shadow:none!important}
 .exec-workspace-modal .exec-workspace-footer .alert-btn.primary{background:#c4963a!important;color:#111d30!important;border-color:#c4963a!important}
@@ -1435,7 +1435,7 @@ function draftTypeLabel(type){
   return String(type||'draft').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
 }
 function openDraftsPage(){
-  openExecutiveWorkspace({id:'draftsWorkspace',title:'Drafts',body:'<div id="draftsWorkspaceBody"><div class="exec-card"><p>Loading drafts...</p></div></div>',footer:'<button class="alert-btn primary" onclick="loadBackendDrafts()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'draftsWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'draftsWorkspace',title:'Communications / Drafts',body:'<div id="draftsWorkspaceBody"><div class="exec-card"><p>Loading drafts...</p></div></div>',footer:'<button class="alert-btn primary" onclick="loadBackendDrafts()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'draftsWorkspace\')">Close</button>'});
   loadBackendDrafts();
 }
 function loadBackendDrafts(){
@@ -1444,8 +1444,17 @@ function loadBackendDrafts(){
     var body=document.getElementById('draftsWorkspaceBody');if(!body)return;
     body.innerHTML='<div class="exec-workspace-grid">'+(drafts.length?drafts.map(function(dr){
       var ctx=dr.sourceContext||{},created=dr.createdAt?new Date(dr.createdAt).toLocaleString():'';
+      var recipients=Array.isArray(ctx.recipients)?ctx.recipients.join(', '):(ctx.recipient||ctx.recipientEmail||ctx.to||'');
+      var relatedTranscript=ctx.transcriptTitle||ctx.transcriptId||'';
+      var relatedMeeting=ctx.meetingTitle||ctx.calendarEventTitle||ctx.transcriptTitle||'';
+      var meta=[
+        'Status: '+(dr.status||'draft'),
+        relatedTranscript?'Transcript: '+relatedTranscript:'',
+        relatedMeeting?'Meeting: '+relatedMeeting:'',
+        recipients?'Recipients: '+recipients:''
+      ].filter(Boolean).map(function(x){return '<div>'+docSafe(x)+'</div>';}).join('');
       var html=ctx.htmlBody?'<details style="margin-top:10px"><summary>HTML version</summary><div style="background:#fff;color:#111827;border:1px solid #d8dee6;border-radius:8px;padding:10px;margin-top:8px;max-height:220px;overflow:auto">'+ctx.htmlBody+'</div></details>':'';
-      return '<section class="exec-card"><div class="alert-kicker">'+docSafe(draftTypeLabel(dr.draftType))+' · '+docSafe(dr.status||'draft')+'</div><h3>'+docSafe(dr.subject||'Untitled draft')+'</h3><p>'+docSafe(created)+(ctx.transcriptTitle?' · '+docSafe(ctx.transcriptTitle):'')+'</p><pre style="white-space:pre-wrap;background:#fff;color:#111827;border:1px solid #d8dee6;border-radius:8px;padding:10px;max-height:260px;overflow:auto">'+docSafe(dr.body||'')+'</pre>'+html+'<div class="alert-actions" style="margin-top:10px"><button class="alert-btn" onclick="copyDraftBody(\''+docSafe(dr.id)+'\')">Copy Text</button></div></section>';
+      return '<section class="exec-card"><div class="alert-kicker">'+docSafe(draftTypeLabel(dr.draftType))+' · '+docSafe(created)+'</div><h3>'+docSafe(dr.subject||'Untitled draft')+'</h3><div style="font-size:12px;line-height:1.55;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:9px;margin:8px 0 10px">'+(meta||'<div>Status: '+docSafe(dr.status||'draft')+'</div>')+'</div><pre style="white-space:pre-wrap;background:#fff;color:#111827;border:1px solid #d8dee6;border-radius:8px;padding:10px;max-height:260px;overflow:auto">'+docSafe(dr.body||'')+'</pre>'+html+'<div class="alert-actions" style="margin-top:10px"><button class="alert-btn" onclick="copyDraftBody(\''+docSafe(dr.id)+'\')">Copy Text</button></div></section>';
     }).join(''):'<section class="exec-card"><h3>No drafts yet</h3><p>Transcript recaps, introductions, proposals, and follow-up drafts will appear here after VAL creates them.</p></section>')+'</div>';
     window._backendDrafts=drafts;
   }).catch(function(e){var body=document.getElementById('draftsWorkspaceBody');if(body)body.innerHTML='<div class="exec-card"><h3>Could not load drafts</h3><p>'+docSafe(e.message)+'</p></div>';});
@@ -5696,6 +5705,6 @@ window.addEventListener('resize',valSignalPlace);
 document.addEventListener('DOMContentLoaded',valSignalInit);
 setTimeout(valSignalInit,0);
 </script>
-<script src="/command-center.js?v=20260622-transcript-index"></script>
+<script src="/command-center.js?v=20260623-recap-drafts"></script>
 </body>
 </html>
