@@ -71,6 +71,11 @@ const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',')
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
+const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
+const DEEPGRAM_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || 'nova-2';
+const DEEPGRAM_STT_ENDPOINTING_MS = Math.min(Math.max(Number(process.env.DEEPGRAM_STT_ENDPOINTING_MS)||800,250),2000);
+const VAL_VOICE_RESPONSE_TEMPERATURE = Math.min(Math.max(Number(process.env.VAL_VOICE_RESPONSE_TEMPERATURE)||0.6,0),2);
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
 const ROCKETREACH_REQUEST_TIMEOUT_MS = Number(process.env.ROCKETREACH_REQUEST_TIMEOUT_MS) || 15000;
@@ -6045,6 +6050,44 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
       outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+function deepgramModelName(value){
+  return String(value||'').trim().replace(/[^a-zA-Z0-9_.:-]/g,'').slice(0,120);
+}
+function deepgramTtsModel(){
+  return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-cora-en';
+}
+app.get('/api/val/voice/status',(req,res)=>{
+  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsModel:deepgramTtsModel(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true});
+});
+app.post('/api/val/tts',async(req,res)=>{
+  try{
+    const text=String(req.body?.text||'').replace(/\s+/g,' ').trim().slice(0,4000);
+    if(!text) return res.status(400).json({ok:false,error:'No text supplied for voice playback.'});
+    if(!DEEPGRAM_API_KEY) return res.status(503).json({ok:false,error:'Deepgram voice is not configured. Add DEEPGRAM_API_KEY in Railway.'});
+    const model=deepgramTtsModel();
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),20000);
+    let dg;
+    try{
+      dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
+    }finally{clearTimeout(timer);}
+    const contentType=dg.headers.get('content-type')||'audio/mpeg';
+    const buffer=Buffer.from(await dg.arrayBuffer());
+    if(!dg.ok){
+      let detail=buffer.toString('utf8').slice(0,500);
+      try{const parsed=JSON.parse(detail);detail=parsed.err_msg||parsed.message||parsed.error||detail;}catch(_){}
+      console.warn('[voice] Deepgram TTS failed',dg.status,detail);
+      return res.status(dg.status).json({ok:false,error:`Deepgram TTS failed (${dg.status})`,detail});
+    }
+    res.set({'Content-Type':contentType.includes('audio/')?contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':model});
+    res.send(buffer);
+  }catch(e){
+    const aborted=e.name==='AbortError';
+    console.warn('[voice] TTS proxy failed',e.message);
+    res.status(aborted?504:500).json({ok:false,error:aborted?'Deepgram TTS timed out.':e.message});
+  }
 });
 
 // ════════════════════════════════════════════════════════
