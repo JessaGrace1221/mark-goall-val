@@ -91,6 +91,9 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .tbtn:active{transform:scale(0.96)}
 .tbtn.on{background:rgba(196,150,58,0.2);border-color:rgba(196,150,58,0.3);color:var(--gold-2)}
 .tbtn svg{width:11px;height:11px}
+.guide-cta{display:none;background:rgba(196,150,58,0.18);border-color:rgba(196,150,58,0.34);color:var(--gold-2)}
+.guide-cta:hover{background:rgba(196,150,58,0.28);border-color:rgba(196,150,58,0.5);color:white}
+.guide-cta.show{display:flex}
 .quick-actions{display:flex;gap:4px;margin-left:8px;align-items:center}
 .actions-menu-wrap{position:relative}
 .actions-menu{
@@ -230,8 +233,8 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 
 /* center welcome state */
 .center-welcome{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:1.5rem 1.5rem 7.25rem;text-align:center;overflow-y:auto;min-height:0;
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+  padding:1.25rem 1.5rem 7.25rem;text-align:center;overflow-y:auto;min-height:0;
   -webkit-overflow-scrolling:touch;
 }
 .center-welcome::-webkit-scrollbar{width:8px}
@@ -283,17 +286,17 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .task-count-pill{border:1px solid rgba(199,146,43,.28);border-radius:999px;padding:4px 8px;color:var(--gold);font:700 .55rem var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
 .task-list{display:grid;gap:8px;padding:10px}
 .task-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:flex-start;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(248,245,238,.97);color:var(--navy);padding:11px 12px;box-shadow:0 8px 18px rgba(0,0,0,.08)}
-.task-card.done{opacity:1;background:#f8fafc}
+.task-card.done{opacity:.72;background:rgba(248,245,238,.82)}
 .task-check{width:24px;height:24px;border:1px solid rgba(199,146,43,.52);border-radius:7px;background:white;color:transparent;font-weight:900;line-height:1;cursor:pointer;margin-top:1px}
 .task-check:hover{background:var(--gold-dim);color:var(--gold)}
 .task-card.done .task-check{background:var(--gold);border-color:var(--gold);color:var(--navy)}
 .task-title{font-size:.88rem;font-weight:700;line-height:1.35;color:var(--navy);overflow-wrap:anywhere}
 .task-card.done .task-title{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:rgba(22,38,62,.45)}
-.task-meta{font-size:.68rem;color:#1f2937;line-height:1.45;margin-top:4px;opacity:1}
-.task-notes{font-size:.72rem;color:#1f2937;line-height:1.45;margin-top:7px;max-height:54px;overflow:hidden;opacity:1}
+.task-meta{font-size:.68rem;color:var(--text-3);line-height:1.45;margin-top:4px}
+.task-notes{font-size:.72rem;color:var(--text-2);line-height:1.45;margin-top:7px;max-height:54px;overflow:hidden}
 .task-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.task-actions button{height:27px;border:1px solid rgba(199,146,43,.42);border-radius:7px;background:#fff;color:#111827;font:700 .52rem var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0 8px;opacity:1;text-shadow:none}
-.task-actions button.primary{background:var(--gold);color:#111827;border-color:var(--gold)}
+.task-actions button{height:27px;border:1px solid rgba(199,146,43,.25);border-radius:7px;background:#fff;color:var(--navy);font:700 .52rem var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0 8px}
+.task-actions button.primary{background:var(--gold-dim);color:var(--gold)}
 .task-empty{border:1px dashed rgba(255,255,255,.15);border-radius:8px;padding:18px;color:rgba(248,245,238,.72);font-size:.82rem;line-height:1.5;background:rgba(255,255,255,.025)}
 .task-complete-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2600;border:1px solid rgba(199,146,43,.38);background:rgba(248,245,238,.98);color:var(--navy);border-radius:8px;padding:12px 16px;box-shadow:0 18px 50px rgba(0,0,0,.22);font-size:.9rem;font-weight:700;animation:taskToastIn .22s ease}
 @keyframes taskToastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -330,11 +333,13 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .chat-scroll{flex:1;overflow-y:auto;padding:1.25rem}
 .chat-scroll::-webkit-scrollbar{width:3px}
 .chat-scroll::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:2px}
-.cmsg{display:flex;flex-direction:column;max-width:82%;margin-bottom:0.75rem;animation:msgIn 0.28s var(--ease) both}
+.cmsg{display:flex;flex-direction:column;max-width:min(82%,100%);min-width:0;margin-bottom:0.75rem;animation:msgIn 0.28s var(--ease) both}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .cmsg.user{align-self:flex-end}
 .cmsg.assistant{align-self:flex-start}
-.cmsg-bubble{padding:0.75rem 1rem;border-radius:12px;font-size:0.875rem;line-height:1.65}
+.cmsg-bubble{padding:0.75rem 1rem;border-radius:12px;font-size:0.875rem;line-height:1.65;max-width:100%;min-width:0;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
+.cmsg-bubble p,.cmsg-bubble li,.cmsg-bubble div,.cmsg-bubble span,.cmsg-bubble a,.cmsg-bubble strong{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+.cmsg-bubble pre,.cmsg-bubble code,.lead-preview-output,.email-preview,.social-preview,.sys-line{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .cmsg.user .cmsg-bubble{background:var(--navy);color:white;border-bottom-right-radius:3px}
 .cmsg.assistant .cmsg-bubble{background:white;color:#16233a!important;border:1px solid var(--border);box-shadow:var(--shadow-xs);border-bottom-left-radius:3px}
 .cmsg.assistant .cmsg-bubble *{color:#16233a!important}
@@ -354,6 +359,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
   font-size:0.82rem;
   line-height:1.55;
   max-height:540px;
+  max-width:100%;
   overflow:auto;
 }
 .lead-preview-output *{color:#16233a!important}
@@ -623,7 +629,7 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
   .cmd-area{display:block!important;visibility:visible!important;opacity:1!important;position:fixed!important;left:0!important;right:0!important;bottom:0!important;z-index:2147483000!important;padding:0.625rem 0.75rem calc(0.625rem + env(safe-area-inset-bottom));box-shadow:0 -10px 24px rgba(27,43,69,0.12)}
   .cmd-box{min-height:48px}
   .cmd-ta{font-size:16px}
-  .dynamic-suggestions .chip{width:100%;justify-content:flex-start;height:auto;min-height:30px;text-align:left;white-space:normal;line-height:1.25;padding:0.45rem 0.625rem}
+  .dynamic-suggestions .prompt-row{width:100%;justify-content:space-between;height:auto;min-height:30px;text-align:left;white-space:normal;line-height:1.25;padding:0.45rem 0.625rem}
 }
 
 /* ── TOPBAR ACTION BUTTONS ── */
@@ -768,6 +774,8 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .email-body{flex:1;display:grid;grid-template-columns:360px 1fr;min-height:0}
 .email-list{overflow:auto;border-right:1px solid var(--border);background:var(--cream)}
 .email-item{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;background:white;color:var(--navy)}
+.email-item,.email-card,.email-reason,.rule-row{min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+.email-item *,.email-card *,.email-reason *,.rule-row *{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
 .email-item:hover,.email-item.active{background:var(--gold-dim)}
 .email-item-top{display:flex;justify-content:space-between;gap:8px;font-size:.62rem;color:var(--gold);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .email-item-subject{font-size:.86rem;color:var(--navy);font-weight:600;line-height:1.35;margin-top:5px}
@@ -799,12 +807,13 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
   border-radius:10px;color:var(--cream);font-size:13px;padding:12px 14px;
   resize:none;height:180px;font-family:var(--body);outline:none;line-height:1.7;
   transition:border 0.2s;
+  overflow-wrap:anywhere;word-break:break-word;
 }
 .social-textarea:focus{border-color:var(--gold)}
 .social-preview{
   background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
   border-radius:10px;padding:12px 14px;font-size:12px;color:rgba(255,255,255,0.6);
-  line-height:1.6;min-height:48px;white-space:pre-wrap;
+  line-height:1.6;min-height:48px;white-space:pre-wrap;max-width:100%;overflow-wrap:anywhere;word-break:break-word;
 }
 .social-actions{display:flex;gap:8px;padding:0 20px 20px;flex-wrap:wrap}
 
@@ -920,12 +929,114 @@ body{font-size:1rem}
 .lpanel .suggestion-label{color:rgba(248,245,238,0.46)!important}
 .lpanel .prompt-row{color:rgba(248,245,238,0.82)!important}
 .lpanel .prompt-row:hover{color:#fff!important}
-
-.relationship-list-item{position:relative}.relationship-evidence-count{margin-top:8px;font-size:11px;font-weight:700;color:#64748b}.relationship-card{padding:20px!important}.relationship-card-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.relationship-context{color:#475569;font-size:13px;font-weight:650}.relationship-score{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#172740;color:#fff!important;font:700 20px var(--serif);flex:0 0 auto}.email-pill.vip{background:#fff3cd!important;border-color:#c4963a!important;color:#694d12!important}.relationship-summary{margin:16px 0;padding:15px;border-left:4px solid #c4963a;background:#f8fafc;color:#172033!important;font-size:15px;line-height:1.6}.relationship-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0}.relationship-facts div{display:grid;gap:5px;padding:11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}.relationship-facts strong{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#334155!important}.relationship-facts span{font-size:13px;line-height:1.45;color:#111827!important}.relationship-evidence{margin-top:14px;border-top:1px solid #e2e8f0;padding-top:12px}.relationship-evidence summary{font-weight:800;color:#334155!important;cursor:pointer}.relationship-evidence li{margin:8px 0}.relationship-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.relationship-actions button,.relationship-action-panel button{min-height:36px;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer}.relationship-actions button.primary,.relationship-action-panel button.primary{background:#172740;color:#fff!important;border:1px solid #172740}.relationship-actions button.secondary,.relationship-action-panel button.secondary{background:#fff;color:#172740!important;border:1px solid #64748b}.relationship-actions button.tertiary{background:#f1f5f9;color:#334155!important;border:1px solid #cbd5e1}.relationship-actions button:hover,.relationship-action-panel button:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(15,23,42,.18)}.relationship-actions button:active{transform:translateY(0)}.relationship-action-panel{margin-top:16px;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}.relationship-action-panel h4{font:700 18px var(--serif);margin-bottom:10px;color:#172740!important}.relationship-action-panel label{display:grid;gap:5px;margin:10px 0;font-size:12px;font-weight:800;color:#334155!important}.relationship-action-panel input,.relationship-action-panel textarea,.relationship-action-panel select{width:100%;padding:9px;border:1px solid #94a3b8;border-radius:7px;background:#fff;color:#111827!important;font:13px var(--body)}.relationship-action-panel input:disabled{background:#e2e8f0;color:#475569!important}.relationship-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.relationship-profile-wide{grid-column:1/-1}.relationship-timeline{max-height:42vh;overflow:auto;padding-left:19px}.relationship-timeline li{margin:10px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0}@media(max-width:800px){.relationship-facts,.relationship-profile-grid{grid-template-columns:1fr}.relationship-profile-wide{grid-column:auto}}
+.topbar .actions-menu{background:#132037!important;color:rgba(248,245,238,0.88)!important}
+.topbar .actions-menu .menu-hint{color:rgba(248,245,238,0.42)!important}
+.topbar .actions-menu button{color:rgba(248,245,238,0.88)!important;background:transparent!important}
+.topbar .actions-menu button span{color:rgba(248,245,238,0.52)!important}
+.topbar .actions-menu button:hover{background:rgba(255,255,255,0.08)!important;color:#fff!important}
+.topbar .actions-menu button.primary{background:rgba(199,146,43,0.24)!important;color:#f8f5ee!important}
+.topbar .actions-menu button.primary span{color:var(--gold-2)!important}
+.topbar .actions-menu button.primary:hover{background:rgba(199,146,43,0.34)!important;color:#fff!important}
+.center .alert-btn,.exec-workspace-modal .alert-btn,.email-overlay .alert-btn,.keys-overlay .alert-btn{
+  background:#f8fafc!important;color:#111827!important;border-color:rgba(17,24,39,0.16)!important;
+}
+.center .alert-btn.primary,.exec-workspace-modal .alert-btn.primary,.email-overlay .alert-btn.primary,.keys-overlay .alert-btn.primary{
+  background:var(--gold)!important;color:#111827!important;border-color:var(--gold)!important;
+}
+.center .chip,.center-detail .chip,.exec-workspace-modal .chip,.email-overlay .chip,.keys-overlay .chip{
+  background:#fff!important;color:#111827!important;border-color:rgba(17,24,39,0.18)!important;
+}
+.center .chip:hover,.center-detail .chip:hover,.exec-workspace-modal .chip:hover,.email-overlay .chip:hover,.keys-overlay .chip:hover{
+  background:#fff7e8!important;color:#111827!important;border-color:rgba(199,146,43,0.38)!important;
+}
+.task-card,.exec-workspace-modal .task-card{
+  background:#fffdf8!important;color:#111827!important;border-color:rgba(17,24,39,0.18)!important;opacity:1!important;text-shadow:none!important;
+}
+.task-card *,.exec-workspace-modal .task-card *{color:#111827!important}
+.task-card.done,.exec-workspace-modal .task-card.done{background:#f8fafc!important;opacity:1!important}
+.task-card .task-title,.exec-workspace-modal .task-card .task-title{color:#0f172a!important}
+.task-card .task-meta,.task-card .task-notes,.exec-workspace-modal .task-card .task-meta,.exec-workspace-modal .task-card .task-notes{color:#1f2937!important;opacity:1!important}
+.task-card .task-actions button,.exec-workspace-modal .task-card .task-actions button{
+  background:#fff!important;color:#111827!important;border-color:rgba(199,146,43,.42)!important;opacity:1!important;text-shadow:none!important;
+}
+.task-card .task-actions button.primary,.exec-workspace-modal .task-card .task-actions button.primary{
+  background:#c7922b!important;color:#111827!important;border-color:#c7922b!important;
+}
+.task-card.done .task-check,.exec-workspace-modal .task-card.done .task-check{background:var(--gold)!important;color:#111827!important}
+.task-check,.exec-workspace-modal .task-check{background:#fff!important;color:transparent!important}
+.exec-workspace-modal .email-body{background:#0f1928!important;color:#111827!important}
+.exec-workspace-modal .email-list{
+  background:var(--cream)!important;color:#111827!important;border-right-color:rgba(17,24,39,0.12)!important;
+}
+.exec-workspace-modal .email-detail{background:#0f1928!important;color:#111827!important}
+.exec-workspace-modal .email-item{
+  background:#fff!important;color:#111827!important;border-bottom-color:rgba(17,24,39,0.12)!important;
+}
+.exec-workspace-modal .email-item.active,.exec-workspace-modal .email-item:hover{background:#fff7e8!important;color:#111827!important}
+.exec-workspace-modal .email-item *{color:#111827!important}
+.exec-workspace-modal .email-item-top,.exec-workspace-modal .email-item-top *{color:#7a5618!important}
+.exec-workspace-modal .email-item-subject{color:#0f172a!important}
+.exec-workspace-modal .email-item-meta{color:#334155!important}
+.exec-workspace-modal .email-card{
+  background:#fff!important;color:#111827!important;border-color:rgba(17,24,39,0.14)!important;
+}
+.exec-workspace-modal .email-card *{color:#111827!important}
+.exec-workspace-modal .email-card h3{color:#0f172a!important}
+.exec-workspace-modal .email-reason{
+  background:#f8fafc!important;color:#111827!important;border-color:rgba(17,24,39,0.14)!important;
+}
+.exec-workspace-modal .email-preview{
+  background:#f8fafc!important;color:#111827!important;border-color:rgba(17,24,39,0.12)!important;
+}
+.exec-workspace-modal .email-tabs{background:#111c2c!important;border-color:rgba(255,255,255,0.08)!important}
+.exec-workspace-modal .email-tabs button{background:#fff!important;color:#111827!important;border-color:rgba(17,24,39,0.16)!important}
+.exec-workspace-modal .email-tabs button.active{background:var(--gold)!important;color:#111827!important;border-color:var(--gold)!important}
+.exec-workspace-modal .email-actions button{
+  background:#f8fafc!important;color:#111827!important;border-color:rgba(17,24,39,0.16)!important;
+}
+.exec-workspace-modal .email-actions button.primary{
+  background:var(--gold)!important;color:#111827!important;border-color:var(--gold)!important;
+}
 .relationship-list-item{position:relative}.relationship-evidence-count{margin-top:8px;font-size:11px;font-weight:700;color:#64748b}.relationship-card{padding:20px!important}.relationship-card-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.relationship-context{color:#475569;font-size:13px;font-weight:650}.relationship-score{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#172740;color:#fff!important;font:700 20px var(--serif);flex:0 0 auto}.email-pill.vip{background:#fff3cd!important;border-color:#c4963a!important;color:#694d12!important}.relationship-summary{margin:16px 0;padding:15px;border-left:4px solid #c4963a;background:#f8fafc;color:#172033!important;font-size:15px;line-height:1.6}.relationship-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0}.relationship-facts div{display:grid;gap:5px;padding:11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}.relationship-facts strong{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#334155!important}.relationship-facts span{font-size:13px;line-height:1.45;color:#111827!important}.relationship-evidence{margin-top:14px;border-top:1px solid #e2e8f0;padding-top:12px}.relationship-evidence summary{font-weight:800;color:#334155!important;cursor:pointer}.relationship-evidence li{margin:8px 0}.relationship-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.relationship-actions button,.relationship-action-panel button{min-height:36px;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer}.relationship-actions button.primary,.relationship-action-panel button.primary{background:#172740;color:#fff!important;border:1px solid #172740}.relationship-actions button.secondary,.relationship-action-panel button.secondary{background:#fff;color:#172740!important;border:1px solid #64748b}.relationship-actions button.tertiary{background:#f1f5f9;color:#334155!important;border:1px solid #cbd5e1}.relationship-actions button:hover,.relationship-action-panel button:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(15,23,42,.18)}.relationship-actions button:active{transform:translateY(0)}.relationship-action-panel{margin-top:16px;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}.relationship-action-panel h4{font:700 18px var(--serif);margin-bottom:10px;color:#172740!important}.relationship-action-panel label{display:grid;gap:5px;margin:10px 0;font-size:12px;font-weight:800;color:#334155!important}.relationship-action-panel input,.relationship-action-panel textarea,.relationship-action-panel select{width:100%;padding:9px;border:1px solid #94a3b8;border-radius:7px;background:#fff;color:#111827!important;font:13px var(--body)}.relationship-action-panel input:disabled{background:#e2e8f0;color:#475569!important}.relationship-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.relationship-profile-wide{grid-column:1/-1}.relationship-timeline{max-height:42vh;overflow:auto;padding-left:19px}.relationship-timeline li{margin:10px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0}.security-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:10px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}.security-table th,.security-table td{padding:10px 11px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;color:#111827!important;font-size:13px;line-height:1.45}.security-table th{background:#f8fafc;color:#334155!important;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.security-table tr:last-child td{border-bottom:none}.security-table .chip{color:#111827!important}@media(max-width:800px){.relationship-facts,.relationship-profile-grid{grid-template-columns:1fr}.relationship-profile-wide{grid-column:auto}.security-table{display:block;overflow:auto}}
 
 </style>
 <link rel="stylesheet" href="/command-center.css?v=20260623-contrast-sweep">
+<style id="michele-book-companion-styles">
+.michele-book-shell{display:grid;gap:14px;max-width:980px}
+.michele-book-card,.exec-workspace-modal .michele-book-card{
+  background:#fffdf8!important;color:#111827!important;border:1px solid rgba(17,24,39,.14)!important;
+}
+.michele-book-card *,.exec-workspace-modal .michele-book-card *{color:#111827!important;opacity:1!important;text-shadow:none!important}
+.michele-book-hero{background:linear-gradient(135deg,#fffaf0,#f8fafc)!important}
+.michele-book-kicker,.michele-book-bullet-label{
+  font:800 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#7a5618!important;margin-bottom:6px;
+}
+.michele-book-bullets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.michele-book-bullet{background:#fff!important;border:1px solid rgba(17,24,39,.12);border-radius:12px;padding:14px;min-height:120px}
+.michele-book-bullet-text{font-size:15px;line-height:1.55;color:#172033!important}
+.michele-book-mini-list{margin:8px 0 0 0;padding-left:18px;display:grid;gap:8px}
+.michele-book-mini-list li{color:#172033!important;line-height:1.5}
+.michele-book-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.michele-book-controls label{display:grid;gap:6px;font:800 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#334155!important}
+.michele-book-controls select{width:100%;border:1px solid #cbd5e1!important;border-radius:10px;background:#fff!important;color:#111827!important;padding:10px;font:700 14px var(--body)}
+.michele-book-response{
+  width:100%;resize:vertical;border:1px solid #cbd5e1!important;border-radius:12px;background:#fff!important;color:#111827!important;
+  padding:14px;font:16px/1.55 var(--body);margin-top:10px;
+}
+.michele-book-response::placeholder{color:#64748b!important;opacity:1!important}
+.michele-book-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.michele-book-fineprint{font-size:12px;color:#475569!important;margin-top:10px;line-height:1.5}
+.michele-book-chat{display:grid;gap:10px;margin:12px 0;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc!important;max-height:320px;overflow:auto}
+.michele-book-chat-turn{padding:10px 12px;border-radius:12px;line-height:1.5;color:#172033!important;background:#fff!important;border:1px solid #e5e7eb}
+.michele-book-chat-turn.user{background:#fff7ed!important;border-color:#fed7aa}
+.michele-book-chat-turn.assistant{background:#eef6ff!important;border-color:#bfdbfe}
+.michele-book-chat-label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;font-weight:900;color:#6b7280!important;margin-bottom:4px}
+.michele-book-done{min-height:220px;display:grid;place-content:center;text-align:center}
+.michele-book-done h3{font-size:32px!important}
+.michele-book-chapter-list{display:grid;gap:8px;max-height:280px;overflow:auto}
+.michele-book-chapter-list div{display:flex;justify-content:space-between;gap:12px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc}
+@media(max-width:900px){.michele-book-bullets,.michele-book-controls{grid-template-columns:1fr}}
+</style>
 <style id="relationship-review-contrast">
 .exec-workspace-modal .exec-workspace-footer .alert-btn{background:#f8fafc!important;color:#172740!important;border:1px solid #cbd5e1!important;opacity:1!important;text-shadow:none!important}
 .exec-workspace-modal .exec-workspace-footer .alert-btn.primary{background:#c4963a!important;color:#111d30!important;border-color:#c4963a!important}
@@ -1105,6 +1216,9 @@ body{font-size:1rem}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
       Chat
     </button>
+    <button class="tbtn tbtn-action guide-cta" id="demoGuideButton" onclick="window.open(PROXY + '/guide','_blank')" title="Keep exploring the VAL demo guide">
+      Keep Exploring
+    </button>
     <div class="actions-menu-wrap">
       <button class="tbtn tbtn-action" id="actionsMenuBtn" onclick="toggleActionsMenu(event)" title="Open dashboard actions">
         Actions
@@ -1124,8 +1238,10 @@ body{font-size:1rem}
         <div class="menu-hint">Utilities</div>
         <button onclick="closeActionsMenu();sendLast()">Send Last <span>Make</span></button>
         <button onclick="closeActionsMenu();saveChat()">Save Chat <span>Archive</span></button>
+        <button onclick="closeActionsMenu();openIntegrationStatus()">Integration Status <span>Health</span></button>
         <button onclick="closeActionsMenu();connectGmail()">Connect Gmail <span>OAuth</span></button>
-        <button onclick="closeActionsMenu();openKeysPanel()">Settings <span>Keys</span></button>
+        <button onclick="closeActionsMenu();connectMicrosoft()">Connect Outlook <span>OAuth</span></button>
+        <button onclick="closeActionsMenu();openKeysPanel()">API Keys & Connections <span>Client</span></button>
         <button onclick="closeActionsMenu();window.open(PROXY + '/guide','_blank')">Guide <span>Help</span></button>
         <button onclick="closeActionsMenu();toggleVoice()">Voice <span>Mic</span></button>
       </div>
@@ -1367,6 +1483,8 @@ var keyProviderFields={
 };
 var integrationCredentials=[];
 var integrationOauth={google:false,microsoft:false};
+var tenantApiKeyProviders=[];
+var tenantApiKeyStatus={encryptionConfigured:false,platformFallbackAllowed:false,demoMode:false};
 function credType(name){return name.replace('apiKey','api_key').replace('preferredModel','preferred_model').replace('locationId','location_id').replace('mcpUrl','mcp_url');}
 function credFor(provider,type){return (integrationCredentials||[]).find(function(c){return c.provider===provider&&c.credentialType===type;});}
 function providerStatus(provider){
@@ -1381,48 +1499,56 @@ function providerStatus(provider){
 function openKeysPanel(){
   var existing=document.getElementById('keysOverlay');if(existing)existing.remove();
   var overlay=document.createElement('div');overlay.id='keysOverlay';overlay.className='keys-overlay';
-  overlay.innerHTML=`<div class="keys-modal"><div class="keys-head"><div><div class="keys-title">Register Your Keys</div><div class="keys-sub">Saved keys are encrypted. Full keys never show after save.</div></div><button class="keys-close" onclick="document.getElementById('keysOverlay').remove()">x</button></div><div class="keys-body" id="keysBody"><div class="keys-note">Loading integration settings...</div><div class="key-actions" style="margin-top:10px"><button class="primary" onclick="openTemplatesPage()">Open Templates</button></div></div></div>`;
+  overlay.innerHTML=`<div class="keys-modal"><div class="keys-head"><div><div class="keys-title">API Keys & Connections</div><div class="keys-sub">Tenant-owned API keys are encrypted in VAL’s vault. Full keys never show after save.</div></div><button class="keys-close" onclick="document.getElementById('keysOverlay').remove()">x</button></div><div class="keys-body" id="keysBody"><div class="keys-note">Loading API key vault...</div><div class="key-actions" style="margin-top:10px"><button class="primary" onclick="openTemplatesPage()">Open Templates</button></div></div></div>`;
   document.body.appendChild(overlay);
   loadKeysPanel();
 }
 function loadKeysPanel(){
-  apiFetch(PROXY+'/api/integrations/credentials').then(function(d){
-    integrationCredentials=d.credentials||[];integrationOauth=d.oauth||{};
+  apiFetch(PROXY+'/api/tenant-api-keys/status').then(function(d){
+    tenantApiKeyProviders=d.providers||[];tenantApiKeyStatus={encryptionConfigured:!!d.encryptionConfigured,platformFallbackAllowed:!!d.platformFallbackAllowed,demoMode:!!d.demoMode};
     renderKeysPanel('');
   }).catch(function(e){renderKeysPanel('Could not load keys: '+e.message);});
 }
 function renderKeysPanel(message){
   var body=document.getElementById('keysBody');if(!body)return;
-  var providers=['openai','ghl','microsoft_oauth','google_oauth','outscraper','apollo','rocketreach'];
-  body.innerHTML='<div class="keys-note">'+(message||'Railway variables still work as system fallbacks. Use this area for client-owned keys that should travel with this VAL account.')+'</div>'+providers.map(renderKeyCard).join('');
+  var intro=message||'Client-owned provider keys live here, encrypted per tenant. Railway variables are platform-level only and are not created for client API keys.';
+  var warning=!tenantApiKeyStatus.encryptionConfigured?'<div class="email-reason" style="border-color:#dc2626;background:#fef2f2;color:#7f1d1d"><strong>Encryption key missing.</strong> Saving tenant API keys is blocked until ENCRYPTION_KEY is configured.</div>':'';
+  var fallback=tenantApiKeyStatus.platformFallbackAllowed?'<div class="email-reason">Platform/demo fallback is enabled for this environment.</div>':'<div class="email-reason">No silent platform-key fallback. If a tenant key is missing, VAL will ask the client to connect that provider.</div>';
+  body.innerHTML='<div class="keys-note">'+intro+'</div>'+warning+fallback+(tenantApiKeyProviders||[]).map(renderTenantApiKeyCard).join('');
 }
-function renderKeyCard(provider){
-  var status=providerStatus(provider);
-  var fields=keyProviderFields[provider]||[];
-  var meta=fields.map(function(f){var c=credFor(provider,credType(f[0]));return c?f[1]+': '+(c.maskedValue||'saved'):'';}).filter(Boolean).join('<br>');
-  if(provider==='google_oauth')meta=integrationOauth.google?'Connected through Google OAuth.':'Connect with Google OAuth. Do not enter a Google password here.';
-  if(provider==='microsoft_oauth')meta=integrationOauth.microsoft?'Connected through Microsoft OAuth.':'Connect with Microsoft OAuth. Do not enter a Microsoft password here.';
-  var fieldHtml=fields.map(function(f){return '<div class="key-field"><label>'+f[1]+'</label><input id="key_'+provider+'_'+f[0]+'" type="'+f[2]+'" autocomplete="off" placeholder="Enter new value to update"></div>';}).join('');
-  var actions='';
-  if(provider==='google_oauth')actions=`<button class="primary" onclick="window.open(PROXY+'/auth/google','_blank','noopener')">Connect Google</button><button class="danger" onclick="disconnectOauth('google')">Disconnect</button><button onclick="testProvider('google_oauth')">Test</button>`;
-  else if(provider==='microsoft_oauth')actions=`<button class="primary" onclick="window.open(PROXY+'/auth/microsoft','_blank','noopener')">Connect Microsoft</button><button class="danger" onclick="disconnectOauth('microsoft')">Disconnect</button><button onclick="testProvider('microsoft_oauth')">Test</button>`;
-  else actions=`<button class="primary" onclick="saveProviderKeys('${provider}')">Save</button><button onclick="testProvider('${provider}')">Test</button><button class="danger" onclick="deleteProviderKeys('${provider}')">Delete / Reset</button>`;
-  return '<section class="key-card"><h3>'+keyProviderLabels[provider]+'</h3><div class="key-status"><span class="key-dot '+(status==='Connected'?'connected':status==='Failed'?'failed':'')+'"></span>'+status+'</div><div class="key-meta">'+(meta||'No saved key yet.')+'</div>'+fieldHtml+'<div class="key-actions">'+actions+'</div></section>';
+function renderTenantApiKeyCard(p){
+  var provider=p.providerId||p.provider||'';
+  var status=String(p.status||'missing');
+  var connected=/connected/i.test(status);
+  var failed=/invalid|failed|needs_attention/i.test(status);
+  var approved=!!p.approved;
+  var disabled=!approved?' disabled':'';
+  var docs=p.docsUrl?'<a href="'+docSafe(p.docsUrl)+'" target="_blank" rel="noopener">Where do I find this key?</a>':'';
+  var meta=[
+    p.keyPreview?'Saved key: '+p.keyPreview:'No saved key yet.',
+    p.lastTestedAt?'Last tested: '+new Date(p.lastTestedAt).toLocaleString():'',
+    p.lastUpdatedAt?'Last updated: '+new Date(p.lastUpdatedAt).toLocaleString():'',
+    'Approval: '+(p.approvalStatus||'')
+  ].filter(Boolean).join('<br>');
+  var approval=!approved?'<div class="email-reason">'+docSafe(p.requiresAdminApproval?'This provider requires admin approval before a key can be added.':'This provider is not currently approved for this tenant.')+'</div>':'';
+  return '<section class="key-card"><h3>'+docSafe(p.displayName||provider)+'</h3><p>'+docSafe(p.description||'Approved API-based connection.')+'</p><div class="key-status"><span class="key-dot '+(connected?'connected':failed?'failed':'')+'"></span>'+docSafe(status.replace(/_/g,' '))+'</div><div class="key-meta">'+meta+'</div>'+approval+'<div class="key-field"><label>API key</label><input id="tenant_key_'+docSafe(provider)+'" type="password" autocomplete="off" placeholder="'+(approved?'Paste new key to save/update':'Admin approval required')+'"'+disabled+'></div><p class="email-reason">'+docSafe(p.helpText||'Paste the provider API key here.')+' '+docs+'</p><div class="key-actions"><button class="primary" onclick="saveTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Save / Update</button><button onclick="testTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Test Connection</button><button class="danger" onclick="deleteTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Remove / Revoke</button></div></section>';
 }
-function saveProviderKeys(provider){
-  var fields={};
-  (keyProviderFields[provider]||[]).forEach(function(f){var el=document.getElementById('key_'+provider+'_'+f[0]);if(el&&el.value.trim())fields[f[0]]=el.value.trim();});
-  apiFetch(PROXY+'/api/integrations/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider,fields:fields})})
-    .then(function(){loadKeysPanel();addSys('Keys saved securely.');})
+function saveTenantApiKey(provider){
+  var el=document.getElementById('tenant_key_'+provider);
+  var key=(el&&el.value||'').trim();
+  if(!key){renderKeysPanel('Paste a new API key before saving.');return;}
+  apiFetch(PROXY+'/api/tenant-api-keys/'+encodeURIComponent(provider),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:key})})
+    .then(function(){if(el)el.value='';loadKeysPanel();addSys('API key saved securely.');})
     .catch(function(e){renderKeysPanel(e.message);});
 }
-function deleteProviderKeys(provider){
-  var rows=(integrationCredentials||[]).filter(function(c){return c.provider===provider;});
-  Promise.all(rows.map(function(c){return apiFetch(PROXY+'/api/integrations/credentials/'+encodeURIComponent(c.id),{method:'DELETE'});}))
-    .then(function(){loadKeysPanel();addSys('Keys reset.');});
+function deleteTenantApiKey(provider){
+  if(!confirm('Remove this saved API key from the tenant vault?'))return;
+  apiFetch(PROXY+'/api/tenant-api-keys/'+encodeURIComponent(provider),{method:'DELETE'})
+    .then(function(){loadKeysPanel();addSys('API key removed.');})
+    .catch(function(e){renderKeysPanel(e.message);});
 }
-function testProvider(provider){
-  apiFetch(PROXY+'/api/integrations/test/'+encodeURIComponent(provider),{method:'POST'})
+function testTenantApiKey(provider){
+  apiFetch(PROXY+'/api/tenant-api-keys/'+encodeURIComponent(provider)+'/test',{method:'POST'})
     .then(function(data){loadKeysPanel();addSys((data.message||data.error||'Test complete'));})
     .catch(function(e){renderKeysPanel(e.message);});
 }
@@ -1464,7 +1590,7 @@ function renderSecurityPrivacyCenter(data){
   var warnings=(s.warnings||[]).map(function(w){return '<li>'+docSafe(w)+'</li>';}).join('');
   var accounts=(data.connectedAccounts||[]).map(function(a){
     var reconnect=a.reconnectUrl?'<button class="chip" onclick="securityReconnectAccount(\''+docSafe(a.reconnectUrl)+'\')">Reconnect</button> ':'';
-    var disconnect=a.disconnectProvider&&a.disconnectProvider!=='ghl'?'<button class="chip" onclick="securityDisconnectAccount(\''+docSafe(a.disconnectProvider)+'\')">Disconnect</button>':'<span class="email-reason">Use Register Keys for GHL.</span>';
+    var disconnect=a.disconnectProvider&&a.disconnectProvider!=='ghl'?'<button class="chip" onclick="securityDisconnectAccount(\''+docSafe(a.disconnectProvider)+'\')">Disconnect</button>':'<span class="email-reason">GHL uses the existing CRM integration settings.</span>';
     return '<tr><td>'+docSafe(a.label)+'</td><td>'+securityStatusPill(a.connected?'Connected':'Not connected')+'</td><td>'+docSafe(securityFmtDate(a.lastSuccessfulSync))+'</td><td>'+docSafe(securityFmtDate(a.lastFailedSync))+'</td><td>'+docSafe(a.error||'')+'</td><td>'+reconnect+disconnect+'</td></tr>';
   }).join('');
   var sources=(data.dataSources||[]).map(function(d){return '<tr><td>'+docSafe(d.name)+'</td><td>'+securityStatusPill(d.access?'Enabled':'Off')+'</td><td>'+docSafe(d.scope||'')+'</td></tr>';}).join('');
@@ -1505,6 +1631,143 @@ function requestDataDelete(){
   apiFetch(PROXY+'/api/security/delete-my-data',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:phrase})})
     .then(function(result){addSys(result.message||'VAL tenant data deleted.');loadSecurityPrivacyCenter();})
     .catch(function(e){addSys(e.message||'Delete my data failed.');});
+}
+function dashboardStudioPill(value){
+  var v=String(value||'requested').toLowerCase();
+  var color=v==='blocked'||v==='blocked_change'||v==='critical'?'#fee2e2':(v==='premium_request'||v==='pending'||v==='high'||v==='needs_clarification'?'#fef3c7':(v==='approved'||v==='classified'||v==='auto_deploy'||v==='approved_for_deployment'||v==='low'?'#dcfce7':'#e0f2fe'));
+  var border=v==='blocked'||v==='blocked_change'||v==='critical'?'#fecaca':(v==='premium_request'||v==='pending'||v==='high'||v==='needs_clarification'?'#fde68a':(v==='approved'||v==='classified'||v==='auto_deploy'||v==='approved_for_deployment'||v==='low'?'#bbf7d0':'#bae6fd'));
+  return '<span class="email-pill" style="background:'+color+';border-color:'+border+'">'+docSafe(String(value||'requested').replace(/_/g,' '))+'</span>';
+}
+var dashboardStudioDraftScope={category:'',feature:'',query:''};
+var dashboardStudioCategories=[
+  {id:'appearance',label:'Appearance',helper:'Visual polish, readability, layout, labels, cards, and navigation.'},
+  {id:'existing_features',label:'Existing Features',helper:'Improve something this VAL already has.'},
+  {id:'ai_personality',label:'AI Personality',helper:'Tone, questions, conversational behavior, and writing style.'},
+  {id:'connections',label:'Connections',helper:'Existing Gmail, Calendar, CRM, Docs, and integration behavior.'},
+  {id:'automations',label:'Automations',helper:'Review automation ideas safely before anything new is built.'},
+  {id:'add_something_new',label:'Add Something New',helper:'New capabilities become premium/admin-reviewed requests.'}
+];
+var dashboardStudioFeatures=['Dashboard','Calendar','Email Intelligence','CRM','Contacts','Tasks','Relationships','Transcripts','Voice','Lead Scraper','Meeting Assistant','Documents','Reports'];
+function dashboardStudioScopePrefix(){
+  var parts=[];
+  if(dashboardStudioDraftScope.category)parts.push('Category: '+dashboardStudioDraftScope.category);
+  if(dashboardStudioDraftScope.feature)parts.push('Feature: '+dashboardStudioDraftScope.feature);
+  return parts.length?parts.join(' | ')+'\n':'';
+}
+function dashboardStudioQuestion(){
+  if(dashboardStudioDraftScope.feature)return 'What would you like to improve about '+dashboardStudioDraftScope.feature+'?';
+  if(dashboardStudioDraftScope.category==='Existing Features')return 'Which existing feature would you like to improve?';
+  if(dashboardStudioDraftScope.category)return 'What would you like to improve about '+dashboardStudioDraftScope.category+'?';
+  return 'What would you like to improve today?';
+}
+function dashboardStudioCard(label,helper,onclick,selected){
+  return '<button type="button" class="email-card" style="text-align:left;border:1px solid '+(selected?'#c4963a':'#e2e8f0')+';background:'+(selected?'#fff7e6':'#fff')+';cursor:pointer" onclick="'+onclick+'"><h3 style="margin-bottom:5px">'+docSafe(label)+'</h3><p style="margin:0">'+docSafe(helper||'')+'</p></button>';
+}
+function dashboardStudioCategoryCards(){
+  return '<div class="exec-workspace-grid">'+dashboardStudioCategories.map(function(c){
+    return dashboardStudioCard('□ '+c.label,c.helper,'selectDashboardStudioCategory(\''+docSafe(c.id)+'\')',dashboardStudioDraftScope.category===c.label);
+  }).join('')+'</div>';
+}
+function dashboardStudioFeatureCards(){
+  if(dashboardStudioDraftScope.category!=='Existing Features')return '';
+  var q=String(dashboardStudioDraftScope.query||'').toLowerCase();
+  var features=dashboardStudioFeatures.filter(function(f){return !q||f.toLowerCase().indexOf(q)>-1;});
+  return '<div style="margin-top:14px"><h3>Existing Features</h3><input id="dashboardStudioFeatureSearch" value="'+docSafe(dashboardStudioDraftScope.query||'')+'" placeholder="+ Search..." oninput="dashboardStudioDraftScope.query=this.value;refreshDashboardStudioScopeBuilder()" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;margin:8px 0 12px;background:#fff;color:#111827"><div class="exec-workspace-grid">'+features.map(function(f){
+    return dashboardStudioCard('○ '+f,'Scope this request to '+f+'.','selectDashboardStudioFeature(\''+docSafe(f)+'\')',dashboardStudioDraftScope.feature===f);
+  }).join('')+'</div></div>';
+}
+function dashboardStudioScopeBuilderHtml(){
+  var prompt=dashboardStudioQuestion();
+  return '<div id="dashboardStudioScopeBuilder"><h3>What would you like to improve today?</h3>'+dashboardStudioCategoryCards()+dashboardStudioFeatureCards()+'<div style="margin-top:14px"><h3>'+docSafe(prompt)+'</h3><textarea id="dashboardStudioRequestText" rows="5" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827" placeholder="'+docSafe(prompt)+'"></textarea><p class="email-reason">Dashboard Studio will attach the selected scope before it classifies the request.</p></div></div>';
+}
+function refreshDashboardStudioScopeBuilder(){
+  var el=document.getElementById('dashboardStudioScopeBuilder');
+  if(el)el.outerHTML=dashboardStudioScopeBuilderHtml();
+}
+function selectDashboardStudioCategory(id){
+  var found=dashboardStudioCategories.find(function(c){return c.id===id;});
+  dashboardStudioDraftScope.category=found?found.label:'';
+  dashboardStudioDraftScope.feature='';
+  dashboardStudioDraftScope.query='';
+  refreshDashboardStudioScopeBuilder();
+}
+function selectDashboardStudioFeature(feature){
+  dashboardStudioDraftScope.category='Existing Features';
+  dashboardStudioDraftScope.feature=feature;
+  refreshDashboardStudioScopeBuilder();
+}
+function openDashboardStudioPage(){
+  if(!(VAL_CONFIG&&VAL_CONFIG.featureFlags&&VAL_CONFIG.featureFlags.dashboard_studio_beta)){addSys('Dashboard Studio is not enabled for this VAL.');return;}
+  var body='<div id="dashboardStudioBody"><div class="task-empty">Loading Dashboard Studio Beta...</div></div>';
+  openExecutiveWorkspace({id:'dashboardStudioWorkspace',title:'Dashboard Studio Beta',body:body,footer:'<button class="alert-btn primary" onclick="submitDashboardStudioRequest()">Submit Request</button><button class="alert-btn" onclick="loadDashboardStudio()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'dashboardStudioWorkspace\')">Close</button>'});
+  loadDashboardStudio();
+}
+function loadDashboardStudio(){
+  apiFetch(PROXY+'/api/dashboard-studio').then(renderDashboardStudio).catch(function(e){
+    var el=document.getElementById('dashboardStudioBody');if(el)el.innerHTML='<div class="exec-card"><h3>Dashboard Studio unavailable</h3><p>'+docSafe(e.message||e)+'</p></div>';
+  });
+}
+function renderDashboardStudio(data){
+  var el=document.getElementById('dashboardStudioBody');if(!el)return;
+  if(!data||!data.ok){el.innerHTML='<div class="exec-card"><h3>Dashboard Studio unavailable</h3><p>'+docSafe((data&&data.error)||'This beta is not enabled here.')+'</p></div>';return;}
+  var rows=(data.requests||[]).map(function(r){
+    var approve=(r.status!=='blocked'&&r.classification!=='blocked'&&r.classification!=='premium_request'&&r.status!=='approved'&&r.status!=='approved_for_deployment'&&r.status!=='deployed'&&r.status!=='deployment_failed'&&r.status!=='config_applied'&&r.status!=='pr_created')
+      ? '<div class="email-actions"><button class="primary" onclick="approveDashboardStudioRequest(\''+docSafe(r.id)+'\')">Jessa says deploy</button></div>':'';
+    return '<div class="email-card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h3>'+docSafe(r.requestText||'Dashboard request')+'</h3><div>'+dashboardStudioPill(r.status)+' '+dashboardStudioPill(r.classification)+' '+dashboardStudioPill(r.riskLevel)+'</div></div><p><strong>Created:</strong> '+docSafe(r.createdAt?new Date(r.createdAt).toLocaleString():'')+'</p><p><strong>Plan:</strong> '+docSafe(r.implementationPlan||'Classification pending.')+'</p>'+(r.classificationReason?'<p><strong>Reason:</strong> '+docSafe(r.classificationReason)+'</p>':'')+(r.errorMessage?'<div class="email-reason">'+docSafe(r.errorMessage)+'</div>':'')+(r.prUrl?'<p><a href="'+docSafe(r.prUrl)+'" target="_blank" rel="noopener">Open PR</a></p>':'')+approve+'</div>';
+  }).join('');
+  var premiumRows=(data.premiumRequests||[]).map(function(r){
+    return '<div class="email-card"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h3>'+docSafe(r.requestedFunction||'Premium update')+'</h3><div>'+dashboardStudioPill(r.status)+' '+dashboardStudioPill(r.riskLevel)+'</div></div><p>'+docSafe(r.requestText||'')+'</p><p><strong>Reason:</strong> '+docSafe(r.classificationReason||'Requires admin review.')+'</p><p><strong>Requested by:</strong> '+docSafe(r.userEmail||r.userName||'Unknown')+'</p><div class="email-actions"><button onclick="reviewPremiumUpdateRequest(\''+docSafe(r.id)+'\',\'approved\')">Approve</button><button onclick="reviewPremiumUpdateRequest(\''+docSafe(r.id)+'\',\'paid_upgrade\')">Paid Upgrade</button><button onclick="reviewPremiumUpdateRequest(\''+docSafe(r.id)+'\',\'needs_more_information\')">Need Info</button><button onclick="reviewPremiumUpdateRequest(\''+docSafe(r.id)+'\',\'rejected\')">Reject</button><button onclick="reviewPremiumUpdateRequest(\''+docSafe(r.id)+'\',\'converted_to_codex_task\')">Convert to Codex Task</button></div></div>';
+  }).join('');
+  var variableRows=(data.pendingVariables||[]).map(function(v){
+    return '<tr><td>'+docSafe(v.variableName)+'</td><td>'+dashboardStudioPill(v.status)+'</td><td>'+docSafe(v.requiredFor||'')+'</td><td>'+docSafe(v.adminOnly===false?'No':'Yes')+'</td></tr>';
+  }).join('');
+  var historyRows=(data.deploymentHistory||[]).map(function(h){
+    var rollback=h.requestType==='dashboard_studio_safe_auto_deploy'&&h.status==='deployed'
+      ? '<button class="chip" onclick="rollbackDashboardStudioDeployment(\''+docSafe(h.id)+'\')">Rollback</button>'
+      : '';
+    return '<tr><td>'+docSafe(h.createdAt?new Date(h.createdAt).toLocaleString():'')+'</td><td>'+docSafe(h.requestType||'')+'</td><td>'+dashboardStudioPill(h.status)+'</td><td>'+dashboardStudioPill(h.classification)+'</td><td>'+docSafe(h.summary||'')+(rollback?'<div class="email-actions">'+rollback+'</div>':'')+'</td></tr>';
+  }).join('');
+  var deployStatus=data.deploymentStatus||{};
+  var active=deployStatus.activeOverride||null;
+  var activeSummary=active?('Active deployment: '+(active.activeDeploymentId||'tenant override')+' · updated '+(active.updatedAt?new Date(active.updatedAt).toLocaleString():'recently')):'No active Dashboard Studio override deployed.';
+  var activeConfig=active&&active.config?JSON.stringify(active.config,null,2):'';
+  el.innerHTML='<div class="exec-workspace-grid">'
+    +'<section class="exec-card"><h3>Safety Notice</h3><p>'+docSafe(data.safetyNotice||'Dashboard Studio is a beta feature.')+'</p><div class="email-reason">Approval phrase: <strong>'+docSafe(data.approvalPhrase||'Jessa says deploy')+'</strong><br>Only use this when Jessa is present and approves this dashboard change.</div></section>'
+    +'<section class="exec-card"><h3>Deployment Status</h3><p>'+docSafe(activeSummary)+'</p>'+(active?'<pre class="email-reason" style="white-space:pre-wrap;max-height:160px;overflow:auto">'+docSafe(activeConfig)+'</pre>':'')+'<div class="email-actions"><button onclick="loadDashboardStudio()">Refresh Status</button>'+(active&&active.canRollback&&active.rollbackDeploymentId?'<button onclick="rollbackDashboardStudioDeployment(\''+docSafe(active.rollbackDeploymentId)+'\')">Rollback Active Override</button>':'')+'</div></section>'
+    +'<section class="exec-card" style="grid-column:1/-1"><h3>Dashboard Studio Project Manager</h3><p>Pick a lane first so VAL already knows the scope before you describe the change.</p>'+dashboardStudioScopeBuilderHtml()+'</section>'
+    +'<section class="exec-card"><h3>Classification Rules</h3><p><strong>Auto-deploy candidate:</strong> tenant-only UX, copy, layout, style, prompt tuning, existing workflow fixes, and readable dashboard changes after preflight.</p><p><strong>Premium request:</strong> new integrations, APIs, OAuth, webhooks, scraping/cost increases, secrets, paid services, compliance risk, or cross-tenant changes.</p><p><strong>Blocked:</strong> secret exposure, auth bypass, destructive data changes, audit-log deletion, or direct production editing.</p><p><strong>Railway rule:</strong> clients cannot edit Railway secrets. New variables become admin-only checklists.</p></section>'
+    +'</div><section class="exec-card"><h3>Request History</h3><div class="dashboard-studio-history">'+(rows||'<div class="task-empty">No Dashboard Studio requests yet.</div>')+'</div></section>'
+    +'<section class="exec-card"><h3>Premium Update Requests</h3><div class="dashboard-studio-history">'+(premiumRows||'<div class="task-empty">No premium requests yet.</div>')+'</div></section>'
+    +'<section class="exec-card"><h3>Pending Variables</h3><table class="exec-table"><thead><tr><th>Variable</th><th>Status</th><th>Required For</th><th>Admin Only</th></tr></thead><tbody>'+(variableRows||'<tr><td colspan="4">No pending variable checklist items.</td></tr>')+'</tbody></table></section>'
+    +'<section class="exec-card"><h3>Deployment History</h3><table class="exec-table"><thead><tr><th>Time</th><th>Request Type</th><th>Status</th><th>Classification</th><th>Summary</th></tr></thead><tbody>'+(historyRows||'<tr><td colspan="5">No deployment history yet.</td></tr>')+'</tbody></table></section>';
+}
+function submitDashboardStudioRequest(){
+  var box=document.getElementById('dashboardStudioRequestText');
+  var text=(box&&box.value||'').trim();
+  if(!text){addSys('Describe the dashboard change first.');return;}
+  text=dashboardStudioScopePrefix()+text;
+  apiFetch(PROXY+'/api/dashboard-studio/requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestText:text})})
+    .then(function(data){if(box)box.value='';renderDashboardStudio(data);addSys(data.userMessage||(data.approved?'Dashboard Studio approval recorded.':'Dashboard request classified.'));})
+    .catch(function(e){addSys('Dashboard Studio request failed: '+e.message);});
+}
+function approveDashboardStudioRequest(id){
+  var phrase=prompt('Type exactly: Jessa says deploy');
+  if(!phrase)return;
+  apiFetch(PROXY+'/api/dashboard-studio/requests/'+encodeURIComponent(id)+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phrase:phrase})})
+    .then(function(data){renderDashboardStudio(data);addSys('Dashboard Studio approval recorded.');})
+    .catch(function(e){addSys('Approval failed: '+e.message);});
+}
+function rollbackDashboardStudioDeployment(id){
+  if(!confirm('Rollback this tenant-only Dashboard Studio deployment?'))return;
+  apiFetch(PROXY+'/api/dashboard-studio/deployments/'+encodeURIComponent(id)+'/rollback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+    .then(function(data){renderDashboardStudio(data);addSys('Dashboard Studio rollback completed. Refresh the page if the dashboard title or wording changed.');})
+    .catch(function(e){addSys('Rollback failed: '+e.message);});
+}
+function reviewPremiumUpdateRequest(id,status){
+  var notes=prompt('Admin notes for this premium request:')||'';
+  apiFetch(PROXY+'/api/dashboard-studio/premium-requests/'+encodeURIComponent(id)+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,adminNotes:notes})})
+    .then(function(data){renderDashboardStudio(data);addSys('Premium update request marked '+status.replace(/_/g,' ')+'.');})
+    .catch(function(e){addSys('Premium review failed: '+e.message);});
 }
 function openTemplatesPage(){
   var body='<div class="exec-workspace-grid" style="grid-template-columns:minmax(260px,.8fr) minmax(320px,1.2fr)">'
@@ -1618,7 +1881,7 @@ function openPriorityReview(){
 }
 function openLeadIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Scrape Employers</h3><p>Would this company benefit from GOALL?</p><p>Search by industry, market, and company size.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Employer leads keep the existing scoring, review, automation, and import workflow.</p></section><section class="exec-card"><h3>CRM Route</h3><p>The existing employer pipeline and stage remain unchanged.</p></section></div>';
-  openExecutiveWorkspace({id:'leadWorkspace',title:'Scrape Employers',body:body,footer:'<button class="alert-btn primary" onclick="startLeadResearch()">Start employer scrape</button><button class="alert-btn" onclick="openKeysPanel()">Register Your Keys</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'leadWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'leadWorkspace',title:'Scrape Employers',body:body,footer:'<button class="alert-btn primary" onclick="startLeadResearch()">Start employer scrape</button><button class="alert-btn" onclick="openKeysPanel()">API Keys & Connections</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'leadWorkspace\')">Close</button>'});
 }
 function openPartnerIntelligence(){
   var types=['Employee Benefits Brokers','Property & Casualty Agencies','Life & Health Insurance Agencies','General Insurance Brokerages','Voluntary Benefits Providers','Section 125 Providers','SIMRP Providers','Payroll Companies','Staffing Agencies','HR Consultants','Professional Associations','Trade Organizations','Industry Membership Organizations','Conference Organizers','Referral Partners'];
@@ -1675,9 +1938,9 @@ function openOpportunityIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Hidden Opportunities</h3><p>Relationship and pipeline signals can reveal revenue paths that are not explicit deals yet.</p></section><section class="exec-card"><h3>Stalled Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline data loaded yet.</li>')+'</ul></section><section class="exec-card"><h3>Next Best Action</h3><p>Review pipeline, draft follow-up, or create a task tied to the opportunity.</p></section></div>';
   openExecutiveWorkspace({id:'opportunityWorkspace',title:'Opportunity Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="askPipeline()">Review Pipeline</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'opportunityWorkspace\')">Close</button>'});
 }
-var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null};
+var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null,inbox:{query:'',results:[],selected:null,answer:''}};
 function openEmailIntelligence(){
-  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the email from Bill about next week’s event..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find emails, summarize a thread, draft a reply, or prepare a safe forward draft.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Register Keys</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
+  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the email from Bill about next week’s event..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find emails, summarize a thread, draft a reply, or prepare a safe forward draft.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">API Keys & Connections</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
 function connectGmail(){
@@ -1698,7 +1961,7 @@ function loadEmailIntelligence(force){
       renderEmailSyncStatus(d);
       document.getElementById('emailTabs').innerHTML='';
       document.getElementById('emailList').innerHTML='<div class="email-item active"><div class="email-item-subject">Gmail needs connection</div><div class="email-item-meta">'+docSafe(msg)+'</div></div>';
-      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">Register Keys</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">API Keys & Connections</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
       return;
     }
     emailIntel.emails=d.emails||[];emailIntel.rules=d.rules||[];emailIntel.summary=d.summary||{};
@@ -1997,7 +2260,7 @@ function renderIntegrationStatus(health,gmail,webhook){
     +statusLine('Google Doc actions',ac.canCreateGoogleDocs?'Ready':'Reconnect Google',!!ac.canCreateGoogleDocs)
     +renderTranscriptWebhook(webhook)
     +(errors.length?'<div class="email-reason"><strong>Errors:</strong><br>'+errors.map(docSafe).join('<br>')+'</div>':'<div class="email-reason">No integration errors reported.</div>')
-    +`<div class="email-actions"><button class="primary" onclick="window.open(PROXY+'/auth/google','_blank','noopener')">Reconnect Google</button><button class="primary" onclick="window.open(PROXY+'/auth/microsoft','_blank','noopener')">Connect Microsoft</button>${VAL_CONFIG.demoMode?'':'<button onclick="openKeysPanel()">Register Your Keys</button>'}</div></div>`;
+    +`<div class="email-actions"><button class="primary" onclick="window.open(PROXY+'/auth/google','_blank','noopener')">Reconnect Google</button><button class="primary" onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">API Keys & Connections</button></div></div>`;
 }
 function copyText(text,label){
   if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -2032,16 +2295,340 @@ function runBookAction(action,label,query){
   }
   runValAction(action,label,query||('Use all uploaded manuscript, chapter, outline, transcript, and launch-note memory for '+project+'. If no manuscript material is uploaded yet, say that clearly and use labeled sample/demo guidance only.'));
 }
+function micheleBookCard(title,body){
+  return '<section class="exec-card michele-book-card"><h3>'+docSafe(title)+'</h3><p>'+docSafe(body)+'</p></section>';
+}
+function micheleBookListText(value){
+  if(Array.isArray(value)){
+    return '<ul class="michele-book-mini-list">'+value.slice(0,3).map(function(v){return '<li>'+docSafe(v)+'</li>';}).join('')+'</ul>';
+  }
+  return '<p>'+docSafe(value||'')+'</p>';
+}
+function micheleBookBullets(summary){
+  var items=[];
+  if(summary&&summary.noticed)items.push(['What the editor noticed',summary.noticed]);
+  if(summary&&summary.recommends)items.push(['What VAL recommends',summary.recommends]);
+  if(summary&&summary.question)items.push(['Question for Michele',summary.question]);
+  if(!items.length)items=[
+    ['What VAL noticed',['The next chapter is ready for a calm review, with enough manuscript context for VAL to make an actual rewrite instead of another suggestion list.']],
+    ['What VAL recommends',['Choose the emotional direction first. VAL will preserve Michele’s voice, save a snapshot, and apply the rewrite directly to the manuscript output.']],
+    ['Question for Michele','Which direction should VAL prioritize here: deepen the emotion, sharpen the story arc, or keep the voice mostly intact and only smooth what feels clunky?']
+  ];
+  return '<div class="michele-book-bullets">'+items.slice(0,3).map(function(item){
+    return '<div class="michele-book-bullet"><div class="michele-book-bullet-label">'+docSafe(item[0])+'</div><div class="michele-book-bullet-text">'+micheleBookListText(item[1])+'</div></div>';
+  }).join('')+'</div>';
+}
+function openMicheleBookCompanion(){
+  openExecutiveWorkspace({
+    id:'micheleBookWorkspace',
+    title:'Continue My Book',
+    body:'<div class="exec-card michele-book-card"><h3>Opening Michele’s manuscript...</h3><p>VAL is reading the current chapter and preparing one gentle next step.</p></div>',
+    footer:'<button class="alert-btn" onclick="openMicheleBookAdmin()">Admin</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookWorkspace\')">Close</button>'
+  });
+  apiFetch(PROXY+'/api/michele/book/continue',{cache:'no-store'}).then(renderMicheleBookCompanion).catch(function(){
+    renderMicheleBookCompanion({ok:false,gentleMessage:'I could not open the manuscript right now. Please ask Jessa to check the connection.'});
+  });
+}
+function renderMicheleBookCompanion(data){
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  var footer=document.getElementById('micheleBookWorkspaceFooter');
+  if(!body)return;
+  if(!data||!data.ok){
+    body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe((data&&data.gentleMessage)||'I could not open the manuscript right now. Please ask Jessa to check the connection.')+'</p></div>';
+    if(footer)footer.innerHTML='<button class="alert-btn primary" onclick="openMicheleBookCompanion()">Try Again</button><button class="alert-btn" onclick="openMicheleBookAdmin()">Admin</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookWorkspace\')">Close</button>';
+    return;
+  }
+  window._micheleBookState=data;
+  window._micheleBookConversation=[];
+  window._micheleBookVoiceActive=false;
+  window._micheleBookSuggestedInstruction='';
+  var chapter=data.chapter||{};
+  var last=data.lastCompletedChapter||null;
+  var chapters=Array.isArray(data.chapters)?data.chapters:[];
+  var chapterOptions=chapters.map(function(ch){
+    var label=micheleBookChapterLabel(ch);
+    return '<option value="'+docSafe(ch.id||'')+'" '+((ch.id===chapter.id)?'selected':'')+'>'+docSafe(label)+'</option>';
+  }).join('');
+  var prompt=(data.summary&&data.summary.question)||'What detail from this moment still feels impossible to forget?';
+  var progressText=last
+    ? 'Last completed: '+docSafe(micheleBookChapterLabel(last))+'. Now we can work on '+docSafe(micheleBookChapterLabel(chapter))+', chapter transitions, voice consistency, emotional arc, humor, or anything else Michele wants.'
+    : 'Start gently. Michele can choose this chapter, chapter transitions, voice consistency, emotional arc, humor, or anything else that feels most useful.';
+  body.innerHTML='<div class="michele-book-shell">'
+    +'<section class="exec-card michele-book-card michele-book-hero"><div class="michele-book-kicker">Current chapter</div><h3>'+docSafe(micheleBookChapterLabel(chapter))+'</h3><p>'+progressText+'</p><div class="michele-book-controls"><label>Chapter<select id="micheleBookChapterSelect" onchange="selectMicheleBookChapter()">'+chapterOptions+'</select></label><label>Mode<select id="micheleBookModeSelect"><option value="interview">Interview Mode</option><option value="editor">Editor Mode</option><option value="proofreading">Proofreading Mode</option><option value="overview">Chapter Overview Mode</option></select></label></div></section>'
+    +micheleBookBullets(data.summary)
+    +'<section class="exec-card michele-book-card"><h3>'+docSafe(prompt)+'</h3><div id="micheleBookChat" class="michele-book-chat"><div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe('I’ve read the selected chapter. I’ll work with humor, scene, emotional truth, reader understanding, and transitions together. Answer the question above, or ask me for an overview, proofread, or specific thoughts.')+'</div></div><textarea id="micheleBookResponse" class="michele-book-response" rows="5" placeholder="Answer the question, or ask VAL about this chapter..."></textarea><div class="michele-book-actions"><button class="alert-btn" id="micheleBookVoiceBtn" onclick="dictateMicheleBookResponse()">Voice</button><button class="alert-btn primary" id="micheleBookTalkBtn" onclick="talkWithMicheleBookVal()">Message with VAL</button><button class="alert-btn" id="micheleBookSubmitBtn" onclick="submitMicheleBookResponse()">Create Revision Draft</button></div><p class="michele-book-fineprint">VAL shows a revised draft first. The fresh manuscript is updated only after Michele approves the draft. The original manuscript is never edited.</p></section>'
+    +'</div>';
+  if(footer)footer.innerHTML='<button class="alert-btn" onclick="openMicheleBookAdmin()">Admin</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookWorkspace\')">Close</button>';
+}
+function micheleBookChapterLabel(chapter){
+  chapter=chapter||{};
+  var n=Number(chapter.chapterNumber!=null?chapter.chapterNumber:chapter.chapter_number);
+  var title=chapter.chapterTitle||chapter.chapter_title||chapter.title||'';
+  if(n===0)return title&&title!=='Prologue'?'Prologue: '+title:'Prologue';
+  return 'Chapter '+(n||'')+(title?': '+title:'');
+}
+function selectMicheleBookChapter(){
+  var state=window._micheleBookState||{};
+  var select=document.getElementById('micheleBookChapterSelect');
+  var chapters=Array.isArray(state.chapters)?state.chapters:[];
+  var found=chapters.find(function(ch){return ch.id===(select&&select.value);});
+  if(found){
+    state.chapter=found;
+    window._micheleBookState=state;
+    window._micheleBookConversation=[];
+    window._micheleBookSuggestedInstruction='';
+    renderMicheleBookChat();
+    addSys('Selected '+micheleBookChapterLabel(found)+'.');
+  }
+}
+function renderMicheleBookChat(){
+  var chat=document.getElementById('micheleBookChat');
+  if(!chat)return;
+  var turns=window._micheleBookConversation||[];
+  var intro='<div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe('I’ve read the selected chapter. I’ll work with humor, scene, emotional truth, reader understanding, and transitions together. Answer the question above, or ask me for an overview, proofread, or specific thoughts.')+'</div>';
+  chat.innerHTML=intro+turns.filter(function(turn){return !turn.hidden;}).map(function(turn){
+    return '<div class="michele-book-chat-turn '+(turn.role==='user'?'user':'assistant')+'"><div class="michele-book-chat-label">'+(turn.role==='user'?'Michele':'VAL')+'</div>'+docSafe(turn.content||'')+'</div>';
+  }).join('');
+  chat.scrollTop=chat.scrollHeight;
+}
+function dictateMicheleBookResponse(){
+  var box=document.getElementById('micheleBookResponse');
+  var btn=document.getElementById('micheleBookVoiceBtn');
+  var Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!box)return;
+  if(!Speech){addSys('Voice dictation is not available in this browser. Typing works beautifully here.');return;}
+  if(window._micheleBookRecognition){
+    try{window._micheleBookRecognition.stop();}catch(e){}
+    window._micheleBookRecognition=null;
+    window._micheleBookVoiceActive=false;
+    if(btn)btn.textContent='Voice';
+    return;
+  }
+  if(typeof stopSpeak==='function')stopSpeak();
+  window._micheleBookVoiceActive=true;
+  var rec=new Speech();
+  window._micheleBookRecognition=rec;
+  rec.lang='en-US';
+  rec.continuous=true;
+  rec.interimResults=true;
+  var finalText='';
+  if(btn)btn.textContent='Listening...';
+  rec.onresult=function(e){
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var piece=(e.results[i][0]&&e.results[i][0].transcript||'').trim();
+      if(e.results[i].isFinal)finalText=(finalText+' '+piece).trim();
+      else interim=(interim+' '+piece).trim();
+    }
+    if(finalText&&e.results[e.results.length-1]&&e.results[e.results.length-1].isFinal){
+      try{rec.stop();}catch(err){}
+      window._micheleBookRecognition=null;
+      if(btn)btn.textContent='Voice';
+      setTimeout(function(){talkWithMicheleBookVal({fromVoice:true,voiceText:finalText,silentUser:true});},150);
+    }
+  };
+  rec.onerror=function(){window._micheleBookRecognition=null;window._micheleBookVoiceActive=false;if(btn)btn.textContent='Voice';addSys('Voice dictation paused. You can type the answer instead.');};
+  rec.onend=function(){window._micheleBookRecognition=null;if(btn)btn.textContent='Voice';};
+  rec.start();
+}
+function micheleBookConversationInstruction(extra){
+  var turns=(window._micheleBookConversation||[]).map(function(t){return (t.role==='user'?'Michele':'VAL')+': '+(t.content||'');}).join('\n\n');
+  var suggested=window._micheleBookSuggestedInstruction||'';
+  return [turns,suggested?('VAL suggested direction: '+suggested):'',extra?('Final Michele note: '+extra):''].filter(Boolean).join('\n\n').trim();
+}
+function micheleBookSendRewrite(payload){
+  return apiFetch(PROXY+'/api/michele/book/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+}
+function micheleBookSendDraft(payload){
+  return apiFetch(PROXY+'/api/michele/book/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+}
+function renderMichelePlacementPrompt(data,payload){
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(!body)return;
+  window._michelePendingRewrite=payload;
+  var placements=(data&&data.placements)||[{id:'beginning',label:'Place at beginning'},{id:'end',label:'Place at end'}];
+  body.innerHTML='<div class="exec-card michele-book-card"><h3>Where should I place this?</h3><p>'+docSafe((data&&data.gentleMessage)||'I do not see this section in the fresh manuscript yet. Choose where it belongs, then VAL will write it there.')+'</p><div class="michele-book-actions">'+placements.map(function(p){return '<button class="alert-btn primary" onclick="continueMicheleBookRewriteWithPlacement(\''+docSafe(p.id)+'\')">'+docSafe(p.label)+'</button>';}).join('')+'<button class="alert-btn" onclick="openMicheleBookCompanion()">Cancel</button></div><p class="michele-book-fineprint">This only affects the fresh manuscript document. The original manuscript is never edited.</p></div>';
+}
+function continueMicheleBookRewriteWithPlacement(placement){
+  var payload=Object.assign({},window._michelePendingRewrite||{});
+  if(!payload.response){addSys('Rewrite direction was lost. Please create the revision draft again.');return;}
+  payload.placement=placement;
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Writing now</h3><p>VAL is placing this section in the fresh manuscript document.</p></div>';
+  micheleBookSendRewrite(payload).then(handleMicheleBookRewriteResult).catch(function(e){
+    if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe(e&&e.message||'I could not update the chapter right now. Please ask Jessa to check the connection.')+'</p></div>';
+  });
+}
+function handleMicheleBookRewriteResult(data){
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(data&&data.placementRequired){renderMichelePlacementPrompt(data,window._michelePendingRewrite||{});return;}
+  if(data&&data.ok){
+    var link=data.readingCopy&&data.readingCopy.url?'<p><a href="'+docSafe(data.readingCopy.url)+'" target="_blank" rel="noopener">Open the fresh manuscript document</a></p>':'';
+    var next=data.nextChapter?'<p>Next up: Chapter '+docSafe(data.nextChapter.chapterNumber)+' — '+docSafe(data.nextChapter.chapterTitle||'Untitled')+'. Or Michele can ask VAL to work on transitions, voice consistency, emotional arc, humor, or another book-wide thread.</p>':'<p>That was the last detected chapter. Michele can ask VAL to work on transitions, voice consistency, emotional arc, humor, or another book-wide thread next.</p>';
+    if(body)body.innerHTML='<div class="exec-card michele-book-card michele-book-done"><h3>'+docSafe(data.message||('Done. Chapter '+(data.chapter&&data.chapter.number||'')+' has been written to the fresh manuscript document.'))+'</h3><p>The original manuscript was not edited.</p>'+next+link+'</div>';
+    window._micheleBookState=null;
+    window._michelePendingRewrite=null;
+    return;
+  }
+  if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe((data&&data.gentleMessage)||'I could not update the chapter right now. Please ask Jessa to check the connection.')+'</p></div>';
+}
+function renderMicheleDraftPreview(data,payload){
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(!body)return;
+  if(!data||!data.ok){handleMicheleBookRewriteResult(data);return;}
+  window._michelePendingRewrite=Object.assign({},payload||{},{rewriteJobId:data.rewriteJobId||'',chapterId:(data.chapter&&data.chapter.id)||payload.chapterId,response:payload.response});
+  body.innerHTML='<div class="michele-book-shell"><section class="exec-card michele-book-card"><div class="michele-book-kicker">Draft revision</div><h3>Review the revised version</h3><p>VAL has not written this to Google Docs yet. Michele can keep it, adjust it, or keep talking.</p><textarea id="micheleDraftPreviewText" class="michele-book-response" rows="14" readonly>'+docSafe(data.afterText||'')+'</textarea><textarea id="micheleDraftAdjustment" class="michele-book-response" rows="3" placeholder="If you want an adjustment, say what should change..."></textarea><div class="michele-book-actions"><button class="alert-btn primary" onclick="approveMicheleDraftRevision()">Keep & Write to Fresh Manuscript</button><button class="alert-btn" onclick="adjustMicheleDraftRevision()">Adjust Draft</button><button class="alert-btn" onclick="openMicheleBookCompanion()">Continue Conversation</button></div><p class="michele-book-fineprint">The original manuscript is never edited. The fresh manuscript is updated only after Michele approves this draft.</p></section></div>';
+}
+function approveMicheleDraftRevision(){
+  var payload=Object.assign({},window._michelePendingRewrite||{});
+  if(!payload.rewriteJobId){addSys('Draft revision was not found. Please create the draft again.');return;}
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Checking placement</h3><p>VAL is preparing to write the approved draft to the fresh manuscript.</p></div>';
+  micheleBookSendRewrite(payload).then(handleMicheleBookRewriteResult).catch(function(e){
+    if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe(e&&e.message||'I could not update the chapter right now. Please ask Jessa to check the connection.')+'</p></div>';
+  });
+}
+function adjustMicheleDraftRevision(){
+  var payload=Object.assign({},window._michelePendingRewrite||{});
+  var adjustment=(document.getElementById('micheleDraftAdjustment')&&document.getElementById('micheleDraftAdjustment').value||'').trim();
+  var currentDraft=(document.getElementById('micheleDraftPreviewText')&&document.getElementById('micheleDraftPreviewText').value||'').trim();
+  if(!adjustment){addSys('Type the adjustment Michele wants first.');return;}
+  payload.response=[payload.response||'', 'Adjust the draft this way: '+adjustment, currentDraft?('Current draft to improve from:\\n'+currentDraft):''].filter(Boolean).join('\\n\\n');
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Adjusting draft</h3><p>VAL is revising the preview before anything is written.</p></div>';
+  micheleBookSendDraft(payload).then(function(data){renderMicheleDraftPreview(data,payload);}).catch(function(e){
+    if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe(e&&e.message||'I could not adjust the draft right now.')+'</p></div>';
+  });
+}
+function talkWithMicheleBookVal(opts){
+  opts=opts||{};
+  var state=window._micheleBookState||{};
+  var chapter=state.chapter||{};
+  var box=document.getElementById('micheleBookResponse');
+  var btn=document.getElementById('micheleBookTalkBtn');
+  var modeEl=document.getElementById('micheleBookModeSelect');
+  var mode=modeEl&&modeEl.value||'interview';
+  var text=String(opts.voiceText||((box&&box.value)||'')).trim();
+  if(!text){addSys('Michele can say anything here — even “I’m not sure yet.”');return;}
+  window._micheleBookConversation=window._micheleBookConversation||[];
+  window._micheleBookConversation.push({role:'user',content:text,hidden:!!opts.silentUser});
+  var thinkingIndex=window._micheleBookConversation.push({role:'assistant',content:'Reading the selected chapter and preparing a real response...'})-1;
+  var sentConversation=window._micheleBookConversation.slice(0,thinkingIndex);
+  if(box)box.value='';
+  renderMicheleBookChat();
+  if(btn){btn.disabled=true;btn.textContent='Messaging...';}
+  apiFetch(PROXY+'/api/michele/book/converse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chapterId:chapter.id,message:text,conversation:sentConversation,mode:mode})})
+    .then(function(data){
+      if(data&&data.ok){
+        if(data.chapter){
+          window._micheleBookState.chapter=Object.assign({},window._micheleBookState.chapter||{},data.chapter);
+          var select=document.getElementById('micheleBookChapterSelect');
+          if(select&&data.chapter.id)select.value=data.chapter.id;
+        }
+        window._micheleBookConversation[thinkingIndex]={role:'assistant',content:data.reply||'Choose the next thing you want from this chapter: overview, developmental edit, proofread, or interview questions.'};
+        if(data.suggestedInstruction)window._micheleBookSuggestedInstruction=data.suggestedInstruction;
+        renderMicheleBookChat();
+        if(window._micheleBookVoiceActive&&typeof speak==='function')speak(data.reply||'');
+        if(data.readyToRewrite)addSys('VAL has enough direction when Michele is ready to rewrite.');
+      }else{
+        window._micheleBookConversation[thinkingIndex]={role:'assistant',content:(data&&data.gentleMessage)||'I lost the thread for a second. Try saying that once more.'};
+        renderMicheleBookChat();
+      }
+    })
+    .catch(function(){
+      window._micheleBookConversation[thinkingIndex]={role:'assistant',content:'I could not answer that just now. Nothing has changed in the manuscript.'};
+      renderMicheleBookChat();
+    })
+    .then(function(){if(btn){btn.disabled=false;btn.textContent='Message with VAL';}});
+}
+function submitMicheleBookResponse(){
+  var state=window._micheleBookState||{};
+  var chapter=state.chapter||{};
+  var box=document.getElementById('micheleBookResponse');
+  var btn=document.getElementById('micheleBookSubmitBtn');
+  var response=micheleBookConversationInstruction((box&&box.value||'').trim());
+  if(!response){addSys('Message with VAL first, or type what Michele wants reflected in the revision draft.');return;}
+  if(!confirm('Create a draft revision using the conversation so far? VAL will show it before writing anything to Google Docs.'))return;
+  if(btn){btn.disabled=true;btn.textContent='Drafting...';}
+  window._michelePendingRewrite={chapterId:chapter.id,response:response};
+  micheleBookSendDraft(window._michelePendingRewrite).then(function(data){renderMicheleDraftPreview(data,window._michelePendingRewrite);})
+    .catch(function(){
+      var body=document.getElementById('micheleBookWorkspaceBody');
+      if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>I could not create the draft right now. Please ask Jessa to check the connection.</p></div>';
+    });
+}
+function openMicheleBookAdmin(){
+  openExecutiveWorkspace({
+    id:'micheleBookAdminWorkspace',
+    title:'Book Admin',
+    body:'<div class="exec-card michele-book-card"><h3>Loading book controls...</h3><p>Checking configured Google Docs and latest snapshot.</p></div>',
+    footer:'<button class="alert-btn primary" onclick="loadMicheleBookAdmin()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookAdminWorkspace\')">Close</button>'
+  });
+  loadMicheleBookAdmin();
+}
+function loadMicheleBookAdmin(){
+  apiFetch(PROXY+'/api/michele/book/admin',{cache:'no-store'}).then(renderMicheleBookAdmin).catch(function(){
+    renderMicheleBookAdmin({ok:false,error:'Book admin is unavailable.'});
+  });
+}
+function renderMicheleBookAdmin(data){
+  var body=document.getElementById('micheleBookAdminWorkspaceBody');
+  if(!body)return;
+  if(!data||!data.ok){
+    body.innerHTML='<div class="exec-card michele-book-card"><h3>Admin unavailable</h3><p>'+docSafe((data&&data.error)||'You may need owner/admin access for this panel.')+'</p></div>';
+    return;
+  }
+  var cfg=data.config||{};
+  var project=data.project||{};
+  var chapters=data.chapters||[];
+  var snap=data.latestSnapshot||null;
+  var google=data.googleDocs||{};
+  var syncError=google.chapterSyncError||google.error||'';
+  body.innerHTML='<div class="exec-workspace-grid">'
+    +micheleBookCard('Configured Docs','Master: '+(cfg.masterDocId||'missing')+'\\nReading Copy: '+(cfg.readingCopyDocId||'missing'))
+    +micheleBookCard('Project','Title: '+(project.title||cfg.title||'Michele Book')+'\\nLast sync: '+(data.lastSync||'not synced yet'))
+    +(syncError?'<section class="exec-card michele-book-card" style="grid-column:1/-1;border-color:#fecaca!important;background:#fff1f2!important"><h3>Google Docs Sync Needs Attention</h3><p>'+docSafe(syncError)+'</p></section>':'')
+    +'<section class="exec-card michele-book-card"><h3>Access Tests</h3><div class="michele-book-actions"><button class="alert-btn primary" onclick="micheleBookAdminTest(\'read\')">Test Read</button><button class="alert-btn" onclick="micheleBookAdminTest(\'write\')">Test Write</button></div><div id="micheleBookAdminStatus" class="michele-book-fineprint">Test write verifies the fresh manuscript can be opened without changing it.</div></section>'
+    +'<section class="exec-card michele-book-card" style="grid-column:1/-1"><h3>Import Prior Edit Notes</h3><p>Paste extracted editor conversation notes here. VAL stores them as hidden editor notes for the detected chapters in this Michele deployment only.</p><input id="micheleBookImportTitle" value="Master Edits 1" style="width:100%;margin:8px 0;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"><textarea id="micheleBookImportText" rows="6" placeholder="Paste Master Edits text..." style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"></textarea><div class="michele-book-actions"><button class="alert-btn primary" onclick="importMicheleBookEdits()">Import Notes</button></div><div id="micheleBookImportStatus" class="michele-book-fineprint"></div></section>'
+    +'<section class="exec-card michele-book-card"><h3>Latest Snapshot</h3><p>'+(snap?docSafe('Chapter '+(snap.chapter_number||snap.chapterNumber||'')+' v'+(snap.version_number||snap.versionNumber||'')+' — '+(snap.created_at||snap.createdAt||'')):'No snapshot saved yet.')+'</p>'+(snap?'<button class="alert-btn" onclick="restoreMicheleSnapshot(\''+docSafe(snap.id)+'\')">Restore Latest Snapshot</button>':'')+'</section>'
+    +'<section class="exec-card michele-book-card" style="grid-column:1/-1"><h3>Detected Chapters</h3><div class="michele-book-chapter-list">'+(chapters.length?chapters.map(function(c){return '<div><strong>'+docSafe((c.chapter_number||c.chapterNumber||'')+'. '+(c.chapter_title||c.chapterTitle||c.title||''))+'</strong><span>'+docSafe(c.status||'synced')+'</span></div>';}).join(''):'No Heading 1 chapters detected yet.')+'</div></section>'
+    +'</div>';
+}
+function micheleBookAdminTest(kind){
+  var status=document.getElementById('micheleBookAdminStatus');
+  if(status)status.textContent='Running '+kind+' test...';
+  apiFetch(PROXY+'/api/michele/book/admin/test-'+kind,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(data){
+    if(status)status.textContent=data&&data.ok?(kind+' test passed.'):('Test failed: '+((data&&data.error)||'Unknown error'));
+  }).catch(function(){if(status)status.textContent='Test failed.';});
+}
+function importMicheleBookEdits(){
+  var title=document.getElementById('micheleBookImportTitle');
+  var text=document.getElementById('micheleBookImportText');
+  var status=document.getElementById('micheleBookImportStatus');
+  var payload={sourceTitle:(title&&title.value)||'Master Edits',text:(text&&text.value)||''};
+  if(!payload.text.trim()){if(status)status.textContent='Paste the edit notes first.';return;}
+  if(status)status.textContent='Importing notes...';
+  apiFetch(PROXY+'/api/michele/book/admin/import-edits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(data){
+    if(status)status.textContent=data&&data.ok?('Imported '+(data.count||0)+' note records across '+(data.chapterCount||0)+' chapters.'):('Import failed: '+((data&&data.error)||'Unknown error'));
+  }).catch(function(){if(status)status.textContent='Import failed.';});
+}
+function restoreMicheleSnapshot(versionId){
+  if(!versionId||!confirm('Restore the latest saved chapter snapshot?'))return;
+  apiFetch(PROXY+'/api/michele/book/admin/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({versionId:versionId})}).then(function(data){
+    addSys(data&&data.ok?'Snapshot restored.':'Restore failed: '+((data&&data.error)||'Unknown error'));
+    loadMicheleBookAdmin();
+  }).catch(function(e){addSys('Restore failed: '+(e&&e.message||'Unknown error'));});
+}
 function setBookCardLabels(){
   var labels=document.querySelectorAll('.summary-cards .scard-label');
-  var copy=['Book State','Editorial Next Steps','Manuscript Memory','Drafts / Notes','Launch / Platform'];
+  var copy=['Continue Book','Editorial Next Steps','Manuscript Memory','Drafts / Notes','Launch / Platform'];
   copy.forEach(function(text,i){if(labels[i])labels[i].textContent=text;});
   var links=document.querySelectorAll('.summary-cards .scard-link');
-  var linkCopy=['Where did we leave off ->','Show priorities ->','Review memory ->','Open notes ->','Show strategy ->'];
+  var linkCopy=['Open companion ->','Show priorities ->','Review memory ->','Open notes ->','Show strategy ->'];
   linkCopy.forEach(function(text,i){if(links[i])links[i].textContent=text;});
   var cards=document.querySelectorAll('.summary-cards .scard');
   var clicks=[
-    function(){runBookAction('book_where_left_off','Where We Left Off');},
+    function(){openMicheleBookCompanion();},
     function(){runBookAction('book_next_steps','Editorial Next Steps');},
     function(){searchValMemory((VAL_CONFIG.projectName||'the book')+' manuscript chapter outline notes');},
     function(){runBookAction('editorial_next_steps','Drafts / Notes');},
@@ -2084,7 +2671,7 @@ function applyProjectMode(){
   if(sub)sub.textContent='Where the book left off, what needs alignment, and the next clean editorial move surface here first.';
   if(board){
     board.innerHTML=[
-      ['primary','Continuity','Pick up exactly where the book left off.','VAL can review recent manuscript memory, notes, and tasks, then name the next clean editorial move.','Where Left Off','runBookAction("book_where_left_off","Where We Left Off")'],
+      ['primary','Continue','Continue My Book.','VAL reads the current manuscript chapter, asks Michele one gentle question, rewrites the chapter, saves a hidden snapshot, and updates the clean reading copy.','Continue My Book','openMicheleBookCompanion()'],
       ['','Next Steps','The next editing session needs a short, doable sequence.','VAL can turn the manuscript state into do-now, next, later, and blocked work.','Next Steps','runBookAction("book_next_steps","Editorial Next Steps")'],
       ['','Alignment','The book may need stronger through-line alignment.','Check book promise, chapter order, emotional arc, humor, IFS prompts, and reader transformation together.','Alignment Review','runBookAction("book_alignment_review","Book Alignment Review")'],
       ['','Chapter Flow','A chapter may need structure or transition work.','Open Chapter Map to inspect order, bridges, repeated themes, and reader momentum.','Chapter Map','runBookAction("chapter_map","Chapter Map")'],
@@ -2118,7 +2705,10 @@ fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function
   if(VAL_CONFIG.demoMode){
     var keysBtn=document.getElementById('keysTopButton');
     if(keysBtn)keysBtn.style.display='none';
+    var guideBtn=document.getElementById('demoGuideButton');
+    if(guideBtn)guideBtn.classList.add('show');
   }
+  if(typeof refreshCommandCenterNav==='function')refreshCommandCenterNav();
   applyProjectMode();
 }).catch(function(){});
 
@@ -2510,6 +3100,7 @@ function updateDynamicSuggestions(){
   var suggestions=[];
   if(isBookEditorMode()){
     suggestions=[
+      {label:'Continue My Book', companion:true},
       {label:'Where left off', action:'book_where_left_off', prompt:'Tell me where we left off on '+(VAL_CONFIG.projectName||'the book')+' and what changed or remains unresolved.'},
       {label:'What next', action:'book_next_steps', prompt:'Choose the next clean editorial moves for '+(VAL_CONFIG.projectName||'the book')+'.'},
       {label:'Alignment check', action:'book_alignment_review', prompt:'Review where '+(VAL_CONFIG.projectName||'the book')+' needs better alignment.'},
@@ -2523,7 +3114,8 @@ function updateDynamicSuggestions(){
       b.type='button';
       b.textContent=s.label;
       b.onclick=function(){
-        if(s.label==='Upload manuscript')openFilePicker();
+        if(s.companion)openMicheleBookCompanion();
+        else if(s.label==='Upload manuscript')openFilePicker();
         else if(s.action)runBookAction(s.action,s.label,s.prompt);
         else ask(s.prompt);
       };
@@ -3202,12 +3794,13 @@ function renderBookWorkspacePanel(state){
   var el=document.getElementById('weekScroll');if(!el)return;
   state=state||{};
   var counts=state.counts||{};
+  el.innerHTML='<button class="alert-btn primary" style="width:100%;margin:0 0 14px 0;justify-content:center;min-height:44px" onclick="openMicheleBookCompanion()">Continue My Book</button>'
+    +'<div class="val-mini-item" style="margin:0 0 14px 0;background:#fff;color:#111827;border:1px solid rgba(17,24,39,.12);border-radius:10px;padding:11px"><strong style="color:#172033">Start here</strong><span style="color:#334155">VAL will begin at the current chapter, use prior edit notes, and move forward chapter by chapter.</span></div>';
   var rows=[
     {title:'Manuscript Source',meta:state.lastWorkedOn?('Last upload: '+state.lastWorkedOn.title):'Upload the full manuscript DOCX to establish source context.',pip:'epip-gold'},
     {title:(counts.documents||0)+' Saved Document'+((counts.documents||0)===1?'':'s'),meta:(counts.chapters||0)+' chapter record'+((counts.chapters||0)===1?'':'s')+' detected',pip:'epip-navy'},
     {title:'Next Editorial Move',meta:(state.nextSteps&&state.nextSteps[0])||'Ask where Michele left off and what needs alignment.',pip:'epip-green'}
   ];
-  el.innerHTML='';
   rows.forEach(function(row){
     var b=document.createElement('div');
     b.className='day-block';
@@ -3943,52 +4536,23 @@ function currentLeadProfile(){
 
 function defaultGoallLeadScrapePayload(){
   return {
-    organizationType:'HVAC companies',
+    organizationType:'GOALL priority industries',
     employeeMinimum:'10',
-    market:'Phoenix, Arizona',
-    tag:'GOALL HVAC',
-    criteria:'HVAC companies with at least 10 employees in Phoenix, Arizona',
-    limit:8,
+    market:'Arizona',
+    tag:'GOALL Priority',
+    criteria:'GOALL priority industries with at least 10 employees in Arizona',
+    searchMode:'all',
+    limit:200,
     leadProfile:'goall',
-    fastSearch:true,
+    fastSearch:false,
     rocketReachMode:'defer',
     goallBatchIndex:0
   };
 }
 
-var GOALL_LEAD_BATCH_SEQUENCE=[
-  ['HVAC companies','Phoenix, Arizona','GOALL HVAC'],
-  ['plumbing companies','Phoenix, Arizona','GOALL Plumbing'],
-  ['electrical contractors','Phoenix, Arizona','GOALL Electrical'],
-  ['HVAC companies','Tucson, Arizona','GOALL HVAC'],
-  ['plumbing companies','Tucson, Arizona','GOALL Plumbing'],
-  ['electrical contractors','Tucson, Arizona','GOALL Electrical'],
-  ['HVAC companies','Mesa, Arizona','GOALL HVAC'],
-  ['plumbing companies','Mesa, Arizona','GOALL Plumbing'],
-  ['electrical contractors','Mesa, Arizona','GOALL Electrical'],
-  ['HVAC companies','Scottsdale, Arizona','GOALL HVAC'],
-  ['plumbing companies','Scottsdale, Arizona','GOALL Plumbing'],
-  ['electrical contractors','Scottsdale, Arizona','GOALL Electrical'],
-  ['roofing companies','Phoenix, Arizona','GOALL Roofing'],
-  ['construction companies','Phoenix, Arizona','GOALL Construction'],
-  ['manufacturing companies','Phoenix, Arizona','GOALL Manufacturing']
-];
-
 function goallLeadBatchPayload(index){
   var i=Math.max(0,Number(index)||0);
-  var row=GOALL_LEAD_BATCH_SEQUENCE[i%GOALL_LEAD_BATCH_SEQUENCE.length];
-  return {
-    organizationType:row[0],
-    employeeMinimum:'10',
-    market:row[1],
-    tag:row[2],
-    criteria:row[0]+' with at least 10 employees in '+row[1],
-    limit:8,
-    leadProfile:'goall',
-    fastSearch:true,
-    rocketReachMode:'defer',
-    goallBatchIndex:i
-  };
+  return Object.assign(defaultGoallLeadScrapePayload(),{goallBatchIndex:i});
 }
 
 function nextGoallLeadBatchPayload(seed){
@@ -4013,7 +4577,7 @@ function startLeadResearch(seedText){
   if(shouldAutoRunGoallLeadScrape(seedText)){
     var autoPayload=defaultGoallLeadScrapePayload();
     openDetailWithTitle('Lead Scrape');
-    addMsg('Lead Scrape\n\nRunning a focused GOALL test batch now.\n\nSearch: HVAC companies\nLocation: Phoenix, Arizona\nCompany size filter: 10+ employees\nPreview count: 8 leads\nPipeline target: 300 people/prospects minimum\n\nI will run Level 1 business discovery first and show the leads quickly. Deeper contact verification can run after the leads are visible, so the preview does not stall.',false);
+    addMsg('Lead Scrape\n\nRunning a mixed GOALL industry batch now.\n\nSearch: a balanced sample across GOALL priority industries\nLocation: Arizona\nCompany size filter: 10+ employees\nTarget: up to 200 leads\nPipeline target: 300 people/prospects minimum\n\nLevel 1 business discovery runs asynchronously and may take 30–90+ seconds. I will show the preview before anything is imported.',false);
     runLeadDiscoveryImport(autoPayload,autoPayload.market,false);
     return;
   }
@@ -4086,7 +4650,7 @@ function runLeadDiscovery(query,market,showUser){
 function runLeadDiscoveryImport(query,market,showUser){
   openDetailWithTitle('Lead Scrape');
   if(showUser)addMsg(query,true);
-  addMsg('I am running Level 1 business discovery and checking public contact data first. Larger batches can use Level 3 verification after review so we only verify leads worth pursuing.',false);
+  addMsg('I am running Level 1 business discovery and checking the live CRM for duplicates before enrichment. A large scrape may take 30–90+ seconds; nothing imports until you approve the preview.',false);
   showTyping();
   var payload=typeof query==='object'?query:{criteria:query,market:market||'',limit:12};
   payload.leadProfile=payload.leadProfile||currentLeadProfile();
@@ -4112,7 +4676,7 @@ function runLeadDiscoveryImport(query,market,showUser){
   })
   .catch(function(e){
     removeTyping();
-    var msg='Lead scrape could not complete.\n\nWhat happened: '+(e.message||'upstream error')+'\n\nTry a smaller, specific search like "HVAC companies in Phoenix" or open Register Your Keys and test Outscraper/OpenAI.';
+    var msg='Lead scrape could not complete.\n\nWhat happened: '+(e.message||'upstream error')+'\n\nTry a smaller, specific search like "HVAC companies in Phoenix" or open API Keys & Connections and test Outscraper/OpenAI.';
     chatHistory.push({role:'assistant',content:msg});
     addMsg(msg,false);
   });
@@ -4142,7 +4706,7 @@ function enrichPendingLeadsWithRocketReach(){
   }
   openDetailWithTitle('Level 3 Verification');
   addMsg('Run Level 3 verification',true);
-  addMsg('I am verifying contact details only where there is enough person-level data, one lookup at a time, so we do not waste checks on vague company-only matches.',false);
+  addMsg('I am verifying up to 25 leads in this Level 3 pass. The work is chunked so RocketReach or Railway cannot time out the entire 200-lead review. If more remain, the Level 3 button will stay available for the next pass.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/rocketreach-enrich',{
     method:'POST',
@@ -4155,7 +4719,9 @@ function enrichPendingLeadsWithRocketReach(){
     var source=pendingLeadImport._sourcePayload||lastGoallLeadBatchPayload;
     pendingLeadImport=d;
     if(source) pendingLeadImport._sourcePayload=source;
+    var rrBatch=d.rocketReachBatch||{};
     var content=d.content||'Level 3 verification finished.';
+    if(rrBatch.reviewed!=null) content='Level 3 pass reviewed '+rrBatch.reviewed+' lead'+(rrBatch.reviewed===1?'':'s')+'. '+rrBatch.remaining+' remain for another pass.\n\n'+content;
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
     addLeadImportApprovalControls();
@@ -4169,7 +4735,7 @@ function addGoallNextBatchControls(seed){
   var d=document.createElement('div');
   d.className='cmsg assistant';
   var next=nextGoallLeadBatchPayload(seed||lastGoallLeadBatchPayload);
-  d.innerHTML='<div class="cmsg-bubble"><p><strong>Next GOALL batch</strong></p><p>Batch '+((Number(next.goallBatchIndex)||0)+1)+': '+htmlEscape(next.organizationType)+' in '+htmlEscape(next.market)+'. This keeps the pipeline growing in focused batches instead of one timeout-prone scrape.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="chip" onclick="runGoallLeadBatch('+Number(next.goallBatchIndex)+')">Find next 8 leads</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Next GOALL batch</strong></p><p>Batch '+((Number(next.goallBatchIndex)||0)+1)+': a rotating mix of GOALL priority industries in '+htmlEscape(next.market)+'. Existing GHL contacts will be filtered before enrichment.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="chip" onclick="runGoallLeadBatch('+Number(next.goallBatchIndex)+')">Find up to 200 leads</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);
   c.scrollTop=c.scrollHeight;
 }
@@ -4274,7 +4840,7 @@ function handleLeadResearchInput(text){
       return;
     }
     leadResearchState.step=leadResearchState.limit?'location':'count';
-    addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 200 for the daily target.',false);
+    addMsg(leadResearchState.limit?'What location should I search?':'How many businesses should I find?\n\nUse 12 for a small test, or up to 200 for the full daily batch.',false);
     document.getElementById('msgInput').placeholder=leadResearchState.limit?'Example: Texas, Dallas TX, United States...':'Example: 25, 100, 200';
     return;
   }
@@ -5114,7 +5680,7 @@ function gchatBubble(text,isUser){
   var d=document.createElement('div');
   var fmt=isUser?text:text.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
   if(!isUser)fmt='<p>'+fmt+'</p>';
-  d.style.cssText='max-width:86%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.65;margin-bottom:4px;word-break:break-word;'
+  d.style.cssText='max-width:min(86%,100%);min-width:0;overflow:hidden;overflow-wrap:anywhere;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.65;margin-bottom:4px;word-break:break-word;'
     +(isUser?'background:var(--navy);color:white;align-self:flex-end;border-bottom-right-radius:3px;'
             :'background:white;color:#16233a;border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px;');
   d.innerHTML=fmt;
@@ -5943,6 +6509,51 @@ window.addEventListener('resize',valSignalPlace);
 document.addEventListener('DOMContentLoaded',valSignalInit);
 setTimeout(valSignalInit,0);
 </script>
-<script src="/command-center.js?v=20260623-recap-drafts"></script>
+<script src="/command-center.js?v=20260623-continue-book"></script>
+<script>
+(function(){
+  var opened=false;
+  function openRequestedGuideView(){
+    if(opened)return;
+    var params=new URLSearchParams(window.location.search||'');
+    var view=(params.get('view')||params.get('open')||'').toLowerCase().replace(/[^a-z0-9_/-]/g,'');
+    if(!view)return;
+    var aliases={
+      approval:'drafts',approvals:'drafts',approval_queue:'drafts',
+      email:'email_intelligence',email_ai:'email_intelligence',inbox:'email_intelligence',inbox_command:'email_intelligence',
+      transcript:'transcripts',transcript_intelligence:'transcripts',
+      calendarized_tasks:'tasks',calendarized:'tasks',task_board:'tasks',
+      relationship_review:'relationships',relationship_radar:'relationships',
+      meeting_prep:'meetings',calendar:'meetings',
+      integration:'integration_status',keys:'settings',register_keys:'settings',api_keys:'settings',api_keys_connections:'settings',today:'intelligence'
+    };
+    view=aliases[view]||view;
+    var direct={
+      integration_status:'openIntegrationStatus',
+      settings:'openKeysPanel',
+      drafts:'openDraftsPage',
+      email_intelligence:'openEmailIntelligence',
+      relationships:'openRelationshipReview',
+      meetings:'openMeetingBriefing',
+      tasks:'openTaskBoard',
+      chat:'openGeneralChat',
+      intelligence:'openPriorityReview'
+    };
+    function fire(){
+      if(opened)return;
+      if(view==='dashboard'){opened=true;return;}
+      if(view==='transcripts'&&typeof window.openTranscripts==='function'){opened=true;window.openTranscripts();return;}
+      if(typeof window.commandCenterNavigate==='function'&&['relationships','meetings','email_intelligence','tasks','drafts','chat','intelligence'].includes(view)){opened=true;window.commandCenterNavigate(view);return;}
+      var fn=direct[view]&&window[direct[view]];
+      if(typeof fn==='function'){opened=true;fn();return;}
+    }
+    fire();
+    setTimeout(fire,350);
+    setTimeout(fire,900);
+    setTimeout(fire,1600);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',openRequestedGuideView);else openRequestedGuideView();
+})();
+</script>
 </body>
 </html>

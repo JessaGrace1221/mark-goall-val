@@ -73,17 +73,25 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
+const ROCKETREACH_REQUEST_TIMEOUT_MS = Number(process.env.ROCKETREACH_REQUEST_TIMEOUT_MS) || 15000;
+const ROCKETREACH_ENRICH_BATCH_MAX = Math.min(Math.max(Number(process.env.ROCKETREACH_ENRICH_BATCH_MAX)||25,1),50);
+const ROCKETREACH_ENRICH_CONCURRENCY = Math.min(Math.max(Number(process.env.ROCKETREACH_ENRICH_CONCURRENCY)||3,1),5);
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/api/v1';
+const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
 const GHL_CALENDAR_ID = process.env.GHL_CALENDAR_ID || '';
 const GHL_CALENDAR_IDS = String(process.env.GHL_CALENDAR_IDS || GHL_CALENDAR_ID || '').split(',').map(v=>v.trim()).filter(Boolean);
 const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || process.env.GHL_PIPELINE_ID || '';
-const GHL_OPPORTUNITY_STAGE_ID = process.env.GHL_OPPORTUNITY_STAGE_ID || process.env.GHL_PIPELINE_STAGE_ID || '';
-const GHL_OPPORTUNITY_PIPELINE_NAME = process.env.GHL_OPPORTUNITY_PIPELINE_NAME || 'GOALL';
-const GHL_OPPORTUNITY_STAGE_NAME = process.env.GHL_OPPORTUNITY_STAGE_NAME || 'New Lead';
+const IS_MARK_GOALL_DEPLOYMENT = /mark.*goall|goall.*mark|mark-goall-val/i.test(`${CLIENT_CONFIG.clientName} ${CLIENT_CONFIG.clientSlug} ${CLIENT_CONFIG.brandName} ${CLIENT_CONFIG.projectName}`);
+const GHL_OPPORTUNITY_STAGE_ID = process.env.GHL_OPPORTUNITY_STAGE_ID || process.env.GHL_PIPELINE_STAGE_ID || (IS_MARK_GOALL_DEPLOYMENT?'da4a643b-ef5c-49b8-8e07-ed739e76e3ca':'');
+const GHL_OPPORTUNITY_PIPELINE_NAME = process.env.GHL_OPPORTUNITY_PIPELINE_NAME || (IS_MARK_GOALL_DEPLOYMENT?'GOALL Employers':'GOALL');
+const CONFIGURED_GHL_OPPORTUNITY_STAGE_NAME = String(process.env.GHL_OPPORTUNITY_STAGE_NAME||'').trim();
+const GHL_OPPORTUNITY_STAGE_NAME = IS_MARK_GOALL_DEPLOYMENT && (!CONFIGURED_GHL_OPPORTUNITY_STAGE_NAME || /^new lead$/i.test(CONFIGURED_GHL_OPPORTUNITY_STAGE_NAME))
+  ? 'New Limitless Lead Added'
+  : (CONFIGURED_GHL_OPPORTUNITY_STAGE_NAME || 'New Lead');
 const GHL_PARTNER_PIPELINE_ID = process.env.GHL_PARTNER_PIPELINE_ID || '';
 const GHL_PARTNER_STAGE_ID = process.env.GHL_PARTNER_STAGE_ID || '';
 const GHL_PARTNER_PIPELINE_NAME = process.env.GHL_PARTNER_PIPELINE_NAME || 'GOALL Strategic Partners';
@@ -95,9 +103,10 @@ const MICROSOFT_SCOPES = String(process.env.MICROSOFT_SCOPES || 'offline_access 
 const GOALL_LEAD_SEARCH_MAX = Number(process.env.GOALL_LEAD_SEARCH_MAX) || 200;
 const GOALL_LEAD_RAW_SEARCH_MAX = Number(process.env.GOALL_LEAD_RAW_SEARCH_MAX) || Math.max(GOALL_LEAD_SEARCH_MAX*4,200);
 const GOALL_LEAD_SEARCH_CALLS_MAX = Number(process.env.GOALL_LEAD_SEARCH_CALLS_MAX) || 28;
-const GOALL_LEAD_DISCOVERY_TIMEOUT_MS = Number(process.env.GOALL_LEAD_DISCOVERY_TIMEOUT_MS) || 120000;
-const GOALL_LEAD_IMPORT_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_IMPORT_CONCURRENCY)||4,1),10);
-const OUTSCRAPER_FETCH_TIMEOUT_MS = Number(process.env.OUTSCRAPER_FETCH_TIMEOUT_MS) || 14000;
+const GOALL_LEAD_DISCOVERY_TIMEOUT_MS = Number(process.env.GOALL_LEAD_DISCOVERY_TIMEOUT_MS) || 210000;
+const GOALL_LEAD_IMPORT_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_IMPORT_CONCURRENCY)||2,1),10);
+const GOALL_LEAD_INDUSTRIES_PER_RUN = Math.min(Math.max(Number(process.env.GOALL_LEAD_INDUSTRIES_PER_RUN)||20,5),GOALL_LEAD_SEARCH_CALLS_MAX);
+const GOALL_LEAD_MIXED_JOB_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_MIXED_JOB_CONCURRENCY)||20,1),20);
 const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 12000;
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
@@ -192,8 +201,8 @@ const WESTWOOD_PRIORITY_INDUSTRIES = [
 let rocketReachLimitedUntil = 0;
 const requestContext = new AsyncLocalStorage();
 const SECURITY_ROLE_PERMISSIONS = {
-  owner:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage','support:manage','data:export','data:delete'],
-  admin:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage'],
+  owner:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage','support:manage','data:export','data:delete','dashboard_studio:view','dashboard_studio:request_config_change','dashboard_studio:request_code_change','dashboard_studio:approve_change','dashboard_studio:admin_review'],
+  admin:['email:read','email:send','calendar:read','calendar:write','transcript:read','transcript:process','contact:read','contact:write','settings:manage','security:view','audit:view','users:manage','dashboard_studio:view','dashboard_studio:request_config_change','dashboard_studio:request_code_change','dashboard_studio:approve_change','dashboard_studio:admin_review'],
   member:['email:read','calendar:read','transcript:read','contact:read','contact:write'],
   assistant:['email:read','calendar:read','transcript:read','contact:read'],
   read_only:['calendar:read','transcript:read','contact:read']
@@ -303,22 +312,6 @@ const GHL_LEAD_FIELD_IDS = {
   tag_confidence: process.env.GHL_FIELD_TAG_CONFIDENCE || '',
   needs_new_automation: process.env.GHL_FIELD_NEEDS_NEW_AUTOMATION || '',
   suggested_new_automation_tag: process.env.GHL_FIELD_SUGGESTED_NEW_AUTOMATION_TAG || '',
-  estimated_employee_count: process.env.GHL_FIELD_ESTIMATED_EMPLOYEE_COUNT || '',
-  employee_count_confidence: process.env.GHL_FIELD_EMPLOYEE_COUNT_CONFIDENCE || '',
-  employee_count_note: process.env.GHL_FIELD_EMPLOYEE_COUNT_NOTE || '',
-  growth_signals: process.env.GHL_FIELD_GROWTH_SIGNALS || '',
-  leadership_signals: process.env.GHL_FIELD_LEADERSHIP_SIGNALS || '',
-  workforce_pain_signals: process.env.GHL_FIELD_WORKFORCE_PAIN_SIGNALS || '',
-  engagement_activity_signals: process.env.GHL_FIELD_ENGAGEMENT_ACTIVITY_SIGNALS || '',
-  decision_maker_name: process.env.GHL_FIELD_DECISION_MAKER_NAME || '',
-  decision_maker_title: process.env.GHL_FIELD_DECISION_MAKER_TITLE || '',
-  decision_maker_email: process.env.GHL_FIELD_DECISION_MAKER_EMAIL || '',
-  decision_maker_phone: process.env.GHL_FIELD_DECISION_MAKER_PHONE || '',
-  decision_maker_linkedin: process.env.GHL_FIELD_DECISION_MAKER_LINKEDIN || '',
-  company_linkedin: process.env.GHL_FIELD_COMPANY_LINKEDIN || '',
-  goall_intelligence_note: process.env.GHL_FIELD_GOALL_INTELLIGENCE_NOTE || '',
-  recommended_first_call_angle: process.env.GHL_FIELD_RECOMMENDED_FIRST_CALL_ANGLE || '',
-  missing_data: process.env.GHL_FIELD_MISSING_DATA || '',
   partner_type: process.env.GHL_FIELD_PARTNER_TYPE || '',
   organization_size: process.env.GHL_FIELD_ORGANIZATION_SIZE || '',
   potential_reach: process.env.GHL_FIELD_POTENTIAL_REACH || '',
@@ -432,22 +425,6 @@ const GHL_LEAD_FIELD_KEYS = {
   tag_confidence:'contact.tag_confidence',
   needs_new_automation:'contact.needs_new_automation',
   suggested_new_automation_tag:'contact.suggested_new_automation_tag',
-  estimated_employee_count:'contact.estimated_employee_count',
-  employee_count_confidence:'contact.employee_count_confidence',
-  employee_count_note:'contact.employee_count_note',
-  growth_signals:'contact.growth_signals',
-  leadership_signals:'contact.leadership_signals',
-  workforce_pain_signals:'contact.workforce_pain_signals',
-  engagement_activity_signals:'contact.engagement_activity_signals',
-  decision_maker_name:'contact.decision_maker_name',
-  decision_maker_title:'contact.decision_maker_title',
-  decision_maker_email:'contact.decision_maker_email',
-  decision_maker_phone:'contact.decision_maker_phone',
-  decision_maker_linkedin:'contact.decision_maker_linkedin',
-  company_linkedin:'contact.company_linkedin',
-  goall_intelligence_note:'contact.goall_intelligence_note',
-  recommended_first_call_angle:'contact.recommended_first_call_angle',
-  missing_data:'contact.missing_data',
   partner_type:'contact.partner_type',
   organization_size:'contact.organization_size',
   potential_reach:'contact.potential_reach',
@@ -494,29 +471,6 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   linkedin_current_title:['linkedin current title','linkedin_current_title'],
   linkedin_profile_location:['linkedin profile location','linkedin_profile_location'],
   signals_summary:['signals summary','signals_summary'],
-  estimated_employee_count:['estimated employee count','estimated_employee_count','employee count estimate','employee estimate'],
-  employee_count_confidence:['employee count confidence','employee_count_confidence','employee confidence'],
-  employee_count_note:['employee count note','employee_count_note','employee count explanation','employee estimate note'],
-  growth_signals:['growth signals','growth_signals','growth signal','expansion signals'],
-  leadership_signals:['leadership signals','leadership_signals','leadership signal'],
-  workforce_pain_signals:['workforce pain signals','workforce_pain_signals','workforce signals','hiring pain signals'],
-  engagement_activity_signals:['engagement activity signals','engagement_activity_signals','activity signals','company activity signals'],
-  decision_maker_name:['decision maker name','decision_maker_name','decision-maker name'],
-  decision_maker_title:['decision maker title','decision_maker_title','decision-maker title'],
-  decision_maker_email:['decision maker email','decision_maker_email','decision-maker email'],
-  decision_maker_phone:['decision maker phone','decision_maker_phone','decision-maker phone'],
-  decision_maker_linkedin:['decision maker linkedin','decision_maker_linkedin','decision-maker linkedin','decision maker linkedin profile'],
-  company_linkedin:['company linkedin','company_linkedin','company linkedin page'],
-  goall_intelligence_note:['goall intelligence note','goall_intelligence_note','lead intelligence summary','lead intelligence note','caller intelligence summary'],
-  recommended_first_call_angle:['recommended first call angle','recommended_first_call_angle','first call angle','opening line'],
-  missing_data:['missing data','missing_data','missing data note'],
-  partner_type:['partner type','partner_type'],
-  organization_size:['organization size','organization_size'],
-  potential_reach:['potential reach','potential_reach','estimated reach'],
-  partnership_fit_score:['partnership fit score','partnership_fit_score','partner fit score'],
-  reason_for_score:['reason for score','reason_for_score','partnership score reason'],
-  source_urls:['source urls','source_urls','research sources'],
-  date_added:['date added','date_added'],
   signals_positive_count:['signals positive count','signals_positive_count'],
   signals_top_indicators:['signals top indicators','signals_top_indicators'],
   signals_confidence:['signals confidence','signals_confidence'],
@@ -575,6 +529,13 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   raw_web_signals_json:['raw web signals json','web signals'],
   news_raw_last_60_days:['news raw last 60 days','news last 60 days'],
   automation_tag:['automation tag','automationtag'],
+  partner_type:['partner type','partner_type'],
+  organization_size:['organization size','organization_size'],
+  potential_reach:['potential reach','potential_reach','estimated reach'],
+  partnership_fit_score:['partnership fit score','partnership_fit_score','partner fit score'],
+  reason_for_score:['reason for score','reason_for_score','partnership score reason'],
+  source_urls:['source urls','source_urls','research sources'],
+  date_added:['date added','date_added'],
   automation_tag_reason:['automation tag reason','automationtagreason'],
   normalized_industry:['normalized industry','normalizedindustry'],
   raw_industry:['raw industry','rawindustry'],
@@ -1089,7 +1050,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','tenantFeatureFlags','dashboardChangeRequests'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -1205,6 +1166,577 @@ async function auditLog({tenantId:tenant=tenantId(),userId=currentUserId(),actio
     const store=valStore();store.securityAuditLogs=store.securityAuditLogs||[];store.securityAuditLogs.push(record);saveValStore(store);
   }
   return record;
+}
+function requestHost(req){
+  return String(req?.headers?.['x-forwarded-host']||req?.headers?.host||'').split(',')[0].trim().toLowerCase();
+}
+function urlHost(value){
+  try{return new URL(String(value||'')).host.toLowerCase();}
+  catch(e){return '';}
+}
+function isMicheleDashboardStudioTenant(req=null){
+  const identity=[CLIENT_CONFIG.clientSlug,CLIENT_CONFIG.clientName,CLIENT_CONFIG.brandName,CLIENT_CONFIG.projectName,CLIENT_CONFIG.projectType].join(' ').toLowerCase();
+  const michele=/michele|julian|big trick|book_editor/.test(identity);
+  const targetHost='val-core-production-34ac.up.railway.app';
+  const host=requestHost(req);
+  const publicHost=urlHost(CLIENT_CONFIG.publicBaseUrl);
+  const targetDeployment=host===targetHost||publicHost===targetHost||(!process.env.RAILWAY_PUBLIC_DOMAIN&&process.env.NODE_ENV!=='production');
+  return !!(michele&&targetDeployment);
+}
+async function tenantFeatureEnabled(featureKey,{req=null,defaultEnabled=false}={}){
+  const tenant=tenantId();
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select enabled from tenant_feature_flags where tenant_id=$1 and feature_key=$2 limit 1',[tenant,featureKey]);
+    if(r.rows[0]) return !!r.rows[0].enabled;
+  }else{
+    const row=(valStore().tenantFeatureFlags||[]).find(f=>f.tenantId===tenant&&f.featureKey===featureKey);
+    if(row) return !!row.enabled;
+  }
+  return !!defaultEnabled;
+}
+async function dashboardStudioFeatureEnabled(req=null){
+  return tenantFeatureEnabled('dashboard_studio_beta',{req,defaultEnabled:true});
+}
+async function requireDashboardStudioAccess(req,res,next){
+  try{
+    if(!(await dashboardStudioFeatureEnabled(req))){
+      await auditLog({req,action:'dashboard_studio_access_denied',resourceType:'dashboard_studio',metadata:{host:requestHost(req),clientSlug:CLIENT_CONFIG.clientSlug},success:false}).catch(()=>{});
+      return res.status(404).json({ok:false,error:'Dashboard Studio is not enabled for this VAL.'});
+    }
+    if(DEMO_MODE) return next();
+    if(userHasPermission(req.valUser,'dashboard_studio:view')) return next();
+    await auditLog({req,action:'permission_denied',resourceType:'dashboard_studio',resourceId:'dashboard_studio:view',metadata:{role:req.valUser?.role||''},success:false}).catch(()=>{});
+    return res.status(403).json({ok:false,error:'Permission denied'});
+  }catch(e){return res.status(500).json({ok:false,error:'Dashboard Studio access could not be verified.'});}
+}
+function dashboardStudioApprovalPhrase(text){
+  return /\bjessa\s+says\s+deploy\b/i.test(String(text||''));
+}
+const DASHBOARD_STUDIO_UPDATE_POLICY={
+  approved_auto_deploy_categories:[
+    'ux_changes','dashboard_layout_changes','copy_wording_changes','button_labels','navigation_organization',
+    'color_branding_updates','existing_prompt_updates','existing_ai_behavior_tuning','existing_email_workflows',
+    'existing_calendar_workflows','existing_crm_ghl_workflows','existing_transcript_workflows','existing_task_workflows',
+    'bug_fixes_existing_functionality','existing_google_gmail_calendar_connection_improvements',
+    'existing_crm_ghl_connection_improvements','existing_railway_github_deployment_status_display'
+  ],
+  premium_categories:[
+    'new_integrations','new_external_apis','new_model_providers','new_paid_services','new_automation_categories',
+    'new_workflows_outside_approved_scope','new_oauth_providers','new_webhooks','new_background_jobs',
+    'new_data_sources','new_databases_or_vector_stores','new_api_keys_or_secrets','new_railway_variables',
+    'lead_scraping_volume_or_cost_increase','scraping_tools','payment_systems','banking_finance_tools',
+    'legal_medical_workflows','social_posting','image_generation','cross_tenant_changes','cost_security_compliance_risk'
+  ],
+  blocked_categories:[
+    'expose_secrets','bypass_auth','bypass_approval','modify_other_tenant','delete_audit_logs',
+    'destructive_database_changes','disable_security','direct_production_editing','unsafe_secret_exposure'
+  ],
+  approved_existing_connections:['email','gmail','google_calendar','calendar','crm','ghl','transcripts','tasks','railway_status','github_status'],
+  premium_request_message:'You’ve requested a premium update. Jessa will receive this request and review whether it can be added to your VAL. You don’t need to do anything else right now.',
+  premium_connection_message:'You’ve requested a premium connection. Jessa will receive this request and review whether it can be added to your VAL. You don’t need to do anything else right now.',
+  railway_variable_rules:{
+    usersMayEditRailwaySecrets:false,
+    tenantApiKeysStoredInRailway:false,
+    frontendShowsSecretValues:false,
+    displayMode:'configured_missing_only'
+  }
+};
+const TENANT_API_KEY_PROVIDER_REGISTRY={
+  openai:{providerId:'openai',displayName:'OpenAI',description:'Powers VAL chat, reasoning, transcript intelligence, drafting, and rewrite workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'openai_models',docsUrl:'https://platform.openai.com/api-keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in OpenAI Platform → API keys, then paste it here.'},
+  anthropic:{providerId:'anthropic',displayName:'Anthropic / Claude',description:'Optional Claude model provider for approved VAL workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'anthropic_models',docsUrl:'https://console.anthropic.com/settings/keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in Anthropic Console → API Keys.'},
+  outscraper:{providerId:'outscraper',displayName:'Outscraper',description:'Supports approved business search and enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://app.outscraper.com/profile',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Outscraper account.'},
+  rocketreach:{providerId:'rocketreach',displayName:'RocketReach',description:'Supports approved contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://rocketreach.co/api',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your RocketReach account.'},
+  apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'}
+};
+const TENANT_API_KEY_PROVIDERS=Object.keys(TENANT_API_KEY_PROVIDER_REGISTRY);
+function tenantApiKeyProvider(provider){
+  return TENANT_API_KEY_PROVIDER_REGISTRY[String(provider||'').trim().toLowerCase()]||null;
+}
+function tenantApiKeyPreview(value){
+  return maskSecret(value).replace('...','••••••');
+}
+function dashboardStudioPolicyMatch(lower,patterns){
+  return patterns.find(p=>p.test(lower))||null;
+}
+function dashboardStudioMissingVariableChecklist(text){
+  const raw=String(text||'');
+  const matches=[...raw.matchAll(/\b([A-Z][A-Z0-9_]{4,})\b/g)].map(m=>m[1]).filter(v=>/(KEY|TOKEN|SECRET|CLIENT|WEBHOOK|URL|ID)$/.test(v));
+  return [...new Set(matches)].map(name=>({name,status:'missing_or_unverified',exposure:'admin_only'}));
+}
+function classifyDashboardStudioRequest(text){
+  const raw=String(text||'').trim();
+  const lower=raw.toLowerCase();
+  if(!raw) return {classification:'needs_clarification',status:'needs_clarification',riskLevel:'low',category:'unclear_request',classificationReason:'The request is empty or too vague to safely classify.',implementationPlan:'Ask the user for a clearer dashboard change before creating a deployment or premium request.',notes:'No deployment action created.'};
+  const blocked=dashboardStudioPolicyMatch(lower,[
+    /show|reveal|display|print|expose|send.*(secret|token|api key|password|refresh token|access token)/,
+    /bypass (auth|authentication|approval|permission|security)/,
+    /(delete|remove).*audit log|disable.*audit/,
+    /(drop|truncate|wipe|delete).*(database|table|tenant data)/,
+    /modify.*another tenant|other tenant|all tenants without approval/,
+    /direct production|edit production directly|disable security/
+  ]);
+  if(blocked) return {classification:'blocked',status:'blocked',riskLevel:'critical',category:'blocked_categories',classificationReason:'The request matches a blocked Dashboard Studio safety rule.',implementationPlan:'Do not deploy. Explain the safety issue and log the blocked request.',notes:'Blocked by policy: no secret exposure, auth bypass, destructive data changes, audit-log deletion, cross-tenant modification, or direct production editing.'};
+  const premium=dashboardStudioPolicyMatch(lower,[
+    /new (integration|api|external api|provider|model provider|oauth|webhook|background job|automation category|data source|database|vector store|workflow)/,
+    /(anthropic|claude|openai|outscraper|rocketreach|apollo|hubspot|stripe|quickbooks|plaid|linkedin|facebook|instagram|x\.com|twitter|tiktok|zapier|make\.com).*(connect|connection|integration|api|key|token)/,
+    /(api key|secret|env var|environment variable|railway variable|new variable|credential)/,
+    /(payment|billing|banking|finance|legal|medical|hipaa|compliance)/,
+    /(scrape|scraper|scraping|lead scraping|increase.*volume|more leads|higher limit|cost)/,
+    /(image generation|social posting|post to social|send automatically|auto-send|autonomous outbound)/,
+    /(all tenants|every client|global change|platform-wide|cross-tenant)/
+  ]);
+  if(premium) return {classification:'premium_request',status:'pending',riskLevel:'high',category:'premium_categories',classificationReason:'This request may require a new integration, external API, secret, automation authority, cost, compliance review, or cross-tenant approval.',implementationPlan:'Do not deploy automatically. Create a premium update request for Jessa/admin review, notify admin, and show the premium request message to the user.',notes:DASHBOARD_STUDIO_UPDATE_POLICY.premium_request_message,missingVariables:dashboardStudioMissingVariableChecklist(raw)};
+  const unclear=/(make it better|improve it|fix this|update val|change dashboard|do the thing|make it work)$/i.test(lower)||raw.length<12;
+  if(unclear) return {classification:'needs_clarification',status:'needs_clarification',riskLevel:'low',category:'needs_clarification',classificationReason:'The request is too broad to verify tenant scope, risk, or affected functionality.',implementationPlan:'Ask one clarifying question before classifying as auto-deploy or premium.',notes:'No deployment action created until the user clarifies the requested change.'};
+  const auto=dashboardStudioPolicyMatch(lower,[
+    /(ux|layout|copy|wording|label|button|navigation|color|branding|style|dashboard organization|reorder|hide|show|rename)/,
+    /(prompt|ai behavior|tone|question|response|conversation).*(update|tune|adjust|improve|change)/,
+    /(existing|current).*(email|gmail|calendar|google|crm|ghl|transcript|task|railway status|github status|connection|workflow)/,
+    /(bug|readability|contrast|broken|not readable|status display|progress display|dashboard card|widget)/
+  ]);
+  if(auto) return {classification:'auto_deploy',status:'classified',riskLevel:'low',category:'approved_auto_deploy_categories',classificationReason:'The request appears tenant-scoped and limited to approved UX, copy, layout, prompt tuning, existing workflow, or bug-fix scope.',implementationPlan:'Create a tenant-scoped deployment request. Before any deployment, verify no new secrets, providers, external writes, background jobs, cost increases, schema changes, or cross-tenant changes are required.',notes:'Eligible for auto-deploy only after final preflight confirms no new variables, cost, security, compliance, or cross-tenant risk.',missingVariables:dashboardStudioMissingVariableChecklist(raw)};
+  return {classification:'needs_clarification',status:'needs_clarification',riskLevel:'medium',category:'needs_clarification',classificationReason:'The request did not clearly match approved auto-deploy, premium, or blocked policy categories.',implementationPlan:'Ask for clarification about whether this changes UX/copy/layout only or introduces new capabilities, integrations, data access, cost, or automation authority.',notes:'No deployment action created until classification is safer.'};
+}
+function normalizeDashboardStudioRequest(row){
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId,
+    requestedByUserId:row.requested_by_user_id||row.requestedByUserId,
+    requestText:row.request_text||row.requestText||'',
+    classification:row.classification||'requested',
+    status:row.status||'requested',
+    riskLevel:row.risk_level||row.riskLevel||'low',
+    category:row.category||row.metadata_json?.category||row.metadata?.category||'',
+    classificationReason:row.classification_reason||row.classificationReason||row.metadata_json?.classificationReason||row.metadata?.classificationReason||'',
+    missingVariables:row.missing_variables||row.missingVariables||row.metadata_json?.missingVariables||row.metadata?.missingVariables||[],
+    branchName:row.branch_name||row.branchName||'',
+    prUrl:row.pr_url||row.prUrl||'',
+    prNumber:row.pr_number??row.prNumber??null,
+    implementationPlan:row.implementation_plan||row.implementationPlan||'',
+    errorMessage:row.error_message||row.errorMessage||'',
+    createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',
+    updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''
+  };
+}
+function normalizePremiumUpdateRequest(row){
+  if(!row) return null;
+  return {id:row.id,tenantId:row.tenant_id||row.tenantId,requestedByUserId:row.requested_by_user_id||row.requestedByUserId||'',userName:row.user_name||row.userName||'',userEmail:row.user_email||row.userEmail||'',requestText:row.request_text||row.requestText||'',classificationReason:row.classification_reason||row.classificationReason||'',riskLevel:row.risk_level||row.riskLevel||'high',requestedFunction:row.requested_function||row.requestedFunction||'',status:row.status||'pending',adminNotes:row.admin_notes||row.adminNotes||'',metadata:row.metadata_json||row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''};
+}
+function normalizeDeploymentHistory(row){
+  if(!row) return null;
+  return {id:row.id,tenantId:row.tenant_id||row.tenantId,requestId:row.request_id||row.requestId||'',requestType:row.request_type||row.requestType||'',status:row.status||'',classification:row.classification||'',summary:row.summary||'',rollbackReference:row.rollback_reference||row.rollbackReference||'',metadata:row.metadata_json||row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''};
+}
+function normalizeTenantDashboardStudioOverride(row){
+  if(!row) return null;
+  const config=row.config_json||row.configJson||row.config||{};
+  const metadata=row.metadata_json||row.metadata||{};
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId,
+    activeDeploymentId:row.active_deployment_id||row.activeDeploymentId||'',
+    config,
+    metadata,
+    createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',
+    updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''
+  };
+}
+function normalizeTenantEnvironmentVariableMetadata(row){
+  if(!row) return null;
+  return {id:row.id,tenantId:row.tenant_id||row.tenantId,variableName:row.variable_name||row.variableName||'',status:row.status||'missing',requiredFor:row.required_for||row.requiredFor||'',adminOnly:row.admin_only??row.adminOnly??true,metadata:row.metadata_json||row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''};
+}
+function dashboardStudioSessionArray(key){
+  if(!DEMO_MODE) return null;
+  const state=requestContext.getStore()?.demoState;
+  if(!state) return null;
+  if(!Array.isArray(state[key])) state[key]=[];
+  return state[key];
+}
+async function listDashboardStudioRequests(limit=50){
+  const demoRows=dashboardStudioSessionArray('dashboardChangeRequests');
+  if(demoRows) return demoRows.filter(r=>r.tenantId===tenantId()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizeDashboardStudioRequest);
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from dashboard_change_requests where tenant_id=$1 order by created_at desc limit $2',[tenant,Math.min(Number(limit)||50,100)]);
+    return r.rows.map(normalizeDashboardStudioRequest);
+  }
+  return (valStore().dashboardChangeRequests||[]).filter(r=>r.tenantId===tenant).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizeDashboardStudioRequest);
+}
+async function listPremiumUpdateRequests(limit=50){
+  const demoRows=dashboardStudioSessionArray('premiumUpdateRequests');
+  if(demoRows) return demoRows.filter(r=>r.tenantId===tenantId()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizePremiumUpdateRequest);
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from premium_update_requests where tenant_id=$1 order by created_at desc limit $2',[tenant,Math.min(Number(limit)||50,100)]);
+    return r.rows.map(normalizePremiumUpdateRequest);
+  }
+  return (valStore().premiumUpdateRequests||[]).filter(r=>r.tenantId===tenant).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizePremiumUpdateRequest);
+}
+async function listDeploymentHistory(limit=50){
+  const demoRows=dashboardStudioSessionArray('deploymentHistory');
+  if(demoRows) return demoRows.filter(r=>r.tenantId===tenantId()).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizeDeploymentHistory);
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from deployment_history where tenant_id=$1 order by created_at desc limit $2',[tenant,Math.min(Number(limit)||50,100)]);
+    return r.rows.map(normalizeDeploymentHistory);
+  }
+  return (valStore().deploymentHistory||[]).filter(r=>r.tenantId===tenant).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,Math.min(Number(limit)||50,100)).map(normalizeDeploymentHistory);
+}
+async function listTenantEnvironmentVariableMetadata(limit=100){
+  const demoRows=dashboardStudioSessionArray('tenantEnvironmentVariablesMetadata');
+  if(demoRows) return demoRows.filter(r=>r.tenantId===tenantId()).sort((a,b)=>String(a.variableName||'').localeCompare(String(b.variableName||''))).slice(0,Math.min(Number(limit)||100,200)).map(normalizeTenantEnvironmentVariableMetadata);
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from tenant_environment_variables_metadata where tenant_id=$1 order by variable_name asc limit $2',[tenant,Math.min(Number(limit)||100,200)]);
+    return r.rows.map(normalizeTenantEnvironmentVariableMetadata);
+  }
+  return (valStore().tenantEnvironmentVariablesMetadata||[]).filter(r=>r.tenantId===tenant).sort((a,b)=>String(a.variableName||'').localeCompare(String(b.variableName||''))).slice(0,Math.min(Number(limit)||100,200)).map(normalizeTenantEnvironmentVariableMetadata);
+}
+async function createDeploymentHistory({req=null,requestId='',requestType='dashboard_update_request',status='policy_classified',classification='',summary='',rollbackReference='',metadata={}}={}){
+  const row={id:uuid('deployhist'),tenantId:tenantId(),requestId,requestType,status,classification,summary,rollbackReference,metadata:redactSecurityValue(metadata||{}),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const demoRows=dashboardStudioSessionArray('deploymentHistory');
+  if(demoRows){demoRows.push(row);return normalizeDeploymentHistory(row);}
+  await valDbReady;
+  if(pgPool) await dbQuery('insert into deployment_history (id,tenant_id,request_id,request_type,status,classification,summary,rollback_reference,metadata_json,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())',[row.id,row.tenantId,row.requestId,row.requestType,row.status,row.classification,row.summary,row.rollbackReference,JSON.stringify(row.metadata)]);
+  else{const store=valStore();nextStoreArray(store,'deploymentHistory').push(row);saveValStore(store);}
+  await auditLog({req,action:'deployment_history_recorded',resourceType:'deployment_history',resourceId:row.id,metadata:{requestId,status,classification},success:true}).catch(()=>{});
+  return normalizeDeploymentHistory(row);
+}
+async function updateDeploymentHistoryRecord(id,updates={}){
+  if(!id) return null;
+  const demoRows=dashboardStudioSessionArray('deploymentHistory');
+  if(demoRows){
+    const row=demoRows.find(r=>r.id===id&&r.tenantId===tenantId());
+    if(!row) return null;
+    const metadata=updates.metadata?redactSecurityValue(updates.metadata):null;
+    Object.assign(row,Object.fromEntries(Object.entries({status:updates.status,summary:updates.summary,rollbackReference:updates.rollbackReference,metadata:metadata||updates.metadata}).filter(([,v])=>v!==undefined&&v!==null)),{updatedAt:new Date().toISOString()});
+    return normalizeDeploymentHistory(row);
+  }
+  await valDbReady;
+  const tenant=tenantId();
+  const metadata=updates.metadata?redactSecurityValue(updates.metadata):null;
+  if(pgPool){
+    const r=await dbQuery(`update deployment_history set status=coalesce($1,status), summary=coalesce($2,summary), rollback_reference=coalesce($3,rollback_reference), metadata_json=coalesce($4::jsonb,metadata_json), updated_at=now() where id=$5 and tenant_id=$6 returning *`,[updates.status||null,updates.summary||null,updates.rollbackReference||null,metadata?JSON.stringify(metadata):null,id,tenant]);
+    return r.rows[0]?normalizeDeploymentHistory(r.rows[0]):null;
+  }
+  const store=valStore(),row=nextStoreArray(store,'deploymentHistory').find(r=>r.id===id&&r.tenantId===tenant);
+  if(!row) return null;
+  Object.assign(row,Object.fromEntries(Object.entries({status:updates.status,summary:updates.summary,rollbackReference:updates.rollbackReference,metadata:metadata||updates.metadata}).filter(([,v])=>v!==undefined&&v!==null)),{updatedAt:new Date().toISOString()});
+  saveValStore(store);
+  return normalizeDeploymentHistory(row);
+}
+async function getTenantDashboardStudioOverride(){
+  const demoRows=dashboardStudioSessionArray('tenantDashboardStudioOverrides');
+  if(demoRows) return normalizeTenantDashboardStudioOverride(demoRows.find(r=>r.tenantId===tenantId()));
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from tenant_dashboard_studio_overrides where tenant_id=$1 limit 1',[tenant]);
+    return normalizeTenantDashboardStudioOverride(r.rows[0]);
+  }
+  return normalizeTenantDashboardStudioOverride((valStore().tenantDashboardStudioOverrides||[]).find(r=>r.tenantId===tenant));
+}
+async function saveTenantDashboardStudioOverride({config={},activeDeploymentId='',metadata={}}={}){
+  const tenant=tenantId();
+  const cleanConfig=redactSecurityValue(config||{});
+  const cleanMetadata=redactSecurityValue(metadata||{});
+  const demoRows=dashboardStudioSessionArray('tenantDashboardStudioOverrides');
+  if(demoRows){
+    let row=demoRows.find(r=>r.tenantId===tenant);
+    if(!row){row={id:uuid('dashoverride'),tenantId:tenant,createdAt:new Date().toISOString()};demoRows.push(row);}
+    Object.assign(row,{activeDeploymentId,config:cleanConfig,metadata:cleanMetadata,updatedAt:new Date().toISOString()});
+    return normalizeTenantDashboardStudioOverride(row);
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into tenant_dashboard_studio_overrides (id,tenant_id,active_deployment_id,config_json,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,now(),now())
+      on conflict (tenant_id) do update set active_deployment_id=excluded.active_deployment_id, config_json=excluded.config_json, metadata_json=excluded.metadata_json, updated_at=now()
+      returning *`,[uuid('dashoverride'),tenant,activeDeploymentId,JSON.stringify(cleanConfig),JSON.stringify(cleanMetadata)]);
+    return normalizeTenantDashboardStudioOverride(r.rows[0]);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'tenantDashboardStudioOverrides');
+  let row=rows.find(r=>r.tenantId===tenant);
+  if(!row){row={id:uuid('dashoverride'),tenantId:tenant,createdAt:new Date().toISOString()};rows.push(row);}
+  Object.assign(row,{activeDeploymentId,config:cleanConfig,metadata:cleanMetadata,updatedAt:new Date().toISOString()});
+  saveValStore(store);
+  return normalizeTenantDashboardStudioOverride(row);
+}
+async function tenantDashboardStudioDeploymentStatus(){
+  const activeOverride=await getTenantDashboardStudioOverride();
+  const history=await listDeploymentHistory(30);
+  const activeDeployment=activeOverride?.activeDeploymentId?history.find(h=>h.id===activeOverride.activeDeploymentId):null;
+  return {
+    tenantId:tenantId(),
+    activeOverride:activeOverride?{activeDeploymentId:activeOverride.activeDeploymentId,config:activeOverride.config,metadata:activeOverride.metadata,updatedAt:activeOverride.updatedAt,canRollback:activeDeployment?.requestType==='dashboard_studio_safe_auto_deploy'&&activeDeployment?.status==='deployed',rollbackDeploymentId:activeDeployment?.id||''}:null,
+    latestDeployment:history.find(h=>h.status==='deployed'||h.status==='rolled_back')||history[0]||null,
+    history
+  };
+}
+async function upsertTenantVariableMetadata({name,requiredFor='',status='missing_or_unverified',metadata={}}={}){
+  const variableName=String(name||'').trim().toUpperCase();
+  if(!variableName) return null;
+  const tenant=tenantId();
+  const demoRows=dashboardStudioSessionArray('tenantEnvironmentVariablesMetadata');
+  if(demoRows){
+    let row=demoRows.find(r=>r.tenantId===tenant&&r.variableName===variableName);
+    if(!row){row={id:uuid('envmeta'),tenantId:tenant,variableName,createdAt:new Date().toISOString()};demoRows.push(row);}
+    Object.assign(row,{status,requiredFor,adminOnly:true,metadata:redactSecurityValue(metadata||{}),updatedAt:new Date().toISOString()});
+    return normalizeTenantEnvironmentVariableMetadata(row);
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into tenant_environment_variables_metadata (id,tenant_id,variable_name,status,required_for,admin_only,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,true,$6,now(),now())
+      on conflict (tenant_id,variable_name) do update set status=excluded.status, required_for=excluded.required_for, metadata_json=excluded.metadata_json, updated_at=now()
+      returning *`,[uuid('envmeta'),tenant,variableName,status,requiredFor,JSON.stringify(redactSecurityValue(metadata||{}))]);
+    return normalizeTenantEnvironmentVariableMetadata(r.rows[0]);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'tenantEnvironmentVariablesMetadata');
+  let row=rows.find(r=>r.tenantId===tenant&&r.variableName===variableName);
+  if(!row){row={id:uuid('envmeta'),tenantId:tenant,variableName,createdAt:new Date().toISOString()};rows.push(row);}
+  Object.assign(row,{status,requiredFor,adminOnly:true,metadata:redactSecurityValue(metadata||{}),updatedAt:new Date().toISOString()});
+  saveValStore(store);
+  return normalizeTenantEnvironmentVariableMetadata(row);
+}
+function dashboardStudioRequestedFunction(result,requestText){
+  const lower=String(requestText||'').toLowerCase();
+  const found=(lower.match(/\b(openai|anthropic|claude|outscraper|rocketreach|apollo|hubspot|stripe|quickbooks|plaid|linkedin|facebook|instagram|zapier|gmail|calendar|ghl|crm|webhook|oauth|scraper|social posting|image generation)\b/i)||[])[0];
+  return found||result.category||result.classification||'dashboard_update';
+}
+async function notifyAdminPremiumUpdateRequest(req,row){
+  await auditLog({req,action:'premium_update_admin_notification_created',resourceType:'premium_update_request',resourceId:row.id,metadata:{riskLevel:row.riskLevel,requestedFunction:row.requestedFunction},success:true}).catch(()=>{});
+  return {ok:true,channel:'dashboard_notification',message:'Premium update request queued for Jessa/admin review.'};
+}
+async function createPremiumUpdateRequest(req,requestText,result){
+  const user=req?.valUser||{};
+  const row={id:uuid('premium'),tenantId:tenantId(),requestedByUserId:currentUserId(),userName:user.name||'',userEmail:user.email||'',requestText:String(requestText||'').trim(),classificationReason:result.classificationReason||result.notes||'',riskLevel:result.riskLevel||'high',requestedFunction:dashboardStudioRequestedFunction(result,requestText),status:'pending',adminNotes:'',metadata:{category:result.category,missingVariables:result.missingVariables||[],policy:DASHBOARD_STUDIO_UPDATE_POLICY.premium_categories},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const demoRows=dashboardStudioSessionArray('premiumUpdateRequests');
+  if(demoRows){
+    demoRows.push(row);
+    for(const item of (result.missingVariables||[])) await upsertTenantVariableMetadata({name:item.name,requiredFor:row.id,status:item.status||'missing_or_unverified',metadata:{source:'premium_update_request'}}).catch(()=>{});
+    return normalizePremiumUpdateRequest(row);
+  }
+  await valDbReady;
+  if(pgPool) await dbQuery('insert into premium_update_requests (id,tenant_id,requested_by_user_id,user_name,user_email,request_text,classification_reason,risk_level,requested_function,status,admin_notes,metadata_json,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())',[row.id,row.tenantId,row.requestedByUserId,row.userName,row.userEmail,row.requestText,row.classificationReason,row.riskLevel,row.requestedFunction,row.status,row.adminNotes,JSON.stringify(row.metadata)]);
+  else{const store=valStore();nextStoreArray(store,'premiumUpdateRequests').push(row);saveValStore(store);}
+  for(const item of (result.missingVariables||[])) await upsertTenantVariableMetadata({name:item.name,requiredFor:row.id,status:item.status||'missing_or_unverified',metadata:{source:'premium_update_request'}}).catch(()=>{});
+  await auditLog({req,action:'premium_update_request_created',resourceType:'premium_update_request',resourceId:row.id,metadata:{riskLevel:row.riskLevel,requestedFunction:row.requestedFunction},success:true}).catch(()=>{});
+  await notifyAdminPremiumUpdateRequest(req,row);
+  return normalizePremiumUpdateRequest(row);
+}
+function enforceDashboardStudioTenantOnly(request){
+  if(!request) throw new Error('Dashboard Studio request not found.');
+  if(request.tenantId!==tenantId()) throw new Error('Dashboard Studio deployment blocked: request belongs to another tenant.');
+  const text=String(request.requestText||'').toLowerCase();
+  if(/(all tenants|every client|global change|platform-wide|cross-tenant|another tenant|other tenant)/.test(text)){
+    throw new Error('Dashboard Studio deployment blocked: this appears to affect more than the current tenant.');
+  }
+  return true;
+}
+function dashboardStudioSafeOverridePatch(request){
+  const text=String(request?.requestText||'').trim();
+  const lower=text.toLowerCase();
+  const patch={
+    dashboardStudio:{
+      version:1,
+      lastAppliedRequestId:request.id,
+      lastAppliedAt:new Date().toISOString(),
+      lastAppliedSummary:text.slice(0,500)
+    }
+  };
+  const quoted=[...text.matchAll(/[“"]([^”"]{3,120})[”"]/g)].map(m=>m[1].trim()).filter(Boolean);
+  if(/\b(title|headline|hero)\b/.test(lower)&&quoted[0]) patch.dashboard={...(patch.dashboard||{}),heroTitle:quoted[0]};
+  if(/\b(subtitle|subhead|description|tagline)\b/.test(lower)&&quoted[1]) patch.dashboard={...(patch.dashboard||{}),heroSubtitle:quoted[1]};
+  const rename=text.match(/\brename\s+(.{2,60}?)\s+to\s+[“"]?(.{2,80}?)[”"]?(?:\.|$)/i);
+  if(rename) patch.labels={[rename[1].trim().slice(0,60)]:rename[2].trim().slice(0,80)};
+  if(/\b(michele|book|chapter|manuscript|editor|rewrite|question|voice)\b/i.test(text)){
+    patch.micheleEditor={
+      ...(patch.micheleEditor||{}),
+      chapterAwarenessDefault:/read|chapter|context|overview/.test(lower),
+      applyLayeredEditorialFramework:/humor|scene|sensory|emotional|truth|transition|reader/.test(lower),
+      singleQuestionMode:/question|ask|conversation|back and forth/.test(lower),
+      avoidEitherOrChoices:/either\/or|rather|all of them|all four|all five|choose between/.test(lower)
+    };
+  }
+  return patch;
+}
+function mergeDashboardStudioOverride(currentConfig,patch){
+  const base=currentConfig&&typeof currentConfig==='object'?currentConfig:{};
+  const out={...base};
+  for(const [key,value] of Object.entries(patch||{})){
+    if(value&&typeof value==='object'&&!Array.isArray(value)) out[key]={...(out[key]&&typeof out[key]==='object'?out[key]:{}),...value};
+    else out[key]=value;
+  }
+  return out;
+}
+function dashboardStudioDeploymentPreflight(request){
+  enforceDashboardStudioTenantOnly(request);
+  if(request.classification!=='auto_deploy') throw new Error('Dashboard Studio deployment blocked: only auto-deploy requests can use the safe deployment path.');
+  if(!['approved_for_deployment','approved'].includes(String(request.status||''))) throw new Error('Dashboard Studio deployment blocked: Jessa approval is required first.');
+  const recheck=classifyDashboardStudioRequest(request.requestText);
+  if(recheck.classification!=='auto_deploy') throw new Error('Dashboard Studio deployment blocked: request no longer passes the auto-deploy policy.');
+  if((recheck.missingVariables||[]).length) throw new Error('Dashboard Studio deployment blocked: new variables or secrets require admin setup.');
+  const patch=dashboardStudioSafeOverridePatch(request);
+  const allowedKeys=['dashboardStudio','dashboard','labels','micheleEditor'];
+  const badKeys=Object.keys(patch).filter(k=>!allowedKeys.includes(k));
+  if(badKeys.length) throw new Error('Dashboard Studio deployment blocked: unsafe override keys were generated.');
+  return {ok:true,patch,preflight:{tenantOnly:true,noSecrets:true,noExternalWrites:true,noSchemaChanges:true,noCrossTenantChanges:true,allowedKeys}};
+}
+async function executeDashboardStudioSafeDeploy(req,request){
+  const preflight=dashboardStudioDeploymentPreflight(request);
+  const previous=await getTenantDashboardStudioOverride();
+  const previousConfig=previous?.config||{};
+  const nextConfig=mergeDashboardStudioOverride(previousConfig,preflight.patch);
+  const deployment=await createDeploymentHistory({
+    req,
+    requestId:request.id,
+    requestType:'dashboard_studio_safe_auto_deploy',
+    status:'deploying',
+    classification:request.classification,
+    summary:'Safe tenant-only Dashboard Studio deployment started.',
+    rollbackReference:previous?.activeDeploymentId||previous?.id||'empty_override',
+    metadata:{preflight:preflight.preflight,patch:preflight.patch,previousOverride:previousConfig}
+  });
+  try{
+    const active=await saveTenantDashboardStudioOverride({config:nextConfig,activeDeploymentId:deployment.id,metadata:{requestId:request.id,deployedAt:new Date().toISOString(),deploymentId:deployment.id}});
+    await updateDashboardStudioRequest(request.id,{status:'deployed',implementationPlan:`${request.implementationPlan}\n\nSafe tenant-only deployment completed. Rollback is available from Dashboard Studio deployment status.`,errorMessage:''});
+    const final=await updateDeploymentHistoryRecord(deployment.id,{status:'deployed',summary:'Safe tenant-only Dashboard Studio override deployed. No code, secrets, schemas, or other tenants were changed.',metadata:{preflight:preflight.preflight,patch:preflight.patch,previousOverride:previousConfig,activeOverride:active.config}});
+    await auditLog({req,action:'dashboard_studio_safe_deployed',resourceType:'dashboard_studio_deployment',resourceId:deployment.id,metadata:{requestId:request.id,tenantOnly:true},success:true}).catch(()=>{});
+    return final;
+  }catch(e){
+    await updateDeploymentHistoryRecord(deployment.id,{status:'failed',summary:'Safe Dashboard Studio deployment failed before activation.',metadata:{error:e.message,preflight:preflight.preflight,previousOverride:previousConfig}}).catch(()=>{});
+    await auditLog({req,action:'dashboard_studio_safe_deploy_failed',resourceType:'dashboard_studio_deployment',resourceId:deployment.id,metadata:{requestId:request.id,error:e.message},success:false}).catch(()=>{});
+    throw e;
+  }
+}
+async function rollbackDashboardStudioDeployment(req,{deploymentId='' }={}){
+  const history=await listDeploymentHistory(100);
+  const target=history.find(h=>h.id===deploymentId&&h.tenantId===tenantId());
+  if(!target) throw new Error('Deployment record not found for this tenant.');
+  if(target.requestType!=='dashboard_studio_safe_auto_deploy') throw new Error('Only safe Dashboard Studio deployments can be rolled back here.');
+  const previousOverride=target.metadata?.previousOverride||{};
+  const active=await getTenantDashboardStudioOverride();
+  if(active?.activeDeploymentId&&active.activeDeploymentId!==target.id) throw new Error('Rollback blocked: this is not the active Dashboard Studio deployment.');
+  const rollback=await createDeploymentHistory({
+    req,
+    requestId:target.requestId,
+    requestType:'dashboard_studio_rollback',
+    status:'rolling_back',
+    classification:target.classification,
+    summary:'Rollback started for safe Dashboard Studio deployment.',
+    rollbackReference:target.id,
+    metadata:{restoringPreviousOverride:previousOverride}
+  });
+  const restored=await saveTenantDashboardStudioOverride({config:previousOverride,activeDeploymentId:rollback.id,metadata:{rolledBackDeploymentId:target.id,rollbackDeploymentId:rollback.id,rolledBackAt:new Date().toISOString()}});
+  await updateDeploymentHistoryRecord(target.id,{status:'rolled_back',summary:'Safe Dashboard Studio deployment was rolled back.'});
+  const final=await updateDeploymentHistoryRecord(rollback.id,{status:'rolled_back',summary:'Previous tenant Dashboard Studio override restored.',metadata:{rolledBackDeploymentId:target.id,activeOverride:restored.config}});
+  await auditLog({req,action:'dashboard_studio_safe_rolled_back',resourceType:'dashboard_studio_deployment',resourceId:target.id,metadata:{rollbackId:rollback.id},success:true}).catch(()=>{});
+  return final;
+}
+async function createDashboardStudioRequest(req,requestText){
+  const result=classifyDashboardStudioRequest(requestText);
+  const row={id:uuid('dashreq'),tenantId:tenantId(),requestedByUserId:currentUserId(),requestText:String(requestText||'').trim(),classification:result.classification,status:result.status,riskLevel:result.riskLevel,category:result.category||'',classificationReason:result.classificationReason||'',missingVariables:result.missingVariables||[],branchName:'',prUrl:'',prNumber:null,implementationPlan:result.implementationPlan,errorMessage:result.notes||result.classificationReason||'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const demoRows=dashboardStudioSessionArray('dashboardChangeRequests');
+  if(demoRows) demoRows.push(row);
+  else{
+  await valDbReady;
+  if(pgPool){
+    await dbQuery('insert into dashboard_change_requests (id,tenant_id,requested_by_user_id,request_text,classification,status,risk_level,branch_name,pr_url,pr_number,implementation_plan,error_message,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())',[row.id,row.tenantId,row.requestedByUserId,row.requestText,row.classification,row.status,row.riskLevel,row.branchName,row.prUrl,row.prNumber,row.implementationPlan,row.errorMessage]);
+  }else{
+    const store=valStore();nextStoreArray(store,'dashboardChangeRequests').push(row);saveValStore(store);
+  }
+  }
+  await auditLog({req,action:'dashboard_change_requested',resourceType:'dashboard_studio_request',resourceId:row.id,metadata:{classification:row.classification,status:row.status},success:true}).catch(()=>{});
+  await auditLog({req,action:'dashboard_change_classified',resourceType:'dashboard_studio_request',resourceId:row.id,metadata:{classification:row.classification,riskLevel:row.riskLevel,category:row.category,reason:row.classificationReason},success:true}).catch(()=>{});
+  let premiumRequest=null,deploymentHistory=null;
+  if(row.classification==='blocked') await auditLog({req,action:'dashboard_change_blocked',resourceType:'dashboard_studio_request',resourceId:row.id,metadata:{reason:row.errorMessage},success:false}).catch(()=>{});
+  if(row.classification==='premium_request') premiumRequest=await createPremiumUpdateRequest(req,requestText,result);
+  if(row.classification==='auto_deploy'){
+    for(const item of (result.missingVariables||[])) await upsertTenantVariableMetadata({name:item.name,requiredFor:row.id,status:item.status||'missing_or_unverified',metadata:{source:'dashboard_studio_auto_deploy_preflight'}}).catch(()=>{});
+    deploymentHistory=await createDeploymentHistory({req,requestId:row.id,requestType:'dashboard_update_request',status:'preflight_required',classification:row.classification,summary:'Auto-deploy policy match recorded. Deployment is held until preflight confirms tenant scope, rollback path, and no new variables/cost/security risk.',metadata:{riskLevel:row.riskLevel,category:row.category,classificationReason:row.classificationReason}});
+  }
+  return Object.assign(normalizeDashboardStudioRequest(row),{premiumRequest,deploymentHistory,userMessage:premiumRequest?DASHBOARD_STUDIO_UPDATE_POLICY.premium_request_message:''});
+}
+async function updateDashboardStudioRequest(id,updates){
+  const demoRows=dashboardStudioSessionArray('dashboardChangeRequests');
+  if(demoRows){
+    const row=demoRows.find(r=>r.id===id&&r.tenantId===tenantId());
+    if(!row) return null;
+    Object.assign(row,updates,{updatedAt:new Date().toISOString()});
+    return normalizeDashboardStudioRequest(row);
+  }
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery(`update dashboard_change_requests set status=coalesce($1,status), implementation_plan=coalesce($2,implementation_plan), error_message=coalesce($3,error_message), branch_name=coalesce($4,branch_name), pr_url=coalesce($5,pr_url), pr_number=coalesce($6,pr_number), updated_at=now() where id=$7 and tenant_id=$8 returning *`,[updates.status||null,updates.implementationPlan||null,updates.errorMessage||null,updates.branchName||null,updates.prUrl||null,updates.prNumber??null,id,tenant]);
+    return r.rows[0]?normalizeDashboardStudioRequest(r.rows[0]):null;
+  }
+  const store=valStore(),row=nextStoreArray(store,'dashboardChangeRequests').find(r=>r.id===id&&r.tenantId===tenant);
+  if(!row) return null;
+  Object.assign(row,updates,{updatedAt:new Date().toISOString()});
+  saveValStore(store);
+  return normalizeDashboardStudioRequest(row);
+}
+async function approveDashboardStudioRequest(req,{id='',phrase='' }={}){
+  if(!dashboardStudioApprovalPhrase(phrase)) throw new Error('Approval phrase must be exactly “Jessa says deploy.”');
+  const requests=await listDashboardStudioRequests(100);
+  const target=id?requests.find(r=>r.id===id):requests.find(r=>!['blocked','approved','rejected','config_applied','pr_created'].includes(String(r.status||'')));
+  if(!target) throw new Error('No pending Dashboard Studio request is ready for approval.');
+  if(target.classification==='blocked_change'||target.status==='blocked'){
+    await auditLog({req,action:'dashboard_change_rejected',resourceType:'dashboard_studio_request',resourceId:target.id,metadata:{reason:'blocked_change',approvalPhrase:'Jessa says deploy'},success:false}).catch(()=>{});
+    throw new Error('This change requires developer review outside Dashboard Studio.');
+  }
+  if(target.classification==='premium_request'){
+    await auditLog({req,action:'dashboard_change_premium_approval_redirected',resourceType:'dashboard_studio_request',resourceId:target.id,metadata:{approvalPhrase:'Jessa says deploy'},success:false}).catch(()=>{});
+    throw new Error('This is a premium update request and must be reviewed in the admin premium queue.');
+  }
+  const isAuto=target.classification==='auto_deploy';
+  const status=isAuto?'approved_for_deployment':'approved';
+  const plan=isAuto
+    ? `${target.implementationPlan}\n\nApproved with phrase “Jessa says deploy.” Next step: deployment preflight verifies tenant-only scope, tests, rollback, and no new secrets/cost/compliance risk before any implementation.`
+    : `${target.implementationPlan}\n\nApproved with phrase “Jessa says deploy.” Next step: admin/developer review; auto-merge and production-wide deploy remain disabled.`;
+  let updated=await updateDashboardStudioRequest(target.id,{status,implementationPlan:plan,errorMessage:isAuto?'Safe deployment preflight is running.':''});
+  await auditLog({req,action:'dashboard_change_approved',resourceType:'dashboard_studio_request',resourceId:target.id,metadata:{approvalPhrase:'Jessa says deploy',classification:target.classification,status},success:true}).catch(()=>{});
+  if(isAuto){
+    try{
+      const deployment=await executeDashboardStudioSafeDeploy(req,updated);
+      updated=await updateDashboardStudioRequest(target.id,{status:'deployed',errorMessage:'',implementationPlan:`${plan}\n\nDeployment status: deployed tenant-only override ${deployment.id}.`});
+    }catch(e){
+      await updateDashboardStudioRequest(target.id,{status:'deployment_failed',errorMessage:e.message}).catch(()=>{});
+      throw e;
+    }
+  }
+  return updated;
+}
+async function reviewPremiumUpdateRequest(req,{id,status,adminNotes=''}){
+  const cleanStatus=String(status||'').trim().toLowerCase();
+  if(!['approved','rejected','needs_more_information','paid_upgrade','converted_to_codex_task'].includes(cleanStatus)) throw new Error('Invalid premium review status.');
+  const tenant=tenantId();
+  const demoRows=dashboardStudioSessionArray('premiumUpdateRequests');
+  if(demoRows){
+    const target=demoRows.find(r=>r.id===id&&r.tenantId===tenant);
+    if(!target) throw new Error('Premium update request not found.');
+    target.status=cleanStatus;target.adminNotes=adminNotes||'';target.updatedAt=new Date().toISOString();
+    return normalizePremiumUpdateRequest(target);
+  }
+  await valDbReady;
+  let row=null;
+  if(pgPool){
+    const r=await dbQuery('update premium_update_requests set status=$1,admin_notes=$2,updated_at=now() where id=$3 and tenant_id=$4 returning *',[cleanStatus,adminNotes||'',id,tenant]);
+    row=normalizePremiumUpdateRequest(r.rows[0]);
+  }else{
+    const store=valStore(),target=nextStoreArray(store,'premiumUpdateRequests').find(r=>r.id===id&&r.tenantId===tenant);
+    if(target){target.status=cleanStatus;target.adminNotes=adminNotes||'';target.updatedAt=new Date().toISOString();saveValStore(store);row=normalizePremiumUpdateRequest(target);}
+  }
+  if(!row) throw new Error('Premium update request not found.');
+  await auditLog({req,action:'premium_update_request_reviewed',resourceType:'premium_update_request',resourceId:row.id,metadata:{status:cleanStatus,adminNotes},success:true}).catch(()=>{});
+  if(cleanStatus==='approved'||cleanStatus==='converted_to_codex_task') await createDeploymentHistory({req,requestId:row.id,requestType:'premium_update_request',status:cleanStatus==='approved'?'premium_approved':'converted_to_codex_task',classification:'premium_request',summary:'Premium update reviewed by admin. Implementation requires explicit scoped build/deployment task.',metadata:{requestedFunction:row.requestedFunction,riskLevel:row.riskLevel}}).catch(()=>{});
+  return row;
 }
 function publicUser(user){
   if(!user) return null;
@@ -1515,6 +2047,9 @@ async function getIntegrationCredential(provider,credentialType,userId=currentVa
     [0] || null;
 }
 async function resolveIntegrationSecret(provider,credentialType,fallback=''){
+  if(String(credentialType||'')==='api_key'&&tenantApiKeyProvider(provider)){
+    return resolveTenantApiKey(provider,{fallback,sourceLabel:'resolveIntegrationSecret'});
+  }
   const row=await getIntegrationCredential(provider,credentialType);
   if(row?.encrypted_value||row?.encryptedValue){
     try{return decryptSecret(row.encrypted_value||row.encryptedValue);}
@@ -1522,7 +2057,7 @@ async function resolveIntegrationSecret(provider,credentialType,fallback=''){
       console.error(`Credential read failed for ${provider}/${credentialType}:`,e.message);
     }
   }
-  return fallback || '';
+  return String(credentialType||'')==='api_key' ? (platformKeyFallbackAllowed() ? (fallback || '') : '') : (fallback || '');
 }
 async function resolveOpenAIKey(){ return resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
 async function resolveAnthropicKey(){ return resolveIntegrationSecret('anthropic','api_key',ANTHROPIC_KEY); }
@@ -1546,6 +2081,166 @@ async function markCredentialStatus(provider,status){
     }
   });
   saveValStore(store);
+}
+function normalizeTenantApiKeyRow(row){
+  if(!row) return null;
+  return {id:row.id,tenantId:row.tenant_id||row.tenantId,provider:row.provider,keyPreview:row.key_preview||row.keyPreview||'',status:row.status||'missing',lastTestedAt:row.last_tested_at?.toISOString?.()||row.last_tested_at||row.lastTestedAt||'',lastUpdatedAt:row.last_updated_at?.toISOString?.()||row.last_updated_at||row.lastUpdatedAt||row.updatedAt||'',createdByUserId:row.created_by_user_id||row.createdByUserId||'',updatedByUserId:row.updated_by_user_id||row.updatedByUserId||'',metadata:row.metadata_json||row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''};
+}
+function normalizeTenantProviderApproval(row){
+  if(!row) return null;
+  return {id:row.id,tenantId:row.tenant_id||row.tenantId,provider:row.provider,status:row.status||'missing',approvedByUserId:row.approved_by_user_id||row.approvedByUserId||'',notes:row.notes||'',metadata:row.metadata_json||row.metadata||{},createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''};
+}
+async function tenantProviderApproval(provider){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) return {approved:false,status:'unsupported',reason:'Unsupported provider'};
+  if(!p.enabledGlobally) return {approved:false,status:'disabled',reason:'Provider is disabled globally'};
+  const tenant=tenantId();
+  let explicit=null;
+  if(pgPool){
+    const r=await dbQuery('select * from tenant_provider_approvals where tenant_id=$1 and provider=$2 limit 1',[tenant,p.providerId]);
+    explicit=normalizeTenantProviderApproval(r.rows[0]);
+  }else{
+    explicit=normalizeTenantProviderApproval((valStore().tenantProviderApprovals||[]).find(r=>r.tenantId===tenant&&r.provider===p.providerId));
+  }
+  if(explicit) return {approved:explicit.status==='approved',status:explicit.status,approval:explicit,reason:explicit.notes||''};
+  return {approved:!!p.defaultTenantAvailability,status:p.defaultTenantAvailability?'approved_by_default':'missing_approval',approval:null,reason:p.defaultTenantAvailability?'Default tenant availability':'Requires admin approval'};
+}
+async function approveTenantProvider(req,{provider,status='approved',notes=''}){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) throw new Error('Unsupported provider');
+  const cleanStatus=String(status||'approved').trim().toLowerCase();
+  if(!['approved','disabled','missing_approval'].includes(cleanStatus)) throw new Error('Invalid provider approval status');
+  const tenant=tenantId(), userId=currentUserId();
+  const row={id:uuid('providerapproval'),tenantId:tenant,provider:p.providerId,status:cleanStatus,approvedByUserId:userId,notes:String(notes||''),metadata:{displayName:p.displayName,costRiskCategory:p.costRiskCategory},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into tenant_provider_approvals (id,tenant_id,provider,status,approved_by_user_id,notes,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,now(),now())
+      on conflict (tenant_id,provider) do update set status=excluded.status, approved_by_user_id=excluded.approved_by_user_id, notes=excluded.notes, metadata_json=excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,tenant,p.providerId,cleanStatus,userId,row.notes,JSON.stringify(row.metadata)]);
+    await auditLog({req,action:'tenant_provider_approval_updated',resourceType:'tenant_provider',resourceId:p.providerId,metadata:{status:cleanStatus},success:true}).catch(()=>{});
+    return normalizeTenantProviderApproval(r.rows[0]);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'tenantProviderApprovals');
+  let existing=rows.find(r=>r.tenantId===tenant&&r.provider===p.providerId);
+  if(!existing){existing=row;rows.push(existing);}else Object.assign(existing,row,{id:existing.id,createdAt:existing.createdAt});
+  saveValStore(store);
+  await auditLog({req,action:'tenant_provider_approval_updated',resourceType:'tenant_provider',resourceId:p.providerId,metadata:{status:cleanStatus},success:true}).catch(()=>{});
+  return normalizeTenantProviderApproval(existing);
+}
+async function getTenantApiKeyRow(provider){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) return null;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('select * from tenant_api_keys where tenant_id=$1 and provider=$2 limit 1',[tenant,p.providerId]);
+    return r.rows[0]||null;
+  }
+  return (valStore().tenantApiKeys||[]).find(r=>r.tenantId===tenant&&r.provider===p.providerId)||null;
+}
+async function getTenantApiKeySecret(provider){
+  const row=await getTenantApiKeyRow(provider);
+  const encrypted=row?.encrypted_secret||row?.encryptedSecret;
+  if(!encrypted) return '';
+  return decryptSecret(encrypted);
+}
+async function saveTenantApiKey(req,{provider,apiKey,metadata={}}){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) throw new Error('Unsupported provider');
+  const approval=await tenantProviderApproval(p.providerId);
+  if(!approval.approved) throw new Error('This connection requires approval before it can be added to your VAL.');
+  if(!encryptionConfigured()) throw new Error('ENCRYPTION_KEY is required to save tenant API keys.');
+  const secret=String(apiKey||'').trim();
+  if(!secret) throw new Error(`Your ${p.displayName} key is not connected yet. Add it in API Keys & Connections to use this feature.`);
+  const tenant=tenantId(), userId=currentUserId(), encrypted=encryptSecret(secret), preview=tenantApiKeyPreview(secret);
+  const row={id:uuid('tenantkey'),tenantId:tenant,provider:p.providerId,encryptedSecret:encrypted,keyPreview:preview,status:'saved',lastTestedAt:null,lastUpdatedAt:new Date().toISOString(),createdByUserId:userId,updatedByUserId:userId,metadata:{...metadata,displayName:p.displayName},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  await valDbReady;
+  let saved;
+  if(pgPool){
+    const r=await dbQuery(`insert into tenant_api_keys (id,tenant_id,provider,encrypted_secret,key_preview,status,last_updated_at,created_by_user_id,updated_by_user_id,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,now(),$7,$8,$9,now(),now())
+      on conflict (tenant_id,provider) do update set encrypted_secret=excluded.encrypted_secret,key_preview=excluded.key_preview,status=excluded.status,last_updated_at=now(),updated_by_user_id=excluded.updated_by_user_id,metadata_json=excluded.metadata_json,updated_at=now()
+      returning *`,[row.id,tenant,p.providerId,encrypted,preview,row.status,userId,userId,JSON.stringify(redactSecurityValue(row.metadata))]);
+    saved=normalizeTenantApiKeyRow(r.rows[0]);
+  }else{
+    const store=valStore(),rows=nextStoreArray(store,'tenantApiKeys');
+    let existing=rows.find(r=>r.tenantId===tenant&&r.provider===p.providerId);
+    if(!existing){existing=row;rows.push(existing);}else Object.assign(existing,row,{id:existing.id,createdAt:existing.createdAt,createdByUserId:existing.createdByUserId||userId});
+    saveValStore(store);
+    saved=normalizeTenantApiKeyRow(existing);
+  }
+  await auditLog({req,action:'tenant_api_key_saved',resourceType:'tenant_api_key',resourceId:p.providerId,metadata:{provider:p.providerId,keyPreview:preview},success:true}).catch(()=>{});
+  return saved;
+}
+async function updateTenantApiKeyStatus(provider,status,{req=null,errorMessage=''}={}){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) return null;
+  const tenant=tenantId();
+  if(pgPool){
+    const r=await dbQuery('update tenant_api_keys set status=$1,last_tested_at=now(),updated_at=now(),metadata_json=metadata_json || $2::jsonb where tenant_id=$3 and provider=$4 returning *',[status,JSON.stringify(errorMessage?{lastError:errorMessage}:{}),tenant,p.providerId]);
+    return normalizeTenantApiKeyRow(r.rows[0]);
+  }
+  const store=valStore(),row=(store.tenantApiKeys||[]).find(r=>r.tenantId===tenant&&r.provider===p.providerId);
+  if(row){row.status=status;row.lastTestedAt=new Date().toISOString();row.updatedAt=new Date().toISOString();row.metadata={...(row.metadata||{}),...(errorMessage?{lastError:errorMessage}:{})};saveValStore(store);}
+  return normalizeTenantApiKeyRow(row);
+}
+async function deleteTenantApiKey(req,provider){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) throw new Error('Unsupported provider');
+  const tenant=tenantId();
+  if(pgPool) await dbQuery('delete from tenant_api_keys where tenant_id=$1 and provider=$2',[tenant,p.providerId]);
+  else{const store=valStore();store.tenantApiKeys=(store.tenantApiKeys||[]).filter(r=>!(r.tenantId===tenant&&r.provider===p.providerId));saveValStore(store);}
+  await auditLog({req,action:'tenant_api_key_deleted',resourceType:'tenant_api_key',resourceId:p.providerId,metadata:{provider:p.providerId},success:true}).catch(()=>{});
+  return {ok:true};
+}
+async function tenantApiKeyConnectionStatuses(){
+  const keys=[];
+  for(const p of Object.values(TENANT_API_KEY_PROVIDER_REGISTRY)){
+    const [approval,row]=await Promise.all([tenantProviderApproval(p.providerId),getTenantApiKeyRow(p.providerId)]);
+    const saved=normalizeTenantApiKeyRow(row);
+    keys.push({...p,approvalStatus:approval.status,approved:approval.approved,status:saved?.status||(approval.approved?'missing':'not_approved'),keyPreview:saved?.keyPreview||'',lastTestedAt:saved?.lastTestedAt||'',lastUpdatedAt:saved?.lastUpdatedAt||'',updatedByUserId:saved?.updatedByUserId||'',metadata:saved?.metadata||{}});
+  }
+  return keys;
+}
+async function testTenantApiKey(req,provider){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) throw new Error('Unsupported provider');
+  const approval=await tenantProviderApproval(p.providerId);
+  if(!approval.approved) throw new Error('This connection requires approval before it can be added to your VAL.');
+  const key=await getTenantApiKeySecret(p.providerId);
+  if(!key) throw new Error(`Your ${p.displayName} key is not connected yet. Add it in API Keys & Connections to use this feature.`);
+  let ok=false, message='';
+  try{
+    if(p.testType==='openai_models'){
+      const r=await fetch('https://api.openai.com/v1/models',{headers:{Authorization:`Bearer ${key}`}});
+      ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
+    }else if(p.testType==='anthropic_models'){
+      const r=await fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':key,'anthropic-version':'2023-06-01'}});
+      ok=r.ok; message=ok?'Connected':`Your ${p.displayName} key did not validate. Please check the key and try again. (${r.status})`;
+    }else{
+      ok=key.length>=8; message=ok?'Saved. A live low-cost validation endpoint is not configured yet for this provider.':'Your key did not validate. Please check the key and try again.';
+    }
+    await updateTenantApiKeyStatus(p.providerId,ok?'connected':'invalid',{req,errorMessage:ok?'':message});
+    await auditLog({req,action:'tenant_api_key_tested',resourceType:'tenant_api_key',resourceId:p.providerId,metadata:{provider:p.providerId,status:ok?'connected':'invalid'},success:ok}).catch(()=>{});
+    return {ok,status:ok?'connected':'invalid',message,provider:p.providerId};
+  }catch(e){
+    await updateTenantApiKeyStatus(p.providerId,'invalid',{req,errorMessage:e.message}).catch(()=>{});
+    await auditLog({req,action:'tenant_api_key_tested',resourceType:'tenant_api_key',resourceId:p.providerId,metadata:{provider:p.providerId,error:e.message},success:false}).catch(()=>{});
+    throw e;
+  }
+}
+function platformKeyFallbackAllowed(){
+  return DEMO_MODE || /^(1|true|yes)$/i.test(String(process.env.VAL_ALLOW_PLATFORM_KEY_FALLBACK||process.env.VAL_ADMIN_ALLOW_PLATFORM_KEY_FALLBACK||''));
+}
+async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
+  const p=tenantApiKeyProvider(provider);
+  if(!p) return fallback||'';
+  const tenantKey=await getTenantApiKeySecret(p.providerId).catch(e=>{console.error(`Tenant API key read failed for ${p.providerId}:`,e.message);return '';});
+  if(tenantKey){console.log(`[tenant-key] ${sourceLabel} using tenant vault key for ${p.providerId}`);return tenantKey;}
+  const legacy=await (async()=>{const row=await getIntegrationCredential(p.providerId,'api_key');const encrypted=row?.encrypted_value||row?.encryptedValue;return encrypted?decryptSecret(encrypted):'';})().catch(e=>{console.error(`Legacy integration credential read failed for ${p.providerId}:`,e.message);return '';});
+  if(legacy){console.log(`[tenant-key] ${sourceLabel} using legacy tenant credential for ${p.providerId}`);return legacy;}
+  if(allowPlatformFallback&&fallback){console.log(`[tenant-key] ${sourceLabel} using platform/demo fallback for ${p.providerId}`);return fallback;}
+  return '';
 }
 async function createSession(userId,req=null){
   const id=uuid('sess');
@@ -1734,6 +2429,9 @@ async function purgeTenantData({req,confirmation}={}){
       ['val_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
       ['email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]],
+      ['tenant_api_keys','tenant_id=$1',[tenant]],
+      ['tenant_provider_approvals','tenant_id=$1',[tenant]],
+      ['tenant_dashboard_studio_overrides','tenant_id=$1',[tenant]],
       ['user_integration_credentials','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]],
       ['val_oauth_tokens','tenant_id=$1 and user_id=$2',[tenant,userId]],
       ['tenant_support_access','tenant_id=$1',[tenant]],
@@ -1763,6 +2461,9 @@ async function purgeTenantData({req,confirmation}={}){
     const tasks=readTasks(), beforeTasks=tasks.length;writeTasks(tasks.filter(keepUser));deleted.val_tasks=beforeTasks-readTasks().length;
     store.oauthTokens={};
     store.integrationCredentials=(store.integrationCredentials||[]).filter(row=>keepTenant(row)&&keepUser(row));
+    store.tenantApiKeys=(store.tenantApiKeys||[]).filter(keepTenant);
+    store.tenantProviderApprovals=(store.tenantProviderApprovals||[]).filter(keepTenant);
+    store.tenantDashboardStudioOverrides=(store.tenantDashboardStudioOverrides||[]).filter(keepTenant);
     if(store.supportAccess) delete store.supportAccess[tenant];
     store.sessions=(store.sessions||[]).filter(s=>(s.tenantId||CLIENT_CONFIG.clientSlug)!==tenant||s.id===currentSession);
     saveValStore(store);
@@ -2068,6 +2769,128 @@ async function initValDb(){
       support_access_reason text,
       updated_at timestamptz not null default now()
     );
+    create table if not exists tenant_feature_flags (
+      id text primary key,
+      tenant_id text not null default 'default',
+      feature_key text not null,
+      enabled boolean not null default false,
+      config_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,feature_key)
+    );
+    create table if not exists dashboard_change_requests (
+      id text primary key,
+      tenant_id text not null default 'default',
+      requested_by_user_id text,
+      request_text text not null,
+      classification text not null default 'requested',
+      status text not null default 'requested',
+      risk_level text not null default 'low',
+      branch_name text,
+      pr_url text,
+      pr_number integer,
+      implementation_plan text,
+      error_message text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists dashboard_update_requests (
+      id text primary key,
+      tenant_id text not null default 'default',
+      requested_by_user_id text,
+      request_text text not null,
+      classification text not null default 'needs_clarification',
+      classification_reason text,
+      risk_level text not null default 'low',
+      status text not null default 'requested',
+      policy_category text,
+      affects_current_tenant_only boolean not null default true,
+      requires_new_variables boolean not null default false,
+      missing_variables jsonb not null default '[]',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists premium_update_requests (
+      id text primary key,
+      tenant_id text not null default 'default',
+      requested_by_user_id text,
+      user_name text,
+      user_email text,
+      request_text text not null,
+      classification_reason text,
+      risk_level text not null default 'high',
+      requested_function text,
+      status text not null default 'pending',
+      admin_notes text,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists deployment_history (
+      id text primary key,
+      tenant_id text not null default 'default',
+      request_id text,
+      request_type text,
+      status text not null default 'created',
+      classification text,
+      summary text,
+      rollback_reference text,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists tenant_dashboard_studio_overrides (
+      id text primary key,
+      tenant_id text not null default 'default',
+      active_deployment_id text,
+      config_json jsonb not null default '{}',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id)
+    );
+    create table if not exists tenant_environment_variables_metadata (
+      id text primary key,
+      tenant_id text not null default 'default',
+      variable_name text not null,
+      status text not null default 'missing',
+      required_for text,
+      admin_only boolean not null default true,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,variable_name)
+    );
+    create table if not exists tenant_provider_approvals (
+      id text primary key,
+      tenant_id text not null default 'default',
+      provider text not null,
+      status text not null default 'missing_approval',
+      approved_by_user_id text,
+      notes text,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,provider)
+    );
+    create table if not exists tenant_api_keys (
+      id text primary key,
+      tenant_id text not null default 'default',
+      provider text not null,
+      encrypted_secret text not null,
+      key_preview text,
+      status text not null default 'saved',
+      last_tested_at timestamptz,
+      last_updated_at timestamptz not null default now(),
+      created_by_user_id text,
+      updated_by_user_id text,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,provider)
+    );
     create table if not exists user_integration_credentials (
       id text primary key,
       user_id text references val_users(id) on delete cascade,
@@ -2116,8 +2939,90 @@ async function initValDb(){
       details_json jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists book_projects (
+      id text primary key,
+      owner_user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      title text not null,
+      master_doc_id text,
+      reading_copy_doc_id text,
+      current_chapter_id text,
+      status text not null default 'active',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists book_chapters (
+      id text primary key,
+      book_project_id text not null references book_projects(id) on delete cascade,
+      chapter_number integer,
+      chapter_title text,
+      google_doc_section_marker text,
+      start_index integer,
+      body_start_index integer,
+      end_index integer,
+      current_text text,
+      status text not null default 'draft',
+      last_synced_at timestamptz
+    );
+    create table if not exists editor_notes (
+      id text primary key,
+      chapter_id text references book_chapters(id) on delete cascade,
+      note_type text,
+      note_text text not null,
+      priority text not null default 'normal',
+      status text not null default 'open',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists michele_feedback (
+      id text primary key,
+      chapter_id text references book_chapters(id) on delete cascade,
+      editor_note_id text,
+      michele_response text not null,
+      interpreted_instruction text,
+      sentiment text,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists chapter_versions (
+      id text primary key,
+      chapter_id text references book_chapters(id) on delete cascade,
+      version_number integer not null,
+      full_text text not null,
+      change_summary text,
+      source text not null default 'snapshot',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists author_voice_profile (
+      id text primary key,
+      book_project_id text not null references book_projects(id) on delete cascade,
+      voice_summary text,
+      preferred_style jsonb not null default '[]',
+      avoid_style jsonb not null default '[]',
+      favorite_phrases jsonb not null default '[]',
+      rejected_phrases jsonb not null default '[]',
+      accepted_patterns jsonb not null default '[]',
+      rejected_patterns jsonb not null default '[]',
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists rewrite_jobs (
+      id text primary key,
+      chapter_id text references book_chapters(id) on delete cascade,
+      michele_feedback_id text,
+      status text not null default 'queued',
+      instruction text,
+      before_text text,
+      after_text text,
+      change_summary text,
+      error_message text,
+      created_at timestamptz not null default now(),
+      completed_at timestamptz
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
+    create index if not exists tenant_feature_flags_tenant_idx on tenant_feature_flags(tenant_id,feature_key);
+    create index if not exists dashboard_change_requests_tenant_idx on dashboard_change_requests(tenant_id,created_at desc);
+    create index if not exists tenant_dashboard_studio_overrides_tenant_idx on tenant_dashboard_studio_overrides(tenant_id,active_deployment_id);
+    create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
+    create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
     create index if not exists transcripts_user_created_idx on transcripts(user_id,created_at desc);
     create index if not exists transcript_participants_transcript_idx on transcript_participants(transcript_id,needs_review);
@@ -2130,6 +3035,10 @@ async function initValDb(){
     create index if not exists user_integration_credentials_lookup_idx on user_integration_credentials(tenant_id,user_id,provider,credential_type);
     create index if not exists email_rules_lookup_idx on email_rules(tenant_id,user_id,is_active,rule_type);
     create index if not exists email_action_log_lookup_idx on email_action_log(tenant_id,user_id,action_type,created_at desc);
+    create index if not exists book_projects_lookup_idx on book_projects(tenant_id,owner_user_id,status);
+    create index if not exists book_chapters_project_idx on book_chapters(book_project_id,chapter_number);
+    create index if not exists chapter_versions_chapter_idx on chapter_versions(chapter_id,version_number desc);
+    create index if not exists rewrite_jobs_chapter_idx on rewrite_jobs(chapter_id,created_at desc);
     create index if not exists drafts_lookup_idx on drafts(tenant_id,user_id,status,created_at desc);
     create index if not exists val_templates_lookup_idx on val_templates(tenant_id,user_id,template_key,is_active);
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
@@ -2150,7 +3059,7 @@ async function initValDb(){
   await dbQuery('alter table meeting_transcript_links add column if not exists updated_at timestamptz not null default now()');
   await dbQuery('alter table val_tasks add column if not exists completed_at timestamptz');
   await dbQuery('alter table val_tasks add column if not exists completed_by text');
-  await dbQuery("alter table val_sessions add column if not exists tenant_id text not null default 'default'");
+  await dbQuery('alter table val_sessions add column if not exists tenant_id text not null default \'default\'');
   await dbQuery('alter table val_sessions add column if not exists ip_address text');
   await dbQuery('alter table val_sessions add column if not exists user_agent text');
   await dbQuery('alter table val_sessions add column if not exists last_active_at timestamptz not null default now()');
@@ -2323,7 +3232,12 @@ function statusPayload(){
       ghlAccountCount:configuredGhlAccounts().length,
       ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),
       leadSearchMax:GOALL_LEAD_SEARCH_MAX,
-      leadContactValidation:'strict-v1',
+      leadPerSearchMax:GOALL_LEAD_PER_SEARCH_MAX,
+      leadIndustriesPerRun:GOALL_LEAD_INDUSTRIES_PER_RUN,
+      leadMixedJobConcurrency:GOALL_LEAD_MIXED_JOB_CONCURRENCY,
+      leadOpportunityStage:GHL_OPPORTUNITY_STAGE_NAME,
+      rocketReachEnrichBatchMax:ROCKETREACH_ENRICH_BATCH_MAX,
+      leadContactValidation:'strict-v2',
       demoMode:DEMO_MODE
     }
   };
@@ -2334,6 +3248,7 @@ app.get('/',async(req,res)=>{
   await valDbReady;
   const user=await getSessionUser(req);
   if(!user) return res.type('html').send(loginHtml());
+  res.set('Cache-Control','no-store, max-age=0');
   return res.sendFile(path.join(__dirname,'dashboard.html'));
 });
 app.get('/api/health',(req,res)=>res.json(statusPayload()));
@@ -2409,9 +3324,61 @@ app.get('/api/auth/me',async(req,res)=>{
   res.status(user?200:401).json(user?{ok:true,user}:{ok:false,error:'Authentication required'});
 });
 app.use(requireAuth);
-app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot()}));
+app.get('/api/config',async(req,res)=>{
+  const studioOverride=await getTenantDashboardStudioOverride().catch(()=>null);
+  res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
+});
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
+app.get('/api/dashboard-studio',requireDashboardStudioAccess,async(req,res)=>{
+  try{
+    await auditLog({req,action:'dashboard_studio_opened',resourceType:'dashboard_studio',success:true}).catch(()=>{});
+    res.json({ok:true,featureFlag:'dashboard_studio_beta',enabled:true,safetyNotice:'Dashboard Studio is policy-governed. UX, copy, layout, prompt tuning, and existing workflow fixes may be eligible for tenant-only auto-deploy after preflight. New integrations, new secrets, new APIs, cost/compliance risk, or cross-tenant changes become premium requests for Jessa/admin review.',approvalPhrase:'Jessa says deploy',policy:DASHBOARD_STUDIO_UPDATE_POLICY,github:{available:false,todo:'Code pushes are not wired to Dashboard Studio. Phase 3 safe deploy activates tenant-only configuration overrides.'},deploymentStatus:await tenantDashboardStudioDeploymentStatus(),requests:await listDashboardStudioRequests(60),premiumRequests:await listPremiumUpdateRequests(30),deploymentHistory:await listDeploymentHistory(30),pendingVariables:await listTenantEnvironmentVariableMetadata(100)});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/dashboard-studio/deployments/status',requireDashboardStudioAccess,requirePermission('dashboard_studio:approve_change'),async(req,res)=>{
+  try{res.json({ok:true,deploymentStatus:await tenantDashboardStudioDeploymentStatus()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/dashboard-studio/deployments/:id/rollback',requireDashboardStudioAccess,requirePermission('dashboard_studio:approve_change'),async(req,res)=>{
+  try{
+    const rollback=await rollbackDashboardStudioDeployment(req,{deploymentId:req.params.id});
+    res.json({ok:true,rollback,deploymentStatus:await tenantDashboardStudioDeploymentStatus(),requests:await listDashboardStudioRequests(60),premiumRequests:await listPremiumUpdateRequests(30),deploymentHistory:await listDeploymentHistory(30),pendingVariables:await listTenantEnvironmentVariableMetadata(100)});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.post('/api/dashboard-studio/requests',requireDashboardStudioAccess,async(req,res)=>{
+  try{
+    const text=String(req.body.requestText||req.body.request||req.body.text||'').trim();
+    if(!text) return res.status(400).json({ok:false,error:'Describe the dashboard change you want.'});
+    if(dashboardStudioApprovalPhrase(text)){
+      if(!DEMO_MODE&&!userHasPermission(req.valUser,'dashboard_studio:approve_change')) return res.status(403).json({ok:false,error:'Permission denied'});
+      const request=await approveDashboardStudioRequest(req,{id:req.body.requestId||'',phrase:text});
+      return res.json({ok:true,approved:true,request,requests:await listDashboardStudioRequests(60),premiumRequests:await listPremiumUpdateRequests(30),deploymentHistory:await listDeploymentHistory(30),pendingVariables:await listTenantEnvironmentVariableMetadata(100)});
+    }
+    const preview=classifyDashboardStudioRequest(text);
+    if(preview.classification==='auto_deploy'&&!DEMO_MODE&&!userHasPermission(req.valUser,'dashboard_studio:request_config_change')) return res.status(403).json({ok:false,error:'Permission denied'});
+    if(preview.classification==='needs_clarification'&&!DEMO_MODE&&!userHasPermission(req.valUser,'dashboard_studio:request_config_change')) return res.status(403).json({ok:false,error:'Permission denied'});
+    const request=await createDashboardStudioRequest(req,text);
+    res.json({ok:true,request,premiumRequest:request.premiumRequest||null,deploymentHistoryRecord:request.deploymentHistory||null,userMessage:request.userMessage||'',requests:await listDashboardStudioRequests(60),premiumRequests:await listPremiumUpdateRequests(30),deploymentHistory:await listDeploymentHistory(30),pendingVariables:await listTenantEnvironmentVariableMetadata(100)});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/dashboard-studio/requests/:id/approve',requireDashboardStudioAccess,requirePermission('dashboard_studio:approve_change'),async(req,res)=>{
+  try{
+    const request=await approveDashboardStudioRequest(req,{id:req.params.id,phrase:req.body.phrase||req.body.approvalPhrase||''});
+    res.json({ok:true,approved:true,request,requests:await listDashboardStudioRequests(60),premiumRequests:await listPremiumUpdateRequests(30),deploymentHistory:await listDeploymentHistory(30),pendingVariables:await listTenantEnvironmentVariableMetadata(100)});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.get('/api/dashboard-studio/admin',requireDashboardStudioAccess,requirePermission('dashboard_studio:admin_review'),async(req,res)=>{
+  try{
+    res.json({ok:true,policy:DASHBOARD_STUDIO_UPDATE_POLICY,premiumRequests:await listPremiumUpdateRequests(100),deploymentHistory:await listDeploymentHistory(100),pendingVariables:await listTenantEnvironmentVariableMetadata(200),requests:await listDashboardStudioRequests(100)});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/dashboard-studio/premium-requests/:id/review',requireDashboardStudioAccess,requirePermission('dashboard_studio:admin_review'),async(req,res)=>{
+  try{
+    const premiumRequest=await reviewPremiumUpdateRequest(req,{id:req.params.id,status:req.body.status||req.body.action||'',adminNotes:req.body.adminNotes||req.body.notes||''});
+    res.json({ok:true,premiumRequest,premiumRequests:await listPremiumUpdateRequests(100),deploymentHistory:await listDeploymentHistory(100),pendingVariables:await listTenantEnvironmentVariableMetadata(200),requests:await listDashboardStudioRequests(100)});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
 app.get('/api/security/privacy-center',requirePermission('security:view'),async(req,res)=>{
   try{
     await auditLog({req,action:'security_center_viewed',resourceType:'security_center',success:true}).catch(()=>{});
@@ -2467,6 +3434,49 @@ app.get('/api/val/transcripts/webhook',async(req,res)=>{
 app.post('/api/val/transcripts/ping',(req,res)=>{
   if(!isValidTranscriptWebhookReq(req)) return res.status(401).json({ok:false,live:false,error:'Invalid or missing transcript webhook token'});
   res.json({ok:true,live:true,status:'live',clientName:CLIENT_CONFIG.clientName,clientSlug:CLIENT_CONFIG.clientSlug,receivedAt:new Date().toISOString(),message:'Transcript webhook is live. Use the transcript URL for real transcript payloads.'});
+});
+app.get('/api/tenant-api-keys/providers',requirePermission('settings:manage'),async(req,res)=>{
+  try{res.json({ok:true,providers:await tenantApiKeyConnectionStatuses(),registry:TENANT_API_KEY_PROVIDER_REGISTRY,demoMode:DEMO_MODE,platformFallbackAllowed:platformKeyFallbackAllowed(),encryptionConfigured:encryptionConfigured()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/tenant-api-keys/status',requirePermission('settings:manage'),async(req,res)=>{
+  try{res.json({ok:true,providers:await tenantApiKeyConnectionStatuses(),encryptionConfigured:encryptionConfigured(),platformFallbackAllowed:platformKeyFallbackAllowed()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/tenant-api-keys/providers/:provider/requirements',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const provider=tenantApiKeyProvider(req.params.provider);
+    if(!provider) return res.status(404).json({ok:false,error:'Unsupported provider'});
+    const approval=await tenantProviderApproval(provider.providerId);
+    res.json({ok:true,provider,approval,requiresEncryption:true,encryptionConfigured:encryptionConfigured(),displayRules:['Never show full API keys after saving','Show status, last tested, last updated, masked preview, and updater only']});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/tenant-api-keys/:provider',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    if(DEMO_MODE) return res.json({ok:true,demo:true,key:{provider:req.params.provider,keyPreview:'••••demo',status:'connected',lastUpdatedAt:new Date().toISOString()}});
+    const key=await saveTenantApiKey(req,{provider:req.params.provider,apiKey:req.body.apiKey||req.body.key||req.body.secret,metadata:{source:'api_keys_connections_ui'}});
+    res.json({ok:true,key,providers:await tenantApiKeyConnectionStatuses()});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.delete('/api/tenant-api-keys/:provider',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    if(DEMO_MODE) return res.json({ok:true,demo:true});
+    await deleteTenantApiKey(req,req.params.provider);
+    res.json({ok:true,providers:await tenantApiKeyConnectionStatuses()});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.post('/api/tenant-api-keys/:provider/test',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    if(DEMO_MODE) return res.json({ok:true,status:'connected',message:`${req.params.provider} is connected in demo mode.`,demo:true});
+    const result=await testTenantApiKey(req,req.params.provider);
+    res.status(result.ok?200:400).json({...result,providers:await tenantApiKeyConnectionStatuses()});
+  }catch(e){res.status(400).json({ok:false,status:'invalid',error:e.message,providers:await tenantApiKeyConnectionStatuses().catch(()=>[])});}
+});
+app.post('/api/tenant-api-keys/providers/:provider/approval',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const approval=await approveTenantProvider(req,{provider:req.params.provider,status:req.body.status||'approved',notes:req.body.notes||''});
+    res.json({ok:true,approval,providers:await tenantApiKeyConnectionStatuses()});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
 });
 app.get('/api/integrations/credentials',async(req,res)=>{
   try{
@@ -2524,6 +3534,7 @@ app.post('/api/integrations/credentials',async(req,res)=>{
     }else{
       return res.status(400).json({ok:false,error:'Use OAuth connect buttons for Google or Microsoft'});
     }
+    await auditLog({req,action:'settings_changed',resourceType:'integration_credentials',resourceId:provider,metadata:{provider,credentialTypes:saved.map(s=>s.credentialType)},success:true}).catch(()=>{});
     res.json({ok:true,credentials:saved});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
@@ -2533,6 +3544,7 @@ app.delete('/api/integrations/credentials/:id',async(req,res)=>{
   try{
     if(DEMO_MODE) return res.json({ok:true,demo:true,message:'Demo credential reset.'});
     await deleteIntegrationCredential(req.params.id,req.valUser.id);
+    await auditLog({req,action:'settings_changed',resourceType:'integration_credentials',resourceId:req.params.id,metadata:{deleted:true},success:true}).catch(()=>{});
     res.json({ok:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
@@ -2961,38 +3973,55 @@ function guideHtml(markdown){
 .dash-float{position:fixed;right:18px;bottom:18px;z-index:20;box-shadow:0 18px 50px rgba(0,0,0,.32)}
 .demo-banner{border:1px solid rgba(215,181,109,.35);background:rgba(215,181,109,.08);border-radius:12px;padding:14px 16px;margin-bottom:18px;color:var(--muted);display:${DEMO_MODE?'flex':'none'};gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.demo-banner strong{color:var(--text)}
 </style></head><body><div class="top"><a href="/dashboard">Back to VAL</a></div><main class="wrap">
-<a class="btn dash-float" href="/dashboard">Back To Dashboard</a>
+<a class="btn dash-float" href="/dashboard?view=dashboard">Keep Exploring</a>
 <div class="demo-banner"><div><strong>Demo Mode</strong><br>Explore VAL with sample meetings, emails, tasks, relationships, drafts, transcripts, and pipeline data. Reset any time.</div><div class="actions"><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a><button class="btn secondary" onclick="resetDemo()">Reset Demo</button></div></div>
-<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard">Open Demo</a><a class="btn secondary" href="/dashboard">Run Relationship Review</a><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a></div></div></section>
+<section class="hero"><div><div class="eyebrow">Velocity-Activated Leverage</div><h1>VAL</h1><p>Your executive operating layer. Never lose track of important people, promises, or opportunities again.</p><div class="actions"><a class="btn" href="/dashboard?view=dashboard">Keep Exploring</a><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a><a class="btn" href="${VAL_SIGNUP_URL}">Get Your VAL Now</a></div></div></section>
 <section><div class="section-head"><div><h2>Your Priorities</h2><p>Start with the moves that create clarity fastest.</p></div></div><div class="grid">
-<a class="card" href="/dashboard"><span class="icon">${icon.calendar}</span><h3>Prepare For Today</h3><p>Know who matters before your next conversation.</p><div class="status" id="meetingStatus">Loading meetings</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.radar}</span><h3>Relationship Review</h3><p>See who matters most, which relationships are cooling, and where hidden opportunity exists.</p><div class="status" id="radarStatus">Checking signals</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Approval Queue</h3><p>Review drafts, promises, and pending actions.</p><div class="status" id="queueStatus">Loading drafts</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, and safe draft opportunities.</p><div class="status">Review inbox signals</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
-<a class="card" href="/dashboard"><span class="icon">${icon.node}</span><h3>Register Your Keys</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
+<a class="card" href="/dashboard?view=meetings"><span class="icon">${icon.calendar}</span><h3>Prepare For Today</h3><p>Know who matters before your next conversation.</p><div class="status" id="meetingStatus">Loading meetings</div></a>
+<a class="card" href="/dashboard?view=relationships"><span class="icon">${icon.radar}</span><h3>Relationship Review</h3><p>See who matters most, which relationships are cooling, and where hidden opportunity exists.</p><div class="status" id="radarStatus">Checking signals</div></a>
+<a class="card" href="/dashboard?view=drafts"><span class="icon">${icon.stack}</span><h3>Approval Queue</h3><p>Review drafts, promises, and pending actions.</p><div class="status" id="queueStatus">Loading drafts</div></a>
+<a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, safe drafts, and repeatable rules.</p><div class="status" id="emailStatus">Review inbox signals</div></a>
+<a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.node}</span><h3>Inbox Command</h3><p>Ask for the email you remember, then summarize, draft, forward, or task it safely.</p><div class="status">Natural language email search</div></a>
+<a class="card" href="/dashboard?view=transcripts"><span class="icon">${icon.voice}</span><h3>Transcript Intelligence</h3><p>Open call memory, summaries, staged tasks, recap drafts, and review queues.</p><div class="status" id="transcriptStatus">Loading transcripts</div></a>
+<a class="card" href="/dashboard?view=tasks"><span class="icon">${icon.calendar}</span><h3>Calendarized Tasks</h3><p>Turn important tasks into private protected work blocks with no meeting link.</p><div class="status" id="taskScheduleStatus">Checking open loops</div></a>
+<a class="card" href="/dashboard?view=integration_status"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
+<a class="card" href="/dashboard?view=settings"><span class="icon">${icon.node}</span><h3>API Keys & Connections</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
 </div></section>
-<section><div class="section-head"><div><h2>Your First 3 Minutes</h2><p>A short path that helps VAL understand you and start creating momentum.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard">Run Relationship Review</a></div></div></section>
-<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard">Meeting Prep</a><a href="/dashboard">Daily Rhythm</a><a href="/dashboard">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard">Relationship Review</a><a href="/dashboard">Follow-Ups</a><a href="/dashboard">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard">Approval Queue</a><a href="/dashboard">Drafts</a><a href="/dashboard">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard">Email Intelligence</a><a href="/dashboard">Integration Status</a><a href="/dashboard">Register Your Keys</a></div></div></section>
-<section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div></div></section>
+<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard?view=chat">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard?view=intelligence">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Email AI</h3><p>Use Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard?view=email_intelligence">Open Email AI</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard?view=transcripts">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Calendarize A Task</h3><p>Turn one open commitment into a private protected work block so it actually gets done.</p><a class="btn secondary" href="/dashboard?view=tasks">Calendarize Tasks</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a></div></div></section>
+<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard?view=meetings">Meeting Prep</a><a href="/dashboard?view=intelligence">Daily Rhythm</a><a href="/dashboard?view=meetings">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard?view=relationships">Relationship Review</a><a href="/dashboard?view=drafts">Follow-Ups</a><a href="/dashboard?view=relationships">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard?view=drafts">Approval Queue</a><a href="/dashboard?view=drafts">Drafts</a><a href="/dashboard?view=tasks">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard?view=email_intelligence">Email Intelligence</a><a href="/dashboard?view=integration_status">Integration Status</a><a href="/dashboard?view=settings">API Keys & Connections</a></div></div></section>
+<section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div><div id="activityTranscripts">Transcripts loading</div><div id="activityEmail">Email intelligence loading</div><div id="activityCalendarized">Calendarized work loading</div></div></section>
 <section><div class="section-head"><div><h2>Learn VAL</h2><p>The full reference is here when you want depth. You do not need to study it first.</p></div></div><details><summary>See Full Reference</summary><div class="reference"><p>${referenceHtml}</p></div></details></section>
 </main><script>
 async function json(url){try{const r=await fetch(url);return r.ok?await r.json():null}catch(e){return null}}
 function set(id,text){const el=document.getElementById(id);if(el)el.textContent=text}
 (async()=>{
-  const [tasks,cal,comms,props]=await Promise.all([json('/api/val/tasks'),json('/api/calendar'),json('/api/comms'),json('/api/proposals')]);
+  const [tasks,cal,comms,props,transcripts,loops,email]=await Promise.all([json('/api/val/tasks'),json('/api/calendar'),json('/api/comms'),json('/api/proposals'),json('/api/val/transcripts?days=3650&limit=25'),json('/api/val/tasks/open-loops'),json('/api/email/intelligence?limit=20')]);
   const open=Array.isArray(tasks)?tasks.filter(t=>!t.completed):[];
   const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<new Date());
+  const unscheduled=(loops&&loops.unscheduled&&loops.unscheduled.length)||open.filter(t=>!t.scheduledStart&&!t.calendarEventId).length;
+  const calendarized=open.filter(t=>t.scheduledStart||t.calendarEventId).length;
   const events=(cal&&cal.calendarEvents)||[];
   const today=events.filter(e=>{const raw=e.startTime||e.date||(e.start&&(e.start.dateTime||e.start.date));return raw&&new Date(raw).toDateString()===new Date().toDateString()});
   const unread=(comms&&comms.total)||0;
   const drafts=(props&&props.draft)||0;
+  const trCounts=(transcripts&&transcripts.counts)||{};
+  const trTotal=trCounts.total||((transcripts&&transcripts.transcripts&&transcripts.transcripts.length)||0);
+  const trReview=trCounts.needsReview||0;
+  const emailSummary=(email&&email.summary)||{};
+  const emailTotal=emailSummary.total||((email&&email.emails&&email.emails.length)||0);
+  const emailDrafts=emailSummary.draftsPrepared||0;
   set('meetingStatus',today.length?today.length+' meetings today':'No meetings today');
   set('radarStatus',(unread+overdue.length)?(unread+overdue.length)+' signals need attention':'All clear right now');
   set('queueStatus',drafts?drafts+' drafts waiting':'No drafts waiting');
+  set('emailStatus',emailDrafts?emailDrafts+' drafts prepared':emailTotal?emailTotal+' emails analyzed':'Connect inbox');
+  set('transcriptStatus',trReview?trReview+' need review':trTotal?trTotal+' transcripts saved':'Webhook ready');
+  set('taskScheduleStatus',unscheduled?unscheduled+' tasks need time':calendarized?calendarized+' protected blocks':'No unscheduled tasks');
   set('activityMeetings',today.length?today.length+' meetings on deck':'Calendar is clear today');
   set('activityTasks',overdue.length?overdue.length+' overdue tasks':open.length+' open tasks');
   set('activityFollowups',unread?unread+' unread conversations':'No unread conversations');
+  set('activityTranscripts',trTotal?trTotal+' transcripts in memory':'No transcripts received yet');
+  set('activityEmail',emailTotal?emailTotal+' emails analyzed':'Email Intelligence ready after connection');
+  set('activityCalendarized',calendarized?calendarized+' tasks have protected time':unscheduled+' tasks still need calendar time');
 })();
 async function resetDemo(){await fetch('/api/demo/reset',{method:'POST'});location.href='/guide';}
 </script></body></html>`;
@@ -3005,7 +4034,7 @@ app.get('/guide',(req,res)=>{
   });
 });
 app.use(express.static(__dirname));
-app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'dashboard.html')));
+app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
@@ -4733,8 +5762,8 @@ function classifyEmail(email){
 }
 
 function leadContactability(lead={}){
-  const rawEmail=lead.email||lead.verifiedEmail||lead.decisionMakerEmail||lead.decision_maker_email||'';
-  const rawPhone=lead.phone||lead.verifiedPhone||lead.decisionMakerPhone||lead.decision_maker_phone||'';
+  const rawEmail=lead.email||lead.verifiedEmail||'';
+  const rawPhone=lead.phone||lead.verifiedPhone||'';
   const hasEmail=validEmail(rawEmail);
   const hasPhone=validPhone(rawPhone);
   let contactabilityStatus='not_contactable';
@@ -4750,8 +5779,8 @@ function leadContactability(lead={}){
     initialEmailSent:hasEmail,
     email:hasEmail?normalizeEmailAddress(rawEmail):'',
     phone:hasPhone?normalizePhoneNumber(rawPhone):'',
-    importable:hasEmail||hasPhone,
-    rejectionReason:hasEmail||hasPhone?'':'missing_email_and_phone'
+    importable:true,
+    rejectionReason:''
   };
 }
 
@@ -4759,7 +5788,7 @@ function leadContactabilityNote(c){
   if(c.contactabilityStatus==='full_contactability') return 'Email and phone available. Lead eligible for automated email, SMS, AI calling, and manual outreach.';
   if(c.contactabilityStatus==='email_only') return 'Email available. No valid phone number found. Lead eligible for automated email and manual email outreach.';
   if(c.contactabilityStatus==='phone_only') return 'No email address found. Lead did not receive the initial automated email sequence. Lead should enter phone-first outreach workflows and is eligible for AI calling, SMS outreach, and manual calling.';
-  return 'No email or phone number was found. Do not create an outreach-ready contact unless company intelligence is strong enough for manual review routing.';
+  return 'No email or phone number was found. Lead imported for visibility, but it is not eligible for automated email, SMS, AI calling, or manual contact until a contact method is added.';
 }
 
 function normalizeRocketReachPerson(data){
@@ -4802,8 +5831,14 @@ async function lookupRocketReach(attendee){
   if(attendee.company) params.set('current_employer',attendee.company);
   if(attendee.title || attendee.currentTitle) params.set('current_title',attendee.title || attendee.currentTitle);
   const url = `${ROCKETREACH_BASE_URL.replace(/\/$/,'')}/person/lookup?${params.toString()}`;
-  const response = await fetch(url,{headers:{'Api-Key':rocketReachKey}});
-  const data = await readJsonResponse(response);
+  let response;
+  let data={};
+  for(let attempt=0;attempt<2;attempt+=1){
+    response=await fetchWithTimeout(url,{headers:{'Api-Key':rocketReachKey}},ROCKETREACH_REQUEST_TIMEOUT_MS,'RocketReach lookup');
+    data=await readJsonResponse(response);
+    if(![502,503,504].includes(response.status) || attempt===1) break;
+    await sleep(750);
+  }
   if(response.status===429){
     rocketReachLimitedUntil = Date.now() + 10*60*1000;
     return {configured:true, error:'RocketReach 429 rate limit'};
@@ -4812,7 +5847,7 @@ async function lookupRocketReach(attendee){
   return {configured:true, data:normalizeRocketReachPerson(data)};
 }
 
-async function lookupRocketReachDecisionMaker(company,lead={}){
+async function lookupRocketReachDecisionMaker(company,lead={},options={}){
   const titles=[
     'Owner',
     'Founder',
@@ -4829,7 +5864,8 @@ async function lookupRocketReachDecisionMaker(company,lead={}){
     }).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
     if(exact.data?.name || exact.data?.email || exact.data?.phone) return {...exact,matchTitle:lead.decisionMakerTitle||''};
   }
-  for(const title of titles){
+  const maxTitleLookups=Math.min(Math.max(Number(options.maxTitleLookups)||titles.length,1),titles.length);
+  for(const title of titles.slice(0,maxTitleLookups)){
     const rr=await lookupRocketReach({company,name:'',title,currentTitle:title}).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
     if(rr.error && /rate limit/i.test(rr.error)) return rr;
     if(rr.data?.name || rr.data?.email || rr.data?.phone) return {...rr,matchTitle:title};
@@ -4923,7 +5959,7 @@ async function lookupApolloDecisionMaker(lead={}){
   params.set('page','1');
   params.set('per_page','10');
   const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
-  const response=await fetch(url,{
+  const response=await fetchWithTimeout(url,{
     method:'POST',
     headers:{
       accept:'application/json',
@@ -4931,7 +5967,7 @@ async function lookupApolloDecisionMaker(lead={}){
       'x-api-key':apolloKey,
       Authorization:`Bearer ${apolloKey}`
     }
-  });
+  },APOLLO_REQUEST_TIMEOUT_MS,'Apollo decision-maker lookup');
   const data=await readJsonResponse(response);
   if(!response.ok) return {configured:true,error:data.message || data.error || `Apollo ${response.status}`};
   const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
@@ -5938,7 +6974,17 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
       const discovered={...demoLeadDiscovery(body),leads:enriched,rocketReachMode:'review'};
       return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
     }
-    const enriched=await mapWithConcurrency(leads,1,p=>enrichProspect(p,{rocketReachMode:'force'}));
+    const pendingIndexes=leads.map((lead,index)=>({lead,index})).filter(({lead})=>!lead.rocketReachReviewed);
+    const selected=pendingIndexes.slice(0,ROCKETREACH_ENRICH_BATCH_MAX);
+    const enriched=[...leads];
+    const reviewed=await mapWithConcurrency(selected,ROCKETREACH_ENRICH_CONCURRENCY,async({lead,index})=>{
+      const next=await enrichProspectWithRocketReach(lead,{maxTitleLookups:1}).catch(e=>({...lead,rocketReachStatus:e.message}));
+      const attempts=(Number(lead.rocketReachAttempts)||0)+1;
+      const transient=/\b(429|502|503|504|rate.?limit|timed?\s*out|gateway|temporar)/i.test(String(next.rocketReachStatus||''));
+      return {index,lead:sanitizeDecisionMaker({...next,rocketReachAttempts:attempts,rocketReachReviewed:!transient||attempts>=2})};
+    });
+    reviewed.forEach(({index,lead})=>{ enriched[index]=lead; });
+    const remaining=enriched.filter(lead=>!lead.rocketReachReviewed).length;
     const discovered={
       ok:true,
       market:String(body.market||'United States'),
@@ -5947,7 +6993,8 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
       employeeMinimum:donorValue(body.employeeMinimum)||300,
       tag:normalizeLeadTag(body.tag||body.organizationType),
       scraped:body.scraped||body.outscraper||{},
-      rocketReachMode:'review',
+      rocketReachMode:remaining?'defer':'review',
+      rocketReachBatch:{reviewed:selected.length,remaining,total:leads.length},
       leads:enriched
     };
     res.json({...discovered,content:leadPreviewText(discovered)});
@@ -5978,7 +7025,7 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
     ].join('\n\n');
     const user=[
       'Audit these current GOALL business leads.',
-      'Goal: check whether phone number, email/contact route, actual decision-maker, employee count, growth signal, workforce signal, and first-call angle look correct.',
+      'Goal: check whether phone number, email/contact route, and actual decision-maker look correct.',
       'Exclude internal test contacts when obvious. Flag unclear or weak data.',
       '',
       JSON.stringify(leads,null,2),
@@ -5992,16 +7039,7 @@ app.post('/api/val/leads/enrich-current',async(req,res)=>{
       'Likely decision-maker:',
       'Decision-maker title:',
       'Decision-maker LinkedIn if public:',
-      'Estimated employee count:',
-      'Employee count confidence:',
-      'Growth signals:',
-      'Leadership signals:',
-      'Workforce or hiring signals:',
-      'Engagement/activity signals:',
-      'Lead Intelligence Summary:',
-      'Recommended First Call Angle:',
       'What needs correction:',
-      'Missing data:',
       'Confidence:'
     ].join('\n');
     const content=await callOpenAIWebResearch({system,user,maxTokens:5000,temperature:0.15});
@@ -6867,8 +7905,23 @@ async function googleApiJson(url,opts={}){
   if(!r.ok||d.error) throw new Error(d.error?.message||d.error_description||`Google API failed (${r.status})`);
   return d;
 }
+function googleApiIsDocsDisabled(error){
+  return /Google Docs API has not been used|docs\.googleapis\.com|api\/docs\.googleapis\.com|Docs API.*disabled|it is disabled/i.test(String(error&&error.message||error||''));
+}
+function googleDocStructuralElements(doc){
+  const out=[];
+  if(Array.isArray(doc?.body?.content)) out.push(...doc.body.content);
+  const walkTabs=(tabs=[])=>{
+    for(const tab of tabs||[]){
+      if(Array.isArray(tab?.documentTab?.body?.content)) out.push(...tab.documentTab.body.content);
+      if(Array.isArray(tab?.childTabs)) walkTabs(tab.childTabs);
+    }
+  };
+  walkTabs(doc?.tabs||[]);
+  return out;
+}
 function googleDocEndIndex(doc){
-  const content=doc?.body?.content||[];
+  const content=googleDocStructuralElements(doc);
   const last=content[content.length-1]||{};
   return Math.max(1,Number(last.endIndex||1)-1);
 }
@@ -6908,13 +7961,58 @@ async function updateGoogleDoc({documentId,content,mode}){
   const token=await googleDocsToken();
   const id=googleDocIdFromInput(documentId);
   if(!id) throw new Error('Paste a Google Docs URL or document ID.');
-  const doc=await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}});
+  const doc=await googleApiJson(googleDocsGetUrl(id),{headers:{Authorization:`Bearer ${token}`}});
   await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}:batchUpdate`,{
     method:'POST',
     headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
     body:JSON.stringify({requests:googleDocInsertRequests(doc,content,mode||'append')})
   });
   return {id,title:doc.title||'Google Doc',url:googleDocUrl(id),mode:mode||'append'};
+}
+async function formatGoogleDocForManuscript(documentId){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  if(!id) throw new Error('Missing Google Doc ID.');
+  const doc=await googleApiJson(googleDocsGetUrl(id),{headers:{Authorization:`Bearer ${token}`}});
+  const endIndex=Math.max(2,googleDocEndIndex(doc));
+  const zeroPt={magnitude:0,unit:'PT'};
+  const margin={magnitude:72,unit:'PT'};
+  const requests=[
+    {
+      updateDocumentStyle:{
+        documentStyle:{marginTop:margin,marginBottom:margin,marginLeft:margin,marginRight:margin},
+        fields:'marginTop,marginBottom,marginLeft,marginRight'
+      }
+    },
+    {
+      updateParagraphStyle:{
+        range:{startIndex:1,endIndex},
+        paragraphStyle:{
+          alignment:'START',
+          indentStart:zeroPt,
+          indentEnd:zeroPt,
+          indentFirstLine:zeroPt,
+          spaceAbove:zeroPt,
+          spaceBelow:{magnitude:10,unit:'PT'},
+          lineSpacing:115
+        },
+        fields:'alignment,indentStart,indentEnd,indentFirstLine,spaceAbove,spaceBelow,lineSpacing'
+      }
+    },
+    {
+      updateTextStyle:{
+        range:{startIndex:1,endIndex},
+        textStyle:{weightedFontFamily:{fontFamily:'Arial'},fontSize:{magnitude:11,unit:'PT'}},
+        fields:'weightedFontFamily,fontSize'
+      }
+    }
+  ];
+  await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}:batchUpdate`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify({requests})
+  });
+  return {id,url:googleDocUrl(id),formatted:true,endIndex};
 }
 function googleDriveQueryEscape(value){
   return String(value||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -6934,6 +8032,77 @@ function googleDocTextFromStructuralElements(elements=[]){
     if(el.tableOfContents) out+=googleDocTextFromStructuralElements(el.tableOfContents.content||[]);
   }
   return out;
+}
+function decodeBasicHtml(value){
+  return String(value||'')
+    .replace(/&nbsp;/g,' ')
+    .replace(/&amp;/g,'&')
+    .replace(/&lt;/g,'<')
+    .replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"')
+    .replace(/&#39;/g,"'")
+    .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n)||32));
+}
+function stripHtml(value){
+  return decodeBasicHtml(String(value||'')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<style[\s\S]*?<\/style>/gi,'')
+    .replace(/<script[\s\S]*?<\/script>/gi,'')
+    .replace(/<[^>]+>/g,' '))
+    .replace(/[ \t]+/g,' ')
+    .replace(/\n\s+/g,'\n')
+    .trim();
+}
+function googleDocFromExportedHtml(html,title='Google Doc'){
+  const body=String(html||'');
+  const content=[];
+  let cursor=1;
+  const titleMatch=body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const docTitle=title||stripHtml(titleMatch&&titleMatch[1]||'Google Doc');
+  const blockRe=/<(h1|h2|h3|p|li|div)[^>]*>([\s\S]*?)<\/\1>/gi;
+  let m;
+  while((m=blockRe.exec(body))){
+    const tag=m[1].toLowerCase();
+    const text=stripHtml(m[2]).replace(/\s+/g,' ').trim();
+    if(!text) continue;
+    const namedStyleType=tag==='h1'?'HEADING_1':(tag==='h2'?'HEADING_2':(tag==='h3'?'HEADING_3':'NORMAL_TEXT'));
+    const contentText=text+'\n';
+    const startIndex=cursor,endIndex=cursor+contentText.length;
+    content.push({startIndex,endIndex,paragraph:{paragraphStyle:{namedStyleType},elements:[{startIndex,endIndex,textRun:{content:contentText}}]}});
+    cursor=endIndex;
+  }
+  if(!content.length){
+    const text=stripHtml(body);
+    const contentText=text+'\n';
+    content.push({startIndex:1,endIndex:1+contentText.length,paragraph:{paragraphStyle:{namedStyleType:'NORMAL_TEXT'},elements:[{startIndex:1,endIndex:1+contentText.length,textRun:{content:contentText}}]}});
+  }
+  return {title:docTitle,body:{content},exportedViaDrive:true};
+}
+async function googleDriveExportText(documentId,mimeType='text/html'){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  if(!id) throw new Error('Missing Google Doc ID.');
+  const url=`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}/export?`+new URLSearchParams({mimeType}).toString();
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  const text=await r.text();
+  if(!r.ok){
+    let message=text;
+    try{message=JSON.parse(text).error?.message||message;}catch(e){}
+    throw new Error(message||`Google Drive export failed (${r.status})`);
+  }
+  return text;
+}
+function googleDocsGetUrl(documentId){
+  const id=googleDocIdFromInput(documentId);
+  return `https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}?`+new URLSearchParams({includeTabsContent:'true'}).toString();
+}
+function googleDocExtractedText(doc){
+  return googleDocTextFromStructuralElements(googleDocStructuralElements(doc)).trim();
+}
+async function googleDocWithExportFallback(documentId,doc,title='Google Doc'){
+  if(googleDocExtractedText(doc)) return doc;
+  const html=await googleDriveExportText(documentId,'text/html');
+  return googleDocFromExportedHtml(html,title||doc?.title||'Google Doc');
 }
 function likelyGoogleDocSearches(query){
   const raw=String(query||'').trim();
@@ -6991,8 +8160,16 @@ async function readGoogleDoc({documentId,query}){
     id=match?.id||'';
   }
   if(!id) throw new Error('No matching Google Doc found. Try the exact document title or paste the Google Doc URL.');
-  const doc=await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}});
-  const text=googleDocTextFromStructuralElements(doc.body?.content||[]).trim();
+  let doc;
+  try{
+    doc=await googleApiJson(googleDocsGetUrl(id),{headers:{Authorization:`Bearer ${token}`}});
+    doc=await googleDocWithExportFallback(id,doc,doc.title||match?.name||'Google Doc');
+  }catch(e){
+    if(!googleApiIsDocsDisabled(e)) throw e;
+    const html=await googleDriveExportText(id,'text/html');
+    doc=googleDocFromExportedHtml(html,match?.name||'Google Doc');
+  }
+  const text=googleDocExtractedText(doc);
   return {id,title:doc.title||match?.name||'Google Doc',url:googleDocUrl(id),text,match,otherMatches:matches.slice(1,5)};
 }
 async function googleDocsContextForQuery(query){
@@ -7147,6 +8324,877 @@ async function uploadedValDocumentContextForQuery(query){
     `Source text excerpt:\n${sourceText.slice(0,55000)}`
   ].filter(Boolean).join('\n\n');
 }
+function micheleBookConfig(){
+  return {
+    title:process.env.MICHELE_BOOK_TITLE || CLIENT_CONFIG.projectName || 'The Big Trick',
+    masterDocId:googleDocIdFromInput(process.env.MICHELE_MASTER_MANUSCRIPT_DOC_ID || ''),
+    readingCopyDocId:googleDocIdFromInput(process.env.MICHELE_READING_COPY_DOC_ID || ''),
+    currentChapterNumber:Number(process.env.MICHELE_CURRENT_CHAPTER_NUMBER||0)||0
+  };
+}
+function gentleBookError(error){
+  console.error('[michele-book]',error);
+  const msg=String(error&&error.message||error||'');
+  if(/This edit would greatly increase|Selected chapter was not found|looks like notes or a chat transcript|Reading\/output doc matches|MICHELE_READING_COPY_DOC_ID/i.test(msg)) return msg;
+  return 'I need one small setup fix before I can continue the book. Jessa can see the details in the admin panel.';
+}
+function googleDocParagraphText(el){
+  return (el?.paragraph?.elements||[]).map(part=>part.textRun?.content||'').join('');
+}
+function isMicheleChapterHeading(el){
+  const text=googleDocParagraphText(el).trim();
+  if(/^\s*Prologue\b/i.test(text)){
+    if(el?.paragraph?.paragraphStyle?.namedStyleType==='HEADING_1') return true;
+    return text.length<=160;
+  }
+  if(!/^\s*Chapter\s*#?\s*\d+/i.test(text)) return false;
+  if(el?.paragraph?.paragraphStyle?.namedStyleType==='HEADING_1') return true;
+  return /^\s*Chapter\s*#?\s*\d+\s*:/i.test(text)&&text.length<=220;
+}
+function parseMicheleChapterHeading(text){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(/^\s*Prologue\b/i.test(clean)){
+    const title=clean.replace(/^\s*Prologue\s*:?\s*/i,'').trim();
+    return {number:0,title:title||'Prologue',heading:clean,label:title?`Prologue: ${title}`:'Prologue'};
+  }
+  const m=clean.match(/^Chapter\s*#?\s*(\d+)\s*:?\s*(.*)$/i);
+  return {number:m?Number(m[1]):0,title:m?(m[2]||clean).trim():clean,heading:clean,label:m?`Chapter ${Number(m[1])}${m[2]?`: ${m[2].trim()}`:''}`:clean};
+}
+function googleDocTextBetweenElements(elements,startIndex,endIndex){
+  return (elements||[])
+    .filter(el=>Number(el.startIndex||0)>=startIndex&&Number(el.endIndex||0)<=endIndex)
+    .map(el=>googleDocTextFromStructuralElements([el]))
+    .join('')
+    .trim();
+}
+function parseMicheleDocChapters(doc){
+  const elements=googleDocStructuralElements(doc);
+  const headings=[];
+  elements.forEach((el,idx)=>{if(isMicheleChapterHeading(el))headings.push({el,idx,...parseMicheleChapterHeading(googleDocParagraphText(el))});});
+  return headings.map((h,i)=>{
+    const next=headings[i+1]?.el;
+    const startIndex=Number(h.el.startIndex||1);
+    const bodyStartIndex=Number(h.el.endIndex||startIndex+1);
+    const endIndex=next?Number(next.startIndex||googleDocEndIndex(doc)):googleDocEndIndex(doc);
+    return {chapterNumber:h.number,chapterTitle:h.title||h.heading,googleDocSectionMarker:h.heading,startIndex,bodyStartIndex,endIndex,currentText:googleDocTextBetweenElements(elements,bodyStartIndex,endIndex),status:i===0?'in_progress':'draft'};
+  });
+}
+async function readGoogleDocRaw(documentId){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  if(!id) throw new Error('Missing Google Doc ID.');
+  try{
+    const doc=await googleApiJson(googleDocsGetUrl(id),{headers:{Authorization:`Bearer ${token}`}});
+    return googleDocWithExportFallback(id,doc,doc.title||'Google Doc');
+  }catch(e){
+    if(!googleApiIsDocsDisabled(e)) throw e;
+    const html=await googleDriveExportText(id,'text/html');
+    return googleDocFromExportedHtml(html,'Google Doc');
+  }
+}
+async function replaceGoogleDocRange({documentId,startIndex,endIndex,text}){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  const clean=String(text||'').replace(/\r\n/g,'\n').trim();
+  if(!id) throw new Error('Missing Google Doc ID.');
+  if(!clean) throw new Error('Rewrite returned empty chapter text.');
+  const requests=[];
+  if(Number(endIndex)>Number(startIndex)) requests.push({deleteContentRange:{range:{startIndex:Number(startIndex),endIndex:Number(endIndex)}}});
+  requests.push({insertText:{location:{index:Number(startIndex)},text:clean+'\n'}});
+  return googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}:batchUpdate`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({requests})});
+}
+async function googleDocsBatchUpdate(documentId,requests){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  if(!id) throw new Error('Missing Google Doc ID.');
+  if(!Array.isArray(requests)||!requests.length) return {id,url:googleDocUrl(id),skipped:true};
+  return googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}:batchUpdate`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({requests})});
+}
+function nextStoreArray(store,key){store[key]=Array.isArray(store[key])?store[key]:[];return store[key];}
+async function ensureMicheleBookProject(){
+  await valDbReady;
+  const cfg=micheleBookConfig();
+  const userId=currentUserId(),tenant=tenantId();
+  if(pgPool){
+    const existing=await dbQuery('select * from book_projects where tenant_id=$1 and owner_user_id=$2 order by created_at asc limit 1',[tenant,userId]);
+    if(existing.rows[0]){
+      const nextMaster=existing.rows[0].master_doc_id||cfg.masterDocId||'';
+      const nextReading=existing.rows[0].reading_copy_doc_id||cfg.readingCopyDocId||'';
+      if(!nextMaster) throw new Error('MICHELE_MASTER_MANUSCRIPT_DOC_ID is not configured.');
+      return {...existing.rows[0],title:existing.rows[0].title||cfg.title,master_doc_id:nextMaster,reading_copy_doc_id:nextReading};
+    }
+    if(!cfg.masterDocId) throw new Error('MICHELE_MASTER_MANUSCRIPT_DOC_ID is not configured.');
+    const id=uuid('book');
+    await dbQuery('insert into book_projects (id,owner_user_id,tenant_id,title,master_doc_id,reading_copy_doc_id,status) values ($1,$2,$3,$4,$5,$6,$7)',[id,userId,tenant,cfg.title,cfg.masterDocId,cfg.readingCopyDocId,'active']);
+    return {id,owner_user_id:userId,tenant_id:tenant,title:cfg.title,master_doc_id:cfg.masterDocId,reading_copy_doc_id:cfg.readingCopyDocId,status:'active'};
+  }
+  const store=valStore(),rows=nextStoreArray(store,'bookProjects');
+  let row=rows.find(r=>r.tenantId===tenant&&r.ownerUserId===userId);
+  if(!row){
+    if(!cfg.masterDocId) throw new Error('MICHELE_MASTER_MANUSCRIPT_DOC_ID is not configured.');
+    row={id:uuid('book'),ownerUserId:userId,tenantId:tenant,title:cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,status:'active',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};rows.push(row);
+  }
+  const nextMaster=row.masterDocId||cfg.masterDocId||'';
+  const nextReading=row.readingCopyDocId||cfg.readingCopyDocId||'';
+  if(!nextMaster) throw new Error('MICHELE_MASTER_MANUSCRIPT_DOC_ID is not configured.');
+  Object.assign(row,{title:row.title||cfg.title,masterDocId:nextMaster,readingCopyDocId:nextReading,updatedAt:new Date().toISOString()});saveValStore(store);return row;
+}
+function bookProjectId(project){return project.id;}
+function bookProjectMasterDocId(project){return project.master_doc_id||project.masterDocId||micheleBookConfig().masterDocId;}
+function bookProjectReadingDocId(project){return project.reading_copy_doc_id||project.readingCopyDocId||micheleBookConfig().readingCopyDocId;}
+async function updateMicheleBookProjectConfig({masterDocId,readingCopyDocId,title}){
+  await valDbReady;
+  const cfg=micheleBookConfig();
+  const nextMaster=googleDocIdFromInput(masterDocId||cfg.masterDocId||'');
+  const nextReading=googleDocIdFromInput(readingCopyDocId||cfg.readingCopyDocId||'');
+  const nextTitle=String(title||cfg.title||'The Big Trick').trim();
+  if(!nextMaster) throw new Error('A source manuscript Google Doc ID is required.');
+  const userId=currentUserId(),tenant=tenantId();
+  if(pgPool){
+    const existing=await dbQuery('select * from book_projects where tenant_id=$1 and owner_user_id=$2 order by created_at asc limit 1',[tenant,userId]);
+    const id=existing.rows[0]?.id||uuid('book');
+    if(existing.rows[0]) await dbQuery('update book_projects set title=$1,master_doc_id=$2,reading_copy_doc_id=$3,updated_at=now() where id=$4',[nextTitle,nextMaster,nextReading,id]);
+    else await dbQuery('insert into book_projects (id,owner_user_id,tenant_id,title,master_doc_id,reading_copy_doc_id,status) values ($1,$2,$3,$4,$5,$6,$7)',[id,userId,tenant,nextTitle,nextMaster,nextReading,'active']);
+    return {id,title:nextTitle,masterDocId:nextMaster,readingCopyDocId:nextReading};
+  }
+  const store=valStore(),rows=nextStoreArray(store,'bookProjects');
+  let row=rows.find(r=>r.tenantId===tenant&&r.ownerUserId===userId);
+  if(!row){row={id:uuid('book'),ownerUserId:userId,tenantId:tenant,status:'active',createdAt:new Date().toISOString()};rows.push(row);}
+  Object.assign(row,{title:nextTitle,masterDocId:nextMaster,readingCopyDocId:nextReading,updatedAt:new Date().toISOString()});
+  saveValStore(store);
+  return {id:row.id,title:nextTitle,masterDocId:nextMaster,readingCopyDocId:nextReading};
+}
+function micheleMasterEditsChapterMatches(chapter,text){
+  const body=String(text||'');
+  if(!body) return [];
+  const pages=body.split(/\n(?=--- Page \d+ ---)/g).map(p=>p.trim()).filter(Boolean);
+  const titleWords=String(chapter.chapterTitle||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>4);
+  const chapterNum=Number(chapter.chapterNumber||0);
+  const exactChapter=new RegExp(`\\bchapter\\s*#?\\s*${chapterNum}\\b`,'i');
+  return pages.filter(page=>{
+    const lower=page.toLowerCase();
+    if(exactChapter.test(page)) return true;
+    if(titleWords.length>=2){
+      const hits=titleWords.filter(w=>lower.includes(w)).length;
+      if(hits>=Math.min(3,titleWords.length)) return true;
+    }
+    return false;
+  }).slice(0,8);
+}
+function micheleMasterEditsGlobalNoteText(text){
+  const raw=String(text||'').trim();
+  if(!raw) return '';
+  const directive=[
+    'Master Edits 1 prior VAL conversation notes. Apply point by point where applicable as Michele moves chapter by chapter.',
+    'Start at the very beginning of the book and move forward in order unless Jessa/admin changes the current chapter.',
+    'Protect Michele’s voice: funny, warm, spiritually alert, bodily aware, irreverent, specific, and embodied.',
+    'Do not merely suggest edits. Rewrite the chapter directly according to Michele’s response and these notes.'
+  ].join('\n');
+  return `${directive}\n\n${raw.slice(0,14000)}`;
+}
+async function micheleEditorNoteExists(chapterId,noteType){
+  if(pgPool){const r=await dbQuery('select id from editor_notes where chapter_id=$1 and note_type=$2 limit 1',[chapterId,noteType]);return !!r.rows[0];}
+  return (valStore().editorNotes||[]).some(n=>n.chapterId===chapterId&&n.noteType===noteType);
+}
+async function addMicheleEditorNote(chapterId,noteType,noteText,priority='high'){
+  const text=String(noteText||'').trim();
+  if(!text||await micheleEditorNoteExists(chapterId,noteType)) return false;
+  if(pgPool) await dbQuery('insert into editor_notes (id,chapter_id,note_type,note_text,priority,status,created_at) values ($1,$2,$3,$4,$5,$6,now())',[uuid('note'),chapterId,noteType,text,priority,'open']);
+  else{const store=valStore();nextStoreArray(store,'editorNotes').push({id:uuid('note'),chapterId,noteType,noteText:text,priority,status:'open',createdAt:new Date().toISOString()});saveValStore(store);}
+  return true;
+}
+async function importMicheleMasterEdits({project,chapters,text,sourceTitle='Master Edits'}){
+  const edits=String(text||'').trim();
+  if(!edits||!Array.isArray(chapters)||!chapters.length) return {imported:false,count:0};
+  const globalNote=micheleMasterEditsGlobalNoteText(edits);
+  const baseType='import_'+slugifyClient(sourceTitle||'master_edits').slice(0,50);
+  let count=0;
+  for(const chapter of chapters){
+    if(await addMicheleEditorNote(chapter.id,`${baseType}_global`,globalNote,'high')) count++;
+    const matches=micheleMasterEditsChapterMatches(chapter,edits);
+    if(matches.length){
+      const specific=[
+        `${sourceTitle} notes matched to Chapter #${chapter.chapterNumber}: ${chapter.chapterTitle}.`,
+        'Use these point by point where applicable, but preserve Michele’s voice and the manuscript sequence.',
+        ...matches
+      ].join('\n\n');
+      if(await addMicheleEditorNote(chapter.id,`${baseType}_chapter_match`,specific.slice(0,24000),'high')) count++;
+    }
+  }
+  return {imported:true,count,sourceTitle};
+}
+function normalizeBookChapter(row){
+  return {id:row.id,bookProjectId:row.book_project_id||row.bookProjectId,chapterNumber:row.chapter_number??row.chapterNumber,chapterTitle:row.chapter_title||row.chapterTitle,googleDocSectionMarker:row.google_doc_section_marker||row.googleDocSectionMarker,currentText:row.current_text||row.currentText||'',status:row.status||'draft',lastSyncedAt:row.last_synced_at?row.last_synced_at.toISOString?.()||row.last_synced_at:row.lastSyncedAt||'',startIndex:row.start_index??row.startIndex,bodyStartIndex:row.body_start_index??row.bodyStartIndex,endIndex:row.end_index??row.endIndex};
+}
+async function upsertMicheleChapters(project,chapters){
+  const projectId=bookProjectId(project);
+  if(pgPool){
+    for(const ch of chapters){
+      const existing=await dbQuery('select id from book_chapters where book_project_id=$1 and chapter_number=$2 limit 1',[projectId,ch.chapterNumber]);
+      const id=existing.rows[0]?.id||uuid('chap');
+      if(existing.rows[0]) await dbQuery('update book_chapters set chapter_title=$1,google_doc_section_marker=$2,start_index=$3,body_start_index=$4,end_index=$5,current_text=$6,last_synced_at=now() where id=$7',[ch.chapterTitle,ch.googleDocSectionMarker,ch.startIndex,ch.bodyStartIndex,ch.endIndex,ch.currentText,id]);
+      else await dbQuery('insert into book_chapters (id,book_project_id,chapter_number,chapter_title,google_doc_section_marker,start_index,body_start_index,end_index,current_text,status,last_synced_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())',[id,projectId,ch.chapterNumber,ch.chapterTitle,ch.googleDocSectionMarker,ch.startIndex,ch.bodyStartIndex,ch.endIndex,ch.currentText,ch.status||'draft']);
+    }
+    const r=await dbQuery('select * from book_chapters where book_project_id=$1 order by chapter_number nulls last, google_doc_section_marker',[projectId]);
+    return r.rows.map(normalizeBookChapter);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'bookChapters');
+  chapters.forEach(ch=>{let row=rows.find(r=>r.bookProjectId===projectId&&Number(r.chapterNumber)===Number(ch.chapterNumber));if(!row){row={id:uuid('chap'),bookProjectId:projectId,status:ch.status||'draft'};rows.push(row);}Object.assign(row,{chapterNumber:ch.chapterNumber,chapterTitle:ch.chapterTitle,googleDocSectionMarker:ch.googleDocSectionMarker,startIndex:ch.startIndex,bodyStartIndex:ch.bodyStartIndex,endIndex:ch.endIndex,currentText:ch.currentText,lastSyncedAt:new Date().toISOString()});});
+  saveValStore(store);return rows.filter(r=>r.bookProjectId===projectId).sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999)).map(normalizeBookChapter);
+}
+async function syncMicheleBookFromDocs(){
+  const project=await ensureMicheleBookProject();
+  const doc=await readGoogleDocRaw(bookProjectMasterDocId(project));
+  const parsed=parseMicheleDocChapters(doc);
+  if(!parsed.length) throw new Error('No Heading 1 chapter headings matching "Prologue" or "Chapter #1:" were found.');
+  const chapters=await upsertMicheleChapters(project,parsed);
+  return {project,doc,chapters};
+}
+async function setMicheleCurrentChapter(project,chapter){
+  if(!project||!chapter) return;
+  if(pgPool) await dbQuery('update book_projects set current_chapter_id=$1,updated_at=now() where id=$2',[chapter.id,bookProjectId(project)]);
+  else{
+    const store=valStore(),row=nextStoreArray(store,'bookProjects').find(r=>r.id===bookProjectId(project));
+    if(row){row.currentChapterId=chapter.id;row.updatedAt=new Date().toISOString();saveValStore(store);}
+  }
+}
+async function markMicheleChapterProgress(project,{completedChapter,nextChapter}={}){
+  if(completedChapter){
+    if(pgPool) await dbQuery('update book_chapters set status=$1,last_synced_at=now() where id=$2',['completed',completedChapter.id]);
+    else{const store=valStore(),row=nextStoreArray(store,'bookChapters').find(c=>c.id===completedChapter.id);if(row){row.status='completed';row.lastSyncedAt=new Date().toISOString();}saveValStore(store);}
+  }
+  if(nextChapter){
+    if(pgPool) await dbQuery('update book_chapters set status=$1,last_synced_at=now() where id=$2 and status<>$3',['in_progress',nextChapter.id,'completed']);
+    else{const store=valStore(),row=nextStoreArray(store,'bookChapters').find(c=>c.id===nextChapter.id);if(row&&row.status!=='completed'){row.status='in_progress';row.lastSyncedAt=new Date().toISOString();}saveValStore(store);}
+    await setMicheleCurrentChapter(project,nextChapter);
+  }
+}
+async function latestMicheleCompletedChapter(project,chapters){
+  const projectId=bookProjectId(project);
+  if(pgPool){
+    const r=await dbQuery("select c.* from rewrite_jobs j join book_chapters c on c.id=j.chapter_id where c.book_project_id=$1 and j.status='completed' order by j.completed_at desc nulls last, j.created_at desc limit 1",[projectId]);
+    if(r.rows[0]) return normalizeBookChapter(r.rows[0]);
+  }else{
+    const rows=(valStore().rewriteJobs||[]).filter(j=>j.status==='completed').sort((a,b)=>String(b.completedAt||b.createdAt||'').localeCompare(String(a.completedAt||a.createdAt||'')));
+    const ids=new Set((chapters||[]).map(ch=>ch.id));
+    const job=rows.find(j=>ids.has(j.chapterId));
+    if(job) return chapters.find(ch=>ch.id===job.chapterId)||null;
+  }
+  return null;
+}
+function nextMicheleChapterAfter(chapters,chapter){
+  if(!chapter) return null;
+  const lastNumber=Number(chapter.chapterNumber||chapter.chapter_number||0);
+  return (chapters||[]).filter(ch=>Number(ch.chapterNumber||0)>lastNumber).sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999))[0]||null;
+}
+async function getMicheleCurrentChapter(project,chapters){
+  const cfg=micheleBookConfig();
+  const currentId=project.current_chapter_id||project.currentChapterId||'';
+  let chapter=null;
+  const latestCompleted=await latestMicheleCompletedChapter(project,chapters);
+  const nextAfterCompleted=nextMicheleChapterAfter(chapters,latestCompleted);
+  if(cfg.currentChapterNumber) chapter=chapters.find(ch=>Number(ch.chapterNumber)===cfg.currentChapterNumber)||null;
+  if(!chapter&&latestCompleted&&nextAfterCompleted) chapter=nextAfterCompleted;
+  if(!chapter){
+    const current=chapters.find(ch=>ch.id===currentId)||null;
+    chapter=current&&current.status!=='completed'?current:null;
+  }
+  if(!chapter) chapter=chapters.find(ch=>ch.status==='in_progress')||chapters[0]||null;
+  if(chapter&&chapter.id!==currentId){
+    await setMicheleCurrentChapter(project,chapter);
+  }
+  return chapter;
+}
+function micheleImportedNoteScore(row,chapter){
+  const text=String(row.raw_text||row.rawText||'').toLowerCase();
+  const metadata=row.metadata||{};
+  let score=0;
+  const num=Number(chapter?.chapterNumber||chapter?.chapter_number||0);
+  if(num&&new RegExp(`\\bchapter\\s*#?\\s*${num}\\b`,'i').test(text)) score+=30;
+  const words=String(chapter?.chapterTitle||chapter?.chapter_title||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>4);
+  score+=words.filter(w=>text.includes(w)).length*6;
+  const idx=Number(metadata.chunkIndex||metadata.chunk_index||0);
+  if(idx&&idx<=3) score+=4;
+  return score;
+}
+async function listMicheleImportedEditorNotes(chapter){
+  let rows=[];
+  if(pgPool){
+    const r=await dbQuery("select kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and kind in ('book_editor_notes_import','master_edits_import','knowledge_document') order by created_at desc limit 120",[currentUserId()]);
+    rows=r.rows;
+  }else{
+    rows=(valStore().memoryItems||[]).filter(m=>['book_editor_notes_import','master_edits_import','knowledge_document'].includes(m.kind)).map(m=>({kind:m.kind,summary:m.summary,raw_text:m.rawText,metadata:m.metadata,created_at:m.createdAt}));
+  }
+  const imported=rows.filter(row=>{
+    const hay=[row.kind,row.summary,row.metadata?.source,row.metadata?.sourceTitle,row.metadata?.intendedUse].filter(Boolean).join(' ').toLowerCase();
+    return /master edits|editor notes|chapter_by_chapter|book_editor_notes/i.test(hay);
+  });
+  if(!imported.length) return [];
+  const scored=imported.map(row=>({...row,_score:micheleImportedNoteScore(row,chapter)})).sort((a,b)=>(b._score-a._score)||Number(a.metadata?.chunkIndex||99)-Number(b.metadata?.chunkIndex||99));
+  const selected=(scored.some(r=>r._score>0)?scored.filter(r=>r._score>0):scored).slice(0,5);
+  return selected.map((row,i)=>({id:`memory_${i}`,note_type:'imported_prior_editor_notes',note_text:`${row.summary||'Imported prior editor notes'}\n\n${String(row.raw_text||'').slice(0,9000)}`,priority:'high',status:'open'}));
+}
+async function listMicheleEditorNotes(chapterId,chapter=null){
+  let notes=[];
+  if(pgPool){const r=await dbQuery('select * from editor_notes where chapter_id=$1 and status<>$2 order by created_at desc limit 20',[chapterId,'closed']);notes=r.rows;}
+  else notes=(valStore().editorNotes||[]).filter(n=>n.chapterId===chapterId&&n.status!=='closed').slice(-20).reverse();
+  const imported=await listMicheleImportedEditorNotes(chapter).catch(e=>{console.warn('[michele-book] Imported note lookup skipped:',e.message);return [];});
+  return notes.concat(imported);
+}
+async function getMicheleVoiceProfile(projectId){
+  if(pgPool){const r=await dbQuery('select * from author_voice_profile where book_project_id=$1 order by updated_at desc limit 1',[projectId]);return r.rows[0]||null;}
+  return (valStore().authorVoiceProfiles||[]).find(p=>p.bookProjectId===projectId)||null;
+}
+function jsonArrayField(value){return Array.isArray(value)?value:(typeof value==='string'?value.split(/\n|,/).map(x=>x.trim()).filter(Boolean):[]);}
+async function saveMicheleFeedback({chapterId,editorNoteId='',response,interpretedInstruction='',sentiment=''}){
+  const row={id:uuid('fb'),chapterId,editorNoteId,micheleResponse:String(response||''),interpretedInstruction,sentiment,createdAt:new Date().toISOString()};
+  if(pgPool) await dbQuery('insert into michele_feedback (id,chapter_id,editor_note_id,michele_response,interpreted_instruction,sentiment,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.id,chapterId,editorNoteId||null,row.micheleResponse,interpretedInstruction,sentiment]);
+  else{const store=valStore();nextStoreArray(store,'micheleFeedback').push(row);saveValStore(store);}
+  return row;
+}
+async function saveChapterSnapshot(chapter,changeSummary='Snapshot before rewrite',source='before_rewrite'){
+  const chapterId=chapter.id;
+  let versionNumber=1;
+  if(pgPool){const r=await dbQuery('select coalesce(max(version_number),0)+1 as next from chapter_versions where chapter_id=$1',[chapterId]);versionNumber=Number(r.rows[0]?.next||1);await dbQuery('insert into chapter_versions (id,chapter_id,version_number,full_text,change_summary,source,created_at) values ($1,$2,$3,$4,$5,$6,now())',[uuid('ver'),chapterId,versionNumber,chapter.currentText||'',changeSummary,source]);}
+  else{const store=valStore(),rows=nextStoreArray(store,'chapterVersions').filter(v=>v.chapterId===chapterId);versionNumber=rows.reduce((m,v)=>Math.max(m,Number(v.versionNumber)||0),0)+1;nextStoreArray(store,'chapterVersions').push({id:uuid('ver'),chapterId,versionNumber,fullText:chapter.currentText||'',changeSummary,source,createdAt:new Date().toISOString()});saveValStore(store);}
+  return {chapterId,versionNumber};
+}
+async function saveChapterVersionText(chapter,fullText,changeSummary='Snapshot before write',source='before_google_doc_write'){
+  return saveChapterSnapshot({...chapter,currentText:String(fullText||'')},changeSummary,source);
+}
+async function createRewriteJob(chapter,instruction,beforeText,feedbackId=''){
+  const row={id:uuid('rewrite'),chapterId:chapter.id,micheleFeedbackId:feedbackId,status:'queued',instruction,beforeText,afterText:'',changeSummary:'',createdAt:new Date().toISOString()};
+  if(pgPool) await dbQuery('insert into rewrite_jobs (id,chapter_id,michele_feedback_id,status,instruction,before_text,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.id,row.chapterId,feedbackId||null,row.status,row.instruction,row.beforeText]);
+  else{const store=valStore();nextStoreArray(store,'rewriteJobs').push(row);saveValStore(store);}
+  return row;
+}
+async function completeRewriteJob(job,{status='completed',afterText='',changeSummary='',errorMessage=''}={}){
+  if(pgPool) await dbQuery('update rewrite_jobs set status=$1,after_text=$2,change_summary=$3,error_message=$4,completed_at=now() where id=$5',[status,afterText,changeSummary,errorMessage,job.id]);
+  else{const store=valStore(),row=nextStoreArray(store,'rewriteJobs').find(j=>j.id===job.id);if(row)Object.assign(row,{status,afterText,changeSummary,errorMessage,completedAt:new Date().toISOString()});saveValStore(store);}
+}
+function normalizeRewriteJob(row){
+  if(!row) return null;
+  return {id:row.id,chapterId:row.chapter_id||row.chapterId,micheleFeedbackId:row.michele_feedback_id||row.micheleFeedbackId,status:row.status||'',instruction:row.instruction||'',beforeText:row.before_text||row.beforeText||'',afterText:row.after_text||row.afterText||'',changeSummary:row.change_summary||row.changeSummary||'',errorMessage:row.error_message||row.errorMessage||'',createdAt:row.created_at?row.created_at.toISOString?.()||row.created_at:row.createdAt||'',completedAt:row.completed_at?row.completed_at.toISOString?.()||row.completed_at:row.completedAt||''};
+}
+async function getRewriteJobById(id){
+  const jobId=String(id||'').trim();
+  if(!jobId) return null;
+  if(pgPool){const r=await dbQuery('select * from rewrite_jobs where id=$1 limit 1',[jobId]);return normalizeRewriteJob(r.rows[0]);}
+  return normalizeRewriteJob((valStore().rewriteJobs||[]).find(j=>j.id===jobId));
+}
+async function updateMicheleChapterText(chapter,afterText){
+  if(pgPool) await dbQuery('update book_chapters set current_text=$1,last_synced_at=now() where id=$2',[afterText,chapter.id]);
+  else{const store=valStore(),row=nextStoreArray(store,'bookChapters').find(c=>c.id===chapter.id);if(row){row.currentText=afterText;row.lastSyncedAt=new Date().toISOString();}saveValStore(store);}
+}
+function compactMicheleBullets(value){
+  const arr=Array.isArray(value)?value:String(value||'').split(/\n+/);
+  return arr.map(x=>String(x||'').replace(/^[-*•\d.\s]+/,'').trim()).filter(Boolean).slice(0,3);
+}
+function micheleChapterSpecificQuestion(chapter){
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
+  return `I’m going to help “${title}” do five things at once: make the reader laugh, place them inside the scene, reveal the emotional truth underneath it, make the insight clear without preaching, and smooth the bridge from story to meaning. What detail from this moment still feels impossible to forget?`;
+}
+function micheleLayeredEditorialFrameworkText(){
+  return [
+    'Apply Michele’s editorial layering framework by default:',
+    '- Humor: disarm the reader and make the truth easier to receive.',
+    '- Scene Building: add sensory detail, physical movement, setting, dialogue, and grounding.',
+    '- Emotional Truth: clarify what was really happening underneath the event.',
+    '- Reader Understanding: make the insight clear without becoming preachy.',
+    '- Transitions: move naturally from story to reflection so the reader follows the lesson.'
+  ].join('\n');
+}
+function micheleChapterContextSummary(chapter){
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const firstSentence=(text.match(/^[^.!?]{30,260}[.!?]/)||[text.slice(0,220)])[0]||'';
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
+  return `VAL has read “${title}.” The chapter already has lived-scene material to work from${firstSentence?`, beginning with: “${firstSentence.slice(0,220)}”`:'.'} The next conversation should deepen the existing material instead of asking Michele to explain what is already on the page.`;
+}
+function micheleInformedChapterQuestion(chapter,userMessage=''){
+  const msg=String(userMessage||'').toLowerCase();
+  const text=String(chapter?.currentText||'').toLowerCase();
+  if(/body|felt|feel|feeling|emotion|heart|truth/.test(msg)) return 'What did you know in your body before you were ready to admit it in your mind?';
+  if(/funny|humor|laugh|joke/.test(msg)) return 'What part of this scene should feel funny before it starts to hurt?';
+  if(/reader|lesson|understand|meaning/.test(msg)) return 'What does the reader need to understand here that you never understood then?';
+  if(/detail|scene|sensory|see|remember/.test(msg)||/floor|shoe|sneaker|scarf|ice|accident/.test(text)) return 'What detail from that moment still feels impossible to forget?';
+  return 'What is the one moment in this chapter that still has heat in it when you say it out loud?';
+}
+function withMicheleModelTimeout(promise,ms=4500){
+  return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Michele conversation model timeout')),ms))]);
+}
+function micheleChapterLabel(chapter){
+  if(!chapter) return 'this chapter';
+  const num=Number(chapter.chapterNumber??chapter.chapter_number);
+  const title=String(chapter.chapterTitle||chapter.chapter_title||chapter.title||'').trim();
+  if(num===0) return title&&title!=='Prologue'?`Prologue: ${title}`:'Prologue';
+  return `Chapter ${num}${title?`: ${title}`:''}`;
+}
+function micheleFindChapterForMessage(message,chapters=[],fallbackChapter=null){
+  const msg=String(message||'').toLowerCase();
+  const list=Array.isArray(chapters)?chapters:[];
+  if(/\bprologue\b/.test(msg)){
+    const prologue=list.find(ch=>Number(ch.chapterNumber??ch.chapter_number)===0||/\bprologue\b/i.test(String(ch.chapterTitle||ch.chapter_title||ch.googleDocSectionMarker||'')));
+    if(prologue) return prologue;
+  }
+  const m=msg.match(/\b(?:chapter|chap|ch)\s*#?\s*(\d+)\b/);
+  if(m){
+    const requested=Number(m[1]);
+    const found=list.find(ch=>Number(ch.chapterNumber??ch.chapter_number)===requested);
+    if(found) return found;
+  }
+  return fallbackChapter||list[0]||null;
+}
+function micheleEditorialMode(message,explicitMode=''){
+  const mode=String(explicitMode||'').toLowerCase().trim();
+  if(['interview','editor','proofreading','proofread','overview'].includes(mode)) return mode==='proofread'?'proofreading':mode;
+  const msg=String(message||'').toLowerCase();
+  if(/\b(proofread|spell|spelling|grammar|punctuation|typo|technical)\b/.test(msg)) return 'proofreading';
+  if(/\b(overview|summary|summarize|recap|what happens|key takeaways)\b/.test(msg)) return 'overview';
+  if(/\b(ask me|questions|question me|interview|voice conversation|draw out|pull out)\b/.test(msg)) return 'interview';
+  if(/\b(read|thoughts|review|edit|editor|developmental|confusing|flow|arc|strengths|opportunities)\b/.test(msg)) return 'editor';
+  return 'interview';
+}
+function micheleModeSections(mode){
+  if(mode==='overview') return ['Summary','Major Events','Emotional Arc','Themes','Lessons','Key Takeaways'];
+  if(mode==='proofreading') return ['Spelling Errors','Grammar Issues','Punctuation Issues','Repetition','Awkward Phrasing','Suggested Corrections'];
+  if(mode==='interview') return ['Next Question'];
+  return ['Overview','Strengths','Opportunities','Emotional Impact','Reader Confusion Risks','Editorial Recommendations','Proofreading Notes'];
+}
+function sanitizeMicheleEditorReply(text){
+  let out=String(text||'').trim();
+  const banned=[
+    /^I hear you[.!]?\s*/i,
+    /^That makes sense[.!]?\s*/i,
+    /^Thank you for sharing[.!]?\s*/i,
+    /^That’s powerful[.!]?\s*/i,
+    /^That's powerful[.!]?\s*/i,
+    /^Let’s explore that[.!]?\s*/i,
+    /^Let's explore that[.!]?\s*/i,
+    /^I understand[.!]?\s*/i
+  ];
+  banned.forEach(re=>{out=out.replace(re,'');});
+  out=out
+    .replace(/^\s*Direction captured\s*/i,'')
+    .replace(/^\s*Use this as the rewrite direction:.*?(?=\n|$)/gim,'')
+    .replace(/^\s*Nothing has changed in the manuscript yet\.?\s*/gim,'')
+    .replace(/\n{3,}/g,'\n\n');
+  return out.trim();
+}
+function micheleFastConversationReply(chapter,userMessage,{mode='interview',lastCompletedChapter=null}={}){
+  const msg=String(userMessage||'').toLowerCase();
+  const label=micheleChapterLabel(chapter);
+  const lastLabel=lastCompletedChapter?micheleChapterLabel(lastCompletedChapter):'No chapter has been completed in this workflow yet';
+  const wantsAll=/all of (it|that|the above)|both|everything|combine|use them all/.test(msg);
+  const asksQuestions=/ask me|questions|question me|interview|walk me through|help me decide/.test(msg);
+  const asksNext=/what next|next chapter|work on next|which chapter|chapter transitions|transition/.test(msg);
+  const asksRead=/read|thoughts|overview|summary|review|proofread|spell|grammar/.test(msg);
+  const wantsWarm=/warm|gentle|soft|less advice|less teach|conversational|invite/.test(msg);
+  const wantsEmotion=/emotion|heart|vulnerab|deeper|feeling|honest/.test(msg);
+  const wantsStructure=/arc|structure|clear|sharpen|tight|focus|clean/.test(msg);
+  const wantsHumor=/funny|humor|joke|lighter|levity/.test(msg);
+  const unsure=/not sure|unsure|don't know|confused|stuck|maybe/.test(msg);
+  const ready=/ready|go ahead|rewrite|do it|yes|that feels right/.test(msg)&&!unsure;
+  if(mode==='overview'||(asksRead&&/overview|summary|thoughts|read/.test(msg))){
+    return {
+      reply:`${label}\n\nOverview\nThis chapter is ready for a focused read. I can give you the story summary, emotional arc, themes, lessons, and places where the reader may need more grounding.\n\nNext question\nDo you want the overview to stay big-picture, or should I also point out where the chapter may need more scene, humor, or connective tissue?`,
+      readyToRewrite:false,
+      suggestedInstruction:`Review ${label} for story overview, emotional arc, reader clarity, and proofreading issues before rewriting.`
+    };
+  }
+  if(mode==='proofreading'){
+    return {
+      reply:`${label}\n\nProofreading focus\nI will check spelling, grammar, punctuation, repetition, and awkward phrasing without flattening your voice.\n\nNext question\nDo you want me to preserve every intentionally conversational sentence, even if it bends formal grammar?`,
+      readyToRewrite:false,
+      suggestedInstruction:`Proofread ${label} for spelling, grammar, punctuation, repetition, and awkward phrasing while preserving Michele’s conversational memoir voice.`
+    };
+  }
+  let focus='layer humor, scene building, emotional truth, reader understanding, and transitions together while protecting Michele’s voice';
+  let question=micheleInformedChapterQuestion(chapter,userMessage);
+  if(wantsAll||wantsWarm||wantsEmotion||wantsStructure||wantsHumor){focus='apply all five editorial layers together: humor, scene building, emotional truth, reader understanding, and transitions';question=micheleInformedChapterQuestion(chapter,userMessage);}
+  else if(asksQuestions){focus='interview Michele from the actual chapter content, one useful question at a time, while applying all five editorial layers by default';question=micheleInformedChapterQuestion(chapter,userMessage);}
+  else if(asksNext){focus='help you choose the next editorial target from the current chapter context';question=`${lastLabel}. We are currently on ${label}. What part of the book do you want to work on next: this chapter, the next chapter, chapter transitions, voice consistency, emotional arc, humor/levity, or another thread?`;}
+  else if(unsure){focus='use the chapter itself to find the smallest useful next question without making Michele choose an editorial lane';question=micheleInformedChapterQuestion(chapter,userMessage);}
+  return {
+    reply:asksNext?question:question,
+    readyToRewrite:ready,
+    suggestedInstruction:`Rewrite ${label} to ${focus}. Preserve Michele’s memoir voice, humor, directness, and factual sequence. Do not sound generic or overly polished.`
+  };
+}
+function micheleConversationTurns(conversation=[]){
+  return (Array.isArray(conversation)?conversation:[])
+    .filter(t=>t&&['user','assistant'].includes(t.role)&&String(t.content||'').trim())
+    .filter(t=>!/Reading the chapter/i.test(String(t.content||'')))
+    .slice(-10)
+    .map(t=>({role:t.role,content:String(t.content||'').slice(0,1200)}));
+}
+async function micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter=null,mode='interview',notes=[],voiceProfile=null}){
+  const selectedMode=micheleEditorialMode(userMessage,mode);
+  const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter});
+  try{
+    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.55:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
+      VAL_SYSTEM_PROMPT,
+      'You are Michele Julian’s manuscript editor and conversational writing partner inside VAL.',
+      'You are speaking directly to Michele. Michele is the author. Use “you,” never “Michele may want.”',
+      'Do the requested task immediately. If Michele says “Read Chapter 2 and give me your thoughts,” read the supplied Chapter 2 text and give real editorial thoughts.',
+      'Do not repeat instructions back. Do not say you would use something as a direction. Do the work.',
+      'Banned openings and filler: “I hear you,” “That makes sense,” “Thank you for sharing,” “That’s powerful,” “Let’s explore that,” “I would use,” “I understand.”',
+      'Protect Michele’s funny, warm, heart-wrenching, irreverent, embodied memoir voice. Keep readers inside the lived story and out of their heads unless reflection is intentionally prompted.',
+      micheleLayeredEditorialFrameworkText(),
+      'Do not ask Michele to choose between humor, scene building, emotional truth, transitions, and reader takeaway. Assume every strong chapter needs all of them layered together.',
+      'Before asking Michele a question, use the selected chapter content. Do not ask a question already answered by the chapter.',
+      'If mode is Interview, ask one strong chapter-specific question at a time. No list of homework. Voice-first, conversational.',
+      'In Interview mode, reply with ONLY the next question or a very short chapter-choice question. Do not include chapter labels, status updates, “Direction captured,” “Use this as the rewrite direction,” or “Nothing has changed.”',
+      'If mode is Editor, return sections: Overview, Strengths, Opportunities, Emotional Impact, Reader Confusion Risks, Editorial Recommendations, Proofreading Notes.',
+      'If mode is Proofreading, return sections: Spelling Errors, Grammar Issues, Punctuation Issues, Repetition, Awkward Phrasing, Suggested Corrections.',
+      'If mode is Overview, return sections: Summary, Major Events, Emotional Arc, Themes, Lessons, Key Takeaways. Do not give editing suggestions unless Michele asked for thoughts or edits.',
+      'Whenever you analyze a chapter in Editor mode, include proofreading notes after developmental feedback.',
+      'If Michele asks what is next, tell her the last completed chapter when available, name the currently selected chapter, and ask whether she wants next chapter, chapter transitions, voice consistency, emotional arc, humor/levity, or something else.',
+      'Never imply the manuscript changed during chat. It only changes after Michele approves a revision draft for the fresh manuscript.',
+      'Return strict JSON with keys reply, readyToRewrite, suggestedInstruction.',
+      'reply should be specific and useful. For overview/editor/proofreading requests, answer with enough substance to be helpful.',
+      'suggestedInstruction should be an actionable rewrite instruction that accumulates Michele’s direction.'
+    ].join('\n'),user:JSON.stringify({
+      mode:selectedMode,
+      requiredSections:micheleModeSections(selectedMode),
+      internalChapterContextSummary:micheleChapterContextSummary(chapter),
+      currentChapter:{label:micheleChapterLabel(chapter),chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle,fullText:String(chapter.currentText||'').slice(0,16000)},
+      lastCompletedChapter:lastCompletedChapter?{chapterNumber:lastCompletedChapter.chapterNumber,chapterTitle:lastCompletedChapter.chapterTitle}:null,
+      micheleMessage:userMessage,
+      conversation:micheleConversationTurns(conversation),
+      editorNotes:(notes||[]).map(n=>String(n.note_text||n.noteText||'').slice(0,2500)).slice(0,4),
+      authorVoiceProfile:voiceProfile||null
+    })}),selectedMode==='interview'?10000:18000);
+    const parsed=JSON.parse(raw);
+    const reply=sanitizeMicheleEditorReply(parsed.reply||'');
+    if(!reply) return fallback;
+    return {
+      reply,
+      readyToRewrite:!!parsed.readyToRewrite,
+      suggestedInstruction:String(parsed.suggestedInstruction||fallback.suggestedInstruction||userMessage).trim(),
+      mode:selectedMode
+    };
+  }catch(e){
+    return fallback;
+  }
+}
+async function micheleGentleSummary({chapter,notes,voiceProfile}){
+  const fallback={
+    noticed:[
+      micheleChapterContextSummary(chapter),
+      `The next pass should layer humor, scene building, emotional truth, reader understanding, and transitions together instead of making Michele choose one lane.`,
+      `VAL should ask from the page itself, not from a generic writing prompt.`
+    ],
+    recommends:[
+      `Use the chapter’s existing material as the starting point and deepen what is already alive on the page.`,
+      `When Michele answers, create a revised draft that preserves her edge, humor, and voice while making the scene easier to inhabit.`,
+      `Show the revised version for approval before writing to the fresh manuscript.`
+    ],
+    question:micheleChapterSpecificQuestion(chapter)
+  };
+  try{
+    const raw=await callValModel({json:true,temperature:0.25,maxTokens:1100,system:[VAL_SYSTEM_PROMPT,[
+      'Return strict JSON only with keys noticed, recommends, question.',
+      'This is Michele’s calm book companion. It should feel emotionally intelligent, specific, and useful — not generic.',
+      'noticed must contain 2-3 substantial but gentle bullets, each 18-40 words, about what the chapter/editor notes reveal.',
+      'recommends must contain 2-3 concrete rewrite directions, each 18-40 words, focused on applying humor, scene building, emotional truth, reader understanding, and transitions together.',
+      'question must be one specific, easy-to-answer question tied to this chapter. Do not use the vague phrase "What feels right to you?" by itself.',
+      'Do not ask Michele to choose between humor, sensory scene building, emotional truth, transitions, or reader takeaway. Assume the chapter needs all of them.',
+      'Ask one informed question from the actual chapter content. Do not ask Michele to explain what the chapter already says.',
+      'Do not overwhelm Michele. Do not give homework. Do not merely suggest; prepare for VAL to rewrite after Michele answers.',
+      micheleLayeredEditorialFrameworkText(),
+      'If Master Edits 1 notes are present, weave in the most applicable point without naming a long process.'
+    ].join('\n')].join('\n'),user:[`Chapter: ${chapter.chapterTitle}`,`Current text excerpt:\n${String(chapter.currentText||'').slice(0,9000)}`,notes.length?`Editor notes:\n${notes.map(n=>n.note_text||n.noteText).join('\n')}`:'',voiceProfile?`Author voice profile:\n${JSON.stringify(voiceProfile).slice(0,4000)}`:''].filter(Boolean).join('\n\n')});
+    const parsed=JSON.parse(raw);
+    const question=String(parsed.question||'').trim();
+    return {noticed:compactMicheleBullets(parsed.noticed),recommends:compactMicheleBullets(parsed.recommends),question:/what feels right to you\??$/i.test(question)?micheleChapterSpecificQuestion(chapter):(question||micheleChapterSpecificQuestion(chapter))};
+  }catch(e){return fallback;}
+}
+async function rewriteMicheleChapter({chapter,response,notes,voiceProfile}){
+  const chunks=splitChapterText(chapter.currentText||'',16000);
+  const rewritten=[];
+  const profileText=voiceProfile?JSON.stringify(voiceProfile).slice(0,7000):'No saved voice profile yet. Infer gently from the chapter and Michele response.';
+  const noteText=notes.map(n=>`- ${n.note_type||n.noteType||'note'}: ${n.note_text||n.noteText}`).join('\n');
+  for(let i=0;i<chunks.length;i++){
+    const user=[
+      `Chapter: Chapter #${chapter.chapterNumber}: ${chapter.chapterTitle}`,
+      `Michele response/instruction: ${response}`,
+      noteText?`Current editor notes:\n${noteText}`:'',
+      `Author Voice Profile:\n${profileText}`,
+      micheleLayeredEditorialFrameworkText(),
+      `Rewrite section ${i+1} of ${chunks.length}. Apply Michele's instruction. Apply all five editorial layers together by default; do not make this a single-lane edit. Apply Master Edits 1 point by point where applicable. Preserve her voice over generic polish. Keep factual sequence. Do not summarize. Return only rewritten prose.`,
+      chunks[i]
+    ].filter(Boolean).join('\n\n');
+    rewritten.push((await callValModel({system:[VAL_SYSTEM_PROMPT,'You are Michele VAL, a calm memoir co-editor. You apply the author response and Master Edits 1 by rewriting the supplied chapter text. Preserve Michele’s funny, emotionally sharp, embodied memoir voice. Layer humor, scene building, emotional truth, reader understanding, and transitions together. Do not give suggestions. Do not explain. Return only the rewritten chapter body.'].join('\n'),user,maxTokens:6500,temperature:0.45})).trim());
+  }
+  const afterText=rewritten.filter(Boolean).join('\n\n').trim();
+  if(!afterText) throw new Error('Rewrite returned no text.');
+  const changeSummary=await callValModel({system:'Summarize the rewrite in one calm sentence for internal/admin use only.',user:`Instruction: ${response}\n\nBefore excerpt:\n${chapter.currentText.slice(0,1500)}\n\nAfter excerpt:\n${afterText.slice(0,1500)}`,maxTokens:160,temperature:0.2}).catch(()=>`Applied Michele's response to Chapter ${chapter.chapterNumber}.`);
+  return {afterText,changeSummary};
+}
+async function refreshMicheleReadingCopy(project){
+  const readingId=bookProjectReadingDocId(project);
+  if(!readingId) return null;
+  const masterDoc=await readGoogleDocRaw(bookProjectMasterDocId(project));
+  const cleanText=googleDocTextFromStructuralElements(googleDocStructuralElements(masterDoc)).trim();
+  return updateGoogleDoc({documentId:readingId,content:cleanText,mode:'replace'});
+}
+function micheleManuscriptTextWithReplacement(chapters,chapterId,replacementText){
+  return (chapters||[]).map(ch=>{
+    const heading=String(ch.googleDocSectionMarker||`Chapter #${ch.chapterNumber}: ${ch.chapterTitle||''}`).trim();
+    const body=String(ch.id===chapterId?replacementText:(ch.currentText||'')).trim();
+    return `${heading}\n\n${body}`.trim();
+  }).filter(Boolean).join('\n\n\n');
+}
+function micheleWordCount(text){
+  return String(text||'').trim().split(/\s+/).filter(Boolean).length;
+}
+function micheleIsEmptyDocText(text){
+  return micheleWordCount(text)<8;
+}
+function micheleChapterHeadingText(chapter){
+  if(Number(chapter?.chapterNumber)===0){
+    const marker=String(chapter.googleDocSectionMarker||'').trim();
+    if(marker) return marker;
+    const title=String(chapter.chapterTitle||'Prologue').trim();
+    return title&&title!=='Prologue'?`Prologue: ${title}`:'Prologue';
+  }
+  return String(chapter?.googleDocSectionMarker||`Chapter #${chapter?.chapterNumber}: ${chapter?.chapterTitle||''}`).trim();
+}
+function micheleForbiddenManuscriptContent(text){
+  const body=String(text||'');
+  return /^\s*(Michele|VAL|Assistant|User)\s*:/m.test(body)
+    || /\b(Overview|Strengths|Opportunities|Reader Confusion Risks|Editorial Recommendations|Proofreading Notes|Spelling Errors|Grammar Issues|Suggested Corrections)\b/.test(body.slice(0,2500));
+}
+function findMicheleOutputChapter(readingChapters,chapter){
+  const number=Number(chapter?.chapterNumber);
+  const marker=String(chapter?.googleDocSectionMarker||'').replace(/\s+/g,' ').trim().toLowerCase();
+  const matches=(readingChapters||[]).filter(ch=>{
+    const chNum=Number(ch.chapterNumber);
+    const chMarker=String(ch.googleDocSectionMarker||'').replace(/\s+/g,' ').trim().toLowerCase();
+    return chNum===number || (marker&&chMarker===marker);
+  });
+  return {match:matches[0]||null,count:matches.length};
+}
+function michelePlacementRequiredResult(chapter,docText){
+  return {
+    ok:false,
+    placementRequired:true,
+    gentleMessage:`I don’t see ${micheleChapterLabel(chapter)} in the fresh manuscript yet. Where should I place it?`,
+    chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},
+    placements:[
+      {id:'beginning',label:'Place at beginning'},
+      {id:'end',label:'Place at end'}
+    ],
+    currentDocWords:micheleWordCount(docText)
+  };
+}
+async function micheleOutputPlacementPreflight({project,chapter,placement=''}){
+  const readingId=bookProjectReadingDocId(project);
+  const masterId=bookProjectMasterDocId(project);
+  if(!readingId) throw new Error('MICHELE_READING_COPY_DOC_ID is required. Refusing to edit the original source manuscript.');
+  if(readingId===masterId) throw new Error('Reading/output doc matches the source manuscript. Refusing to edit the original source manuscript.');
+  const doc=await readGoogleDocRaw(readingId);
+  const docText=googleDocExtractedText(doc);
+  const readingChapters=parseMicheleDocChapters(doc);
+  const located=findMicheleOutputChapter(readingChapters,chapter);
+  if(located.count>1) throw new Error('This edit would greatly increase the document length. I’m stopping this so the manuscript is not accidentally duplicated.');
+  if(!located.match&&!micheleIsEmptyDocText(docText)&&!['beginning','end'].includes(String(placement||''))){
+    return michelePlacementRequiredResult(chapter,docText);
+  }
+  return {ok:true,readingId,located,currentDocWords:micheleWordCount(docText)};
+}
+async function replaceMicheleOutputChapterOnly({documentId,chapter,fullText,placement=''}){
+  const doc=await readGoogleDocRaw(documentId);
+  const docText=googleDocExtractedText(doc);
+  const currentDocWords=micheleWordCount(docText);
+  const clean=String(fullText||'').replace(/\r\n/g,'\n').trim();
+  if(!clean) throw new Error('Rewrite returned empty chapter text.');
+  if(micheleForbiddenManuscriptContent(clean)) throw new Error('This looks like notes or a chat transcript, not clean manuscript text. I saved nothing to the manuscript document.');
+  const proposedWords=micheleWordCount(clean);
+  const readingChapters=parseMicheleDocChapters(doc);
+  const located=findMicheleOutputChapter(readingChapters,chapter);
+  if(located.count>1) throw new Error('This edit would greatly increase the document length. I’m stopping this so the manuscript is not accidentally duplicated.');
+  let requests=[],previousChapterText='',expectedWords=proposedWords,writeMode='initialize_chapter';
+  if(located.match){
+    previousChapterText=located.match.currentText||'';
+    const previousWords=micheleWordCount(previousChapterText);
+    expectedWords=Math.max(0,currentDocWords-previousWords+proposedWords);
+    await saveChapterVersionText(chapter,previousChapterText,`Fresh Google Doc snapshot before write. Previous words: ${previousWords}. Edited words: ${proposedWords}.`,'before_fresh_doc_write');
+    const start=Number(located.match.bodyStartIndex),end=Number(located.match.endIndex);
+    if(end>start) requests.push({deleteContentRange:{range:{startIndex:start,endIndex:end}}});
+    requests.push({insertText:{location:{index:start},text:clean+'\n'}});
+    writeMode='replace_chapter_section';
+  }else{
+    if(!micheleIsEmptyDocText(docText)&&!['beginning','end'].includes(String(placement||''))) throw new Error('Selected chapter was not found in the fresh manuscript document. I need to know where to place it.');
+    const heading=micheleChapterHeadingText(chapter);
+    expectedWords=currentDocWords+proposedWords+micheleWordCount(heading);
+    await saveChapterVersionText(chapter,'',`Fresh Google Doc snapshot before first chapter insert. Previous words: ${currentDocWords}. Edited words: ${proposedWords}.`,'before_fresh_doc_insert');
+    const insertIndex=String(placement||'beginning')==='end'?googleDocEndIndex(doc):1;
+    requests=[{insertText:{location:{index:insertIndex},text:`${insertIndex>1?'\n\n':''}${heading}\n\n${clean}\n`}}];
+    writeMode=micheleIsEmptyDocText(docText)?'initialize_chapter':`insert_chapter_${placement}`;
+  }
+  if(currentDocWords>0&&expectedWords>currentDocWords*1.25&&!['beginning','end'].includes(String(placement||''))){
+    throw new Error('This edit would greatly increase the document length. I’m stopping this so the manuscript is not accidentally duplicated.');
+  }
+  await googleDocsBatchUpdate(documentId,requests);
+  return {mode:writeMode,currentDocWords,previousChapterWords:micheleWordCount(previousChapterText),editedChapterWords:proposedWords,expectedDocWords:expectedWords};
+}
+async function verifyMicheleOutputWrite({documentId,chapter,fullText}){
+  const doc=await readGoogleDocRaw(documentId);
+  const outputText=googleDocExtractedText(doc);
+  const heading=String(chapter.googleDocSectionMarker||`Chapter #${chapter.chapterNumber}: ${chapter.chapterTitle||''}`).trim();
+  const sample=String(fullText||'').replace(/\s+/g,' ').trim().slice(0,180);
+  const haystack=outputText.replace(/\s+/g,' ');
+  if(!haystack.includes(heading.replace(/\s+/g,' ')) || (sample&& !haystack.includes(sample))){
+    throw new Error('The rewritten chapter was not confirmed in the fresh output document. Original manuscript was not edited.');
+  }
+  return {title:doc.title||'Fresh manuscript output',textLength:outputText.length};
+}
+async function writeMicheleChapterResult({synced,chapter,fullText,placement=''}){
+  const readingId=bookProjectReadingDocId(synced.project);
+  const masterId=bookProjectMasterDocId(synced.project);
+  if(!readingId) throw new Error('MICHELE_READING_COPY_DOC_ID is required. Refusing to edit the original source manuscript.');
+  if(readingId===masterId) throw new Error('Reading/output doc matches the source manuscript. Refusing to edit the original source manuscript.');
+  const guardedWrite=await replaceMicheleOutputChapterOnly({documentId:readingId,chapter,fullText,placement});
+  const formatting=await formatGoogleDocForManuscript(readingId);
+  const verified=await verifyMicheleOutputWrite({documentId:readingId,chapter,fullText});
+  return {id:readingId,title:verified.title||'Fresh manuscript output',url:googleDocUrl(readingId),mode:guardedWrite.mode,guardedWrite,formatting,verified,sourceDocId:masterId,originalManuscriptEdited:false};
+}
+async function updateMicheleVoiceProfile({projectId,response,chapter,beforeText,afterText}){
+  const existing=await getMicheleVoiceProfile(projectId);
+  let parsed=null;
+  try{
+    const raw=await callValModel({json:true,temperature:0.2,maxTokens:900,system:'Update an author voice profile. Return strict JSON keys: voiceSummary, preferredStyle, avoidStyle, favoritePhrases, rejectedPhrases, acceptedPatterns, rejectedPatterns. Arrays only for list fields.',user:`Existing profile:\n${JSON.stringify(existing||{})}\n\nMichele response:\n${response}\n\nChapter: ${chapter.chapterTitle}\n\nBefore excerpt:\n${beforeText.slice(0,1800)}\n\nAfter excerpt:\n${afterText.slice(0,1800)}`});
+    parsed=JSON.parse(raw);
+  }catch(e){parsed={voiceSummary:existing?.voice_summary||existing?.voiceSummary||'Preserve Michele’s memoir voice, emotional honesty, humor, and grounded spirituality.',preferredStyle:[response],avoidStyle:[],favoritePhrases:[],rejectedPhrases:[],acceptedPatterns:['Applied direct Michele feedback'],rejectedPatterns:[]};}
+  if(pgPool){
+    const id=existing?.id||uuid('voice');
+    if(existing) await dbQuery('update author_voice_profile set voice_summary=$1,preferred_style=$2,avoid_style=$3,favorite_phrases=$4,rejected_phrases=$5,accepted_patterns=$6,rejected_patterns=$7,updated_at=now() where id=$8',[parsed.voiceSummary||parsed.voice_summary||'',JSON.stringify(jsonArrayField(parsed.preferredStyle)),JSON.stringify(jsonArrayField(parsed.avoidStyle)),JSON.stringify(jsonArrayField(parsed.favoritePhrases)),JSON.stringify(jsonArrayField(parsed.rejectedPhrases)),JSON.stringify(jsonArrayField(parsed.acceptedPatterns)),JSON.stringify(jsonArrayField(parsed.rejectedPatterns)),id]);
+    else await dbQuery('insert into author_voice_profile (id,book_project_id,voice_summary,preferred_style,avoid_style,favorite_phrases,rejected_phrases,accepted_patterns,rejected_patterns,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())',[id,projectId,parsed.voiceSummary||'',JSON.stringify(jsonArrayField(parsed.preferredStyle)),JSON.stringify(jsonArrayField(parsed.avoidStyle)),JSON.stringify(jsonArrayField(parsed.favoritePhrases)),JSON.stringify(jsonArrayField(parsed.rejectedPhrases)),JSON.stringify(jsonArrayField(parsed.acceptedPatterns)),JSON.stringify(jsonArrayField(parsed.rejectedPatterns))]);
+    return;
+  }
+  const store=valStore(),rows=nextStoreArray(store,'authorVoiceProfiles');let row=rows.find(p=>p.bookProjectId===projectId);if(!row){row={id:uuid('voice'),bookProjectId:projectId};rows.push(row);}Object.assign(row,{voiceSummary:parsed.voiceSummary||'',preferredStyle:jsonArrayField(parsed.preferredStyle),avoidStyle:jsonArrayField(parsed.avoidStyle),favoritePhrases:jsonArrayField(parsed.favoritePhrases),rejectedPhrases:jsonArrayField(parsed.rejectedPhrases),acceptedPatterns:jsonArrayField(parsed.acceptedPatterns),rejectedPatterns:jsonArrayField(parsed.rejectedPatterns),updatedAt:new Date().toISOString()});saveValStore(store);
+}
+async function micheleBookContinueState(){
+  const synced=await syncMicheleBookFromDocs();
+  const projectId=bookProjectId(synced.project);
+  const chapter=await getMicheleCurrentChapter(synced.project,synced.chapters);
+  if(!chapter) throw new Error('No current chapter found.');
+  const lastCompleted=await latestMicheleCompletedChapter(synced.project,synced.chapters);
+  const [notes,voiceProfile]=await Promise.all([listMicheleEditorNotes(chapter.id,chapter),getMicheleVoiceProfile(projectId)]);
+  const gentle=await micheleGentleSummary({chapter,notes,voiceProfile});
+  return {ok:true,project:{id:projectId,title:synced.project.title||synced.project.title,masterDocId:bookProjectMasterDocId(synced.project),readingCopyDocId:bookProjectReadingDocId(synced.project)},chapter,lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null,chapters:synced.chapters.map(ch=>({id:ch.id,chapterNumber:ch.chapterNumber,chapterTitle:ch.chapterTitle,status:ch.status,lastSyncedAt:ch.lastSyncedAt})),summary:gentle,question:'What would you like to work on next?'};
+}
+async function getMicheleStoredChapterForConversation(chapterId=''){
+  await valDbReady;
+  if(pgPool){
+    if(chapterId){
+      const r=await dbQuery('select * from book_chapters where id=$1 limit 1',[chapterId]);
+      if(r.rows[0]) return normalizeBookChapter(r.rows[0]);
+    }
+    const r=await dbQuery('select * from book_chapters order by case when status=$1 then 0 else 1 end, chapter_number nulls last limit 1',['in_progress']);
+    if(r.rows[0]) return normalizeBookChapter(r.rows[0]);
+  }else{
+    const rows=(valStore().bookChapters||[]).map(normalizeBookChapter);
+    if(chapterId){
+      const found=rows.find(ch=>ch.id===chapterId);
+      if(found) return found;
+    }
+    return rows.find(ch=>ch.status==='in_progress')||rows.sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999))[0]||null;
+  }
+  return null;
+}
+async function listMicheleStoredChaptersForConversation(project){
+  await valDbReady;
+  const projectId=bookProjectId(project);
+  if(pgPool){
+    const r=await dbQuery('select * from book_chapters where book_project_id=$1 order by chapter_number nulls last',[projectId]);
+    return r.rows.map(normalizeBookChapter);
+  }
+  return (valStore().bookChapters||[]).filter(ch=>ch.bookProjectId===projectId).sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999)).map(normalizeBookChapter);
+}
+async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
+  const userMessage=String(message||'').trim();
+  if(!userMessage) throw new Error('Missing Michele message.');
+  const project=await ensureMicheleBookProject().catch(()=>null);
+  const storedChapters=project?await listMicheleStoredChaptersForConversation(project).catch(()=>[]): [];
+  const fallbackChapter=await getMicheleStoredChapterForConversation(chapterId);
+  const chapter=micheleFindChapterForMessage(userMessage,storedChapters,fallbackChapter);
+  if(!chapter) throw new Error('No current chapter found.');
+  const lastCompleted=project?await latestMicheleCompletedChapter(project,storedChapters).catch(()=>null):null;
+  const [notes,voiceProfile]=project?await Promise.all([
+    listMicheleEditorNotes(chapter.id,chapter).catch(()=>[]),
+    getMicheleVoiceProfile(bookProjectId(project)).catch(()=>null)
+  ]):[[],null];
+  const parsed=await micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter:lastCompleted,mode,notes,voiceProfile});
+  await saveMemoryItem({kind:'michele_chapter_analysis',summary:`${parsed.mode||micheleEditorialMode(userMessage,mode)} conversation for ${micheleChapterLabel(chapter)}`,rawText:String(parsed.reply||'').slice(0,6000),importance:3,metadata:{source:'michele_book_converse',chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode:parsed.mode||micheleEditorialMode(userMessage,mode)}}).catch(()=>{});
+  return {
+    ok:true,
+    reply:String(parsed.reply||'Choose the next thing you want from this chapter: overview, developmental edit, proofread, or interview questions. Nothing has changed in the manuscript.').trim(),
+    readyToRewrite:!!parsed.readyToRewrite,
+    suggestedInstruction:String(parsed.suggestedInstruction||userMessage).trim(),
+    mode:parsed.mode||micheleEditorialMode(userMessage,mode),
+    chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},
+    lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null
+  };
+}
+async function micheleBookDraftResponse({chapterId,response}){
+  if(!String(response||'').trim()) throw new Error('Missing Michele response.');
+  const synced=await syncMicheleBookFromDocs();
+  const projectId=bookProjectId(synced.project);
+  const chapter=chapterId?synced.chapters.find(ch=>ch.id===chapterId):await getMicheleCurrentChapter(synced.project,synced.chapters);
+  if(!chapter) throw new Error('No current chapter found.');
+  const [notes,voiceProfile]=await Promise.all([listMicheleEditorNotes(chapter.id,chapter),getMicheleVoiceProfile(projectId)]);
+  const feedback=await saveMicheleFeedback({chapterId:chapter.id,response});
+  const job=await createRewriteJob(chapter,response,chapter.currentText,feedback.id);
+  try{
+    const rewrite=await rewriteMicheleChapter({chapter,response,notes,voiceProfile});
+    await completeRewriteJob(job,{status:'draft_ready',afterText:rewrite.afterText,changeSummary:rewrite.changeSummary});
+    await saveMemoryItem({kind:'michele_book_revision_draft',summary:`Drafted revision for ${micheleChapterLabel(chapter)}`,rawText:rewrite.changeSummary||rewrite.afterText.slice(0,4000),importance:4,metadata:{source:'continue_my_book_draft',bookProjectId:projectId,chapterId:chapter.id,chapterNumber:chapter.chapterNumber,rewriteJobId:job.id}});
+    return {ok:true,draftReady:true,message:'Draft revision ready. Review it, then choose keep, adjust, or continue.',chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},rewriteJobId:job.id,afterText:rewrite.afterText,changeSummary:rewrite.changeSummary};
+  }catch(e){
+    await completeRewriteJob(job,{status:'failed',errorMessage:e.message});
+    throw e;
+  }
+}
+async function micheleBookApplyResponse({chapterId,response,placement='',rewriteJobId=''}){
+  if(!String(response||'').trim()&&!rewriteJobId) throw new Error('Missing Michele response.');
+  const synced=await syncMicheleBookFromDocs();
+  const projectId=bookProjectId(synced.project);
+  const chapter=chapterId?synced.chapters.find(ch=>ch.id===chapterId):await getMicheleCurrentChapter(synced.project,synced.chapters);
+  if(!chapter) throw new Error('No current chapter found.');
+  const placementCheck=await micheleOutputPlacementPreflight({project:synced.project,chapter,placement});
+  if(placementCheck&&placementCheck.placementRequired) return placementCheck;
+  let job=null,rewrite=null;
+  if(rewriteJobId){
+    job=await getRewriteJobById(rewriteJobId);
+    if(!job||job.chapterId!==chapter.id) throw new Error('Draft revision was not found for this chapter.');
+    if(!String(job.afterText||'').trim()) throw new Error('Draft revision has no manuscript text to approve.');
+    rewrite={afterText:job.afterText,changeSummary:job.changeSummary||'Approved Michele draft revision.'};
+    response=String(response||job.instruction||'Approved Michele draft revision.');
+  }else{
+    const [notes,voiceProfile]=await Promise.all([listMicheleEditorNotes(chapter.id,chapter),getMicheleVoiceProfile(projectId)]);
+    const feedback=await saveMicheleFeedback({chapterId:chapter.id,response});
+    job=await createRewriteJob(chapter,response,chapter.currentText,feedback.id);
+    try{rewrite=await rewriteMicheleChapter({chapter,response,notes,voiceProfile});}
+    catch(e){await completeRewriteJob(job,{status:'failed',errorMessage:e.message});throw e;}
+  }
+  await saveChapterSnapshot(chapter,'Snapshot before Michele approved draft write','continue_my_book_approved_write');
+  try{
+    const writeResult=await writeMicheleChapterResult({synced,chapter,fullText:rewrite.afterText,placement});
+    await updateMicheleChapterText(chapter,rewrite.afterText);
+    const readingCopy=writeResult;
+    await completeRewriteJob(job,{afterText:rewrite.afterText,changeSummary:rewrite.changeSummary});
+    const nextChapter=nextMicheleChapterAfter(synced.chapters,chapter);
+    await markMicheleChapterProgress(synced.project,{completedChapter:chapter,nextChapter});
+    await updateMicheleVoiceProfile({projectId,response,chapter,beforeText:chapter.currentText||'',afterText:rewrite.afterText}).catch(e=>console.warn('Voice profile update failed:',e.message));
+    await saveMemoryItem({kind:'michele_book_rewrite',summary:`Updated Chapter ${chapter.chapterNumber}: ${chapter.chapterTitle}`,rawText:rewrite.changeSummary||'',importance:5,metadata:{source:'continue_my_book',bookProjectId:projectId,chapterId:chapter.id,chapterNumber:chapter.chapterNumber,rewriteJobId:job.id,readingCopy,nextChapterId:nextChapter?.id||'',nextChapterNumber:nextChapter?.chapterNumber||''}});
+    return {ok:true,message:`Done. Chapter ${chapter.chapterNumber} has been written to the fresh manuscript document. The original manuscript was not edited.`,chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},nextChapter:nextChapter?{id:nextChapter.id,chapterNumber:nextChapter.chapterNumber,chapterTitle:nextChapter.chapterTitle}:null,rewriteJobId:job.id,changeSummary:rewrite.changeSummary,readingCopy};
+  }catch(e){
+    await completeRewriteJob(job,{status:'failed',errorMessage:e.message});
+    throw e;
+  }
+}
 async function rewriteGoogleDocChapter({query,documentId,targetDocumentId,mode='create'}){
   const doc=(await readValUploadedRewriteSource({query,documentId})) || await readGoogleDoc({documentId,query});
   if(!doc.text) throw new Error('Source document was found, but it did not contain readable text.');
@@ -7237,6 +9285,115 @@ app.post('/api/google/docs/rewrite',async(req,res)=>{
       mode:req.body.mode||'create'
     });
     res.json({ok:true,...result});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.get('/api/michele/book/continue',async(req,res)=>{
+  try{res.json(await micheleBookContinueState());}
+  catch(e){await auditLog({req,action:'michele_book_continue_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/converse',async(req,res)=>{
+  try{res.json(await micheleBookConverse({chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',conversation:req.body.conversation||[],mode:req.body.mode||''}));}
+  catch(e){await auditLog({req,action:'michele_book_conversation_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/draft',async(req,res)=>{
+  try{res.json(await micheleBookDraftResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||''}));}
+  catch(e){await auditLog({req,action:'michele_book_draft_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/respond',async(req,res)=>{
+  try{res.json(await micheleBookApplyResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||'',placement:req.body.placement||'',rewriteJobId:req.body.rewriteJobId||''}));}
+  catch(e){await auditLog({req,action:'michele_book_rewrite_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+async function latestMicheleSnapshot(chapterId=''){
+  if(pgPool){
+    const args=[];let where="where coalesce(length(trim(full_text)),0)>0";
+    if(chapterId){args.push(chapterId);where+=' and chapter_id=$1';}
+    const r=await dbQuery(`select * from chapter_versions ${where} order by created_at desc limit 1`,args);
+    const row=r.rows[0];
+    return row?{id:row.id,chapterId:row.chapter_id,versionNumber:row.version_number,changeSummary:row.change_summary,source:row.source,createdAt:row.created_at,preview:String(row.full_text||'').slice(0,900)}:null;
+  }
+  const rows=(valStore().chapterVersions||[]).filter(v=>(!chapterId||v.chapterId===chapterId)&&String(v.fullText||'').trim()).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  const row=rows[0];
+  return row?{id:row.id,chapterId:row.chapterId,versionNumber:row.versionNumber,changeSummary:row.changeSummary,source:row.source,createdAt:row.createdAt,preview:String(row.fullText||'').slice(0,900)}:null;
+}
+async function micheleAdminState(){
+  const project=await ensureMicheleBookProject();
+  let chapters=[],chapterSyncError='';
+  try{chapters=(await syncMicheleBookFromDocs()).chapters;}
+  catch(e){chapterSyncError=e.message||String(e);}
+  const latest=await latestMicheleSnapshot();
+  const google=await getGoogleConnectionStatus(REQUIRED_GOOGLE_DOC_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:REQUIRED_GOOGLE_DOC_SCOPES}));
+  const cfg={...micheleBookConfig(),masterDocId:bookProjectMasterDocId(project),readingCopyDocId:bookProjectReadingDocId(project)};
+  return {ok:true,config:cfg,project:{id:bookProjectId(project),title:project.title||cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,masterDocUrl:googleDocUrl(cfg.masterDocId),readingCopyDocUrl:googleDocUrl(cfg.readingCopyDocId)},googleDocs:{connected:!!google.connected,missingScopes:google.missingScopes||[],error:google.error||'',chapterSyncError},chapters,latestSnapshot:latest};
+}
+app.get('/api/michele/book/admin',requirePermission('settings:manage'),async(req,res)=>{try{res.json(await micheleAdminState());}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/michele/book/admin/config',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const project=await updateMicheleBookProjectConfig({
+      masterDocId:req.body.masterDocId||req.body.sourceDocId||req.body.sourceManuscriptDocId,
+      readingCopyDocId:req.body.readingCopyDocId||req.body.outputDocId||req.body.writeDocId,
+      title:req.body.title
+    });
+    const doc=await readGoogleDocRaw(project.masterDocId);
+    const chapters=parseMicheleDocChapters(doc);
+    res.json({ok:true,project,sourceTitle:doc.title||'Google Doc',chapterCount:chapters.length});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/michele/book/admin/test-read',requirePermission('settings:manage'),async(req,res)=>{
+  try{const project=await ensureMicheleBookProject();const doc=await readGoogleDocRaw(bookProjectMasterDocId(project));res.json({ok:true,title:doc.title,chapterCount:parseMicheleDocChapters(doc).length});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/michele/book/admin/test-write',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const project=await ensureMicheleBookProject();
+    const readingId=bookProjectReadingDocId(project),masterId=bookProjectMasterDocId(project);
+    if(!readingId) throw new Error('MICHELE_READING_COPY_DOC_ID is not configured.');
+    if(readingId===masterId) throw new Error('Reading/output doc matches the source manuscript. Refusing to edit the original source manuscript.');
+    const doc=await readGoogleDocRaw(readingId);
+    res.json({ok:true,result:{id:readingId,title:doc.title||'Fresh manuscript output',url:googleDocUrl(readingId),writeAccessLikely:true,mutated:false}});
+  }
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/michele/book/admin/format-output',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const project=await ensureMicheleBookProject();
+    const readingId=bookProjectReadingDocId(project);
+    const masterId=bookProjectMasterDocId(project);
+    if(!readingId) throw new Error('MICHELE_READING_COPY_DOC_ID is not configured. Refusing to edit the original source manuscript.');
+    if(readingId===masterId) throw new Error('Reading/output doc matches the source manuscript. Refusing to edit the original source manuscript.');
+    const result=await formatGoogleDocForManuscript(readingId);
+    await auditLog({req,action:'michele_book_output_formatted',resourceType:'book',resourceId:bookProjectId(project),metadata:{readingCopyDocId:readingId,masterDocId:masterId,url:result.url},success:true}).catch(()=>{});
+    res.json({ok:true,result,sourceDocId:masterId,outputDocId:readingId,originalManuscriptEdited:false});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/michele/book/admin/import-edits',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const text=String(req.body.text||req.body.rawText||'').trim();
+    if(text.length<50) throw new Error('Import text is too short.');
+    const synced=await syncMicheleBookFromDocs();
+    const result=await importMicheleMasterEdits({project:synced.project,chapters:synced.chapters,text,sourceTitle:req.body.sourceTitle||'Master Edits'});
+    await saveMemoryItem({kind:'book_editor_notes_import',summary:`Imported ${req.body.sourceTitle||'Master Edits'} for ${synced.chapters.length} chapters`,rawText:text.slice(0,50000),importance:5,metadata:{source:'michele_book_admin_import',sourceTitle:req.body.sourceTitle||'Master Edits',chapterCount:synced.chapters.length,noteCount:result.count}});
+    await auditLog({req,action:'michele_book_edits_imported',resourceType:'book',resourceId:bookProjectId(synced.project),metadata:{sourceTitle:req.body.sourceTitle||'Master Edits',chapterCount:synced.chapters.length,noteCount:result.count},success:true}).catch(()=>{});
+    res.json({ok:true,...result,chapterCount:synced.chapters.length});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/michele/book/admin/restore',requirePermission('settings:manage'),async(req,res)=>{
+  try{
+    const versionId=req.body.versionId||'',chapterId=req.body.chapterId||'';
+    let version=null;
+    if(pgPool){const r=await dbQuery('select * from chapter_versions where id=$1 or (chapter_id=$2 and version_number=$3) order by created_at desc limit 1',[versionId,chapterId,Number(req.body.versionNumber)||0]);version=r.rows[0];}
+    else version=(valStore().chapterVersions||[]).find(v=>v.id===versionId)||(valStore().chapterVersions||[]).find(v=>v.chapterId===chapterId&&Number(v.versionNumber)===Number(req.body.versionNumber));
+    if(!version) throw new Error('Snapshot version not found.');
+    const synced=await syncMicheleBookFromDocs();
+    const chapter=synced.chapters.find(ch=>ch.id===(version.chapter_id||version.chapterId));
+    if(!chapter) throw new Error('Chapter for snapshot not found.');
+    await saveChapterSnapshot(chapter,'Snapshot before admin restore','before_restore');
+    const fullText=version.full_text||version.fullText||'';
+    if(!String(fullText||'').trim()) throw new Error('Snapshot has no manuscript text to restore.');
+    await writeMicheleChapterResult({synced,chapter,fullText});
+    await updateMicheleChapterText(chapter,fullText);
+    await auditLog({req,action:'michele_book_chapter_restored',resourceType:'chapter',resourceId:chapter.id,metadata:{versionId:version.id||versionId,versionNumber:version.version_number||version.versionNumber},success:true}).catch(()=>{});
+    res.json({ok:true,message:`Restored Chapter ${chapter.chapterNumber} from snapshot ${version.version_number||version.versionNumber}.`});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
@@ -7928,6 +10085,11 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
 const GOALL_LEADS_SYSTEM_PROMPT = `
 You are Leads MCP GOALL, a focused lead generation and growth strategy specialist for the GOALL Agency.
 
+Scrape timing expectations:
+- Lead discovery now runs Level 1 business search asynchronously and waits for real results rather than failing fast on a short timeout. A focused single-industry, single-city search can take roughly 30-90 seconds; a broader multi-industry or multi-city search can take close to the full time budget.
+- When starting a lead scrape, tell the user it may take up to a couple of minutes for real results, rather than promising a "quick preview" or implying results will return in just a few seconds.
+- Do not describe the scrape as running in a fast first pass with deeper enrichment deferred to "keep the preview from stalling" - that framing no longer reflects how the pipeline works. The wait is for genuine Level 1 results, not enrichment.
+
 Help users identify target markets, define ideal customer profiles, build prospecting systems, create outreach strategies, qualify leads, improve conversion rates, and develop repeatable pipeline growth processes.
 
 Provide practical, results-oriented support for outbound campaigns, inbound lead capture, messaging, follow-up sequences, CRM organization, lead scoring, sales funnel optimization, and performance tracking.
@@ -7941,13 +10103,6 @@ Primary lead target:
 - Organizations with operational complexity
 - Businesses showing hiring, growth, expansion, or activity signals
 - Decision-makers such as founders, owners, CEOs, operations leaders, HR leaders, benefits leaders, sales leaders, and partnership leaders
-
-GOALL caller intelligence objective:
-- The scraper is not merely finding leads. It is preparing a caller to have a relevant business conversation.
-- Every GOALL lead should make it clear why the company is worth contacting, what appears to be happening inside the business now, why leadership may care about retention, hiring, workforce stability, benefits, or growth, and what opening line the caller should use.
-- Always produce a concise Lead Intelligence Summary in plain English.
-- Always produce a Recommended First Call Angle that a caller can read directly or lightly personalize.
-- The recommended angle should reference a real signal when available, such as expansion, hiring, employee count, leadership signal, active LinkedIn/company activity, job postings, reviews, or operational growth.
 
 GOALL Arizona priority industries:
 ${GOALL_PRIORITY_INDUSTRIES_ARIZONA.map(v=>`- ${v}`).join('\n')}
@@ -8039,8 +10194,6 @@ For each lead, collect and structure:
 4. Public presence: website, LinkedIn, Google
 5. Indicators of operational complexity
 6. Best available decision-maker contact path
-7. Plain-English caller intelligence summary
-8. Specific first-call opening angle
 
 SEARCH PROCESS - follow in order:
 1. Search company name + city/state
@@ -8050,17 +10203,14 @@ SEARCH PROCESS - follow in order:
 5. Search LinkedIn people / likely decision-makers
 6. Check Google Business
 7. Scan for news, hiring, activity, expansion, funding, operations, and growth signals
-8. Check hiring pages, public job postings, directories, business listings, and credible public sources for employee count or employee range
-9. Check for workforce pain signals such as recruiting-heavy language, staffing difficulty, turnover, short-staffed reviews, burnout, scheduling issues, or heavy technician/crew hiring
-10. Compile structured outputs
+8. Compile structured outputs
 
 Source priority:
 1. Official website
 2. LinkedIn company page
 3. Google Business listing
 4. News / press mentions
-5. Hiring pages / job postings
-6. Secondary directories and business listings
+5. Secondary directories
 
 Accuracy rules:
 - Only include information that is directly observed, clearly stated, or strongly supported by multiple signals.
@@ -8109,58 +10259,10 @@ linkedin_personal_url:
 
 linkedin_company_url:
 [company LinkedIn URL or fallback text]
-
-estimated_employee_count:
-[exact count or conservative range; blank only when no reasonable estimate exists]
-
-employee_count_confidence:
-[high / medium / low / unknown]
-
-employee_count_note:
-[brief note explaining source or why unknown]
-
-growth_signals:
-[new offices, expansion, services, markets, contracts, hiring surges, awards, or "No specific growth signal found yet."]
-
-leadership_signals:
-[current/recent CEO, COO, President, Owner, GM, VP Ops, HR Director, Benefits Manager, Sales Director, Office Manager, or "No named leadership signal found yet."]
-
-workforce_pain_signals:
-[hiring difficulty, recruiting, staffing pressure, reviews, burnout, scheduling, retention/benefits relevance, or "No clear workforce pain signal found yet."]
-
-engagement_activity_signals:
-[LinkedIn activity, website/news/community/company activity, recent announcements, or "Limited public engagement/activity signal found."]
-
-decision_maker_name:
-[name or blank]
-
-decision_maker_title:
-[title or blank]
-
-decision_maker_email:
-[email or blank]
-
-decision_maker_phone:
-[phone or blank]
-
-decision_maker_linkedin:
-[LinkedIn profile or blank]
-
-company_linkedin:
-[LinkedIn company page or blank]
-
-goall_intelligence_note:
-[concise plain-English Lead Intelligence Summary covering company overview, employee estimate, growth, leadership, workforce/hiring signals, why GOALL may be relevant, missing data, and first-call approach]
-
-recommended_first_call_angle:
-[one specific opening line the caller can use naturally]
-
-missing_data:
-[caller-critical missing data, or "No major caller-critical gaps."]
 `.trim();
 
 function parseLeadFieldOutputs(text){
-  const fields=['company_payload','company_google_raw','company_signals_raw','company_news_raw','linkedin_personal_url','linkedin_company_url','estimated_employee_count','employee_count_confidence','employee_count_note','growth_signals','leadership_signals','workforce_pain_signals','engagement_activity_signals','decision_maker_name','decision_maker_title','decision_maker_email','decision_maker_phone','decision_maker_linkedin','company_linkedin','goall_intelligence_note','recommended_first_call_angle','missing_data'];
+  const fields=['company_payload','company_google_raw','company_signals_raw','company_news_raw','linkedin_personal_url','linkedin_company_url'];
   const out={};
   fields.forEach((field,idx)=>{
     const next=fields[idx+1];
@@ -8206,7 +10308,7 @@ function assertRequiredLeadFieldIds(ids,required){
 }
 
 async function updateGhlLeadFields(contactId,fields){
-  const ids = await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const ids = await resolveLeadFieldIds().catch(()=>({}));
   const customFields = leadCustomFieldPayloads(ids,fields);
   if(!contactId || !customFields.length) return {updated:false, reason:contactId?'No lead custom field IDs configured':'No contactId provided'};
   const data=await ghlStrict('PUT',`/contacts/${contactId}`,{customFields});
@@ -8244,12 +10346,19 @@ async function verifyGhlLeadScoreField(contactId,expectedScore,ids){
 }
 
 let leadFieldIdCache=null;
-async function resolveLeadFieldIds(){
-  if(leadFieldIdCache) return leadFieldIdCache;
+let leadFieldIdPromise=null;
+async function discoverLeadFieldIds(){
   const resolved={...GHL_LEAD_FIELD_IDS};
+  const fields=await fetchGhlCustomFields();
+  // Railway can retain a deleted/recreated custom-field id. Validate every configured
+  // id first, then rediscover by safe field name so one stale id cannot block 200 imports.
+  for(const [key,id] of Object.entries(resolved)){
+    if(!id) continue;
+    const configured=fields.find(f=>String(ghlCustomFieldId(f))===String(id));
+    if(!configured || (key==='lead_score' && !isSafeLeadScoreField(configured))) resolved[key]='';
+  }
   const missing=Object.entries(resolved).filter(([,id])=>!id);
-  if(missing.length || resolved.lead_score){
-    const fields=await fetchGhlCustomFields();
+  if(missing.length){
     for(const [key] of missing){
       const wantedKey=GHL_LEAD_FIELD_KEYS[key];
       const wantedName=key.replace(/_/g,' ').toLowerCase();
@@ -8270,13 +10379,17 @@ async function resolveLeadFieldIds(){
       });
       if(found) resolved[key]=ghlCustomFieldId(found);
     }
-    if(resolved.lead_score){
-      const scoreField=fields.find(f=>String(ghlCustomFieldId(f))===String(resolved.lead_score));
-      if(!scoreField || !isSafeLeadScoreField(scoreField)) resolved.lead_score='';
-    }
   }
   leadFieldIdCache=resolved;
   return resolved;
+}
+
+async function resolveLeadFieldIds(){
+  if(leadFieldIdCache) return leadFieldIdCache;
+  if(!leadFieldIdPromise){
+    leadFieldIdPromise=discoverLeadFieldIds().finally(()=>{ leadFieldIdPromise=null; });
+  }
+  return leadFieldIdPromise;
 }
 
 async function assertGoallLeadScoreField(ids){
@@ -8651,9 +10764,14 @@ function resolveGoallLeadSearchPlan(body={}){
   const allPriority=leadProfile==='westwood'
     ? (mode.includes('all') || /\bwestwood|priority|leadership development|private businesses|businesses|companies\b/i.test(combined||'businesses')) && !explicitIndustries.length
     : mode.includes('all') || wantsAllGoallIndustries(combined) || (!explicitIndustries.length && /business|company|employer|goall|higher/i.test(combined||'businesses'));
-  const industries=allPriority
+  let industries=allPriority
     ? (leadProfile==='westwood'?WESTWOOD_PRIORITY_INDUSTRIES:GOALL_PRIORITY_INDUSTRIES_ARIZONA)
     : (explicitIndustries.length?explicitIndustries:[organizationType||'businesses']);
+  const batchIndex=Math.max(0,Number(body.goallBatchIndex)||0);
+  if(allPriority && leadProfile==='goall' && industries.length>GOALL_LEAD_INDUSTRIES_PER_RUN){
+    const start=(batchIndex*GOALL_LEAD_INDUSTRIES_PER_RUN)%industries.length;
+    industries=Array.from({length:GOALL_LEAD_INDUSTRIES_PER_RUN},(_,offset)=>industries[(start+offset)%industries.length]);
+  }
   const market=normalizeGoallMarket(body.market||body.location||body.cityState||'',combined,leadProfile);
   const employeeMinimum=donorValue(body.employeeMinimum||body.minimumEmployees||body.employees)||(leadProfile==='westwood'?25:GOALL_COMPANY_EMPLOYEE_MINIMUM);
   const limit=leadLimitValue(body.limit);
@@ -8674,6 +10792,7 @@ function resolveGoallLeadSearchPlan(body={}){
     tag:leadProfile==='westwood'?'limitless_enrich':normalizeLeadTag(body.tag||(!allPriority&&industries.length===1?industries[0]:'goall priority')),
     cities:leadProfile==='westwood'&&/\bidaho\b/i.test(market)?WESTWOOD_IDAHO_CITIES:(/\barizona\b/i.test(market)?GOALL_ARIZONA_CITIES:[]),
     fastSearch:/^(1|true|yes)$/i.test(String(body.fastSearch||body.fast_search||'')),
+    batchIndex,
     leadProfile,
     leadBrand:leadProfile==='westwood'?'Westwood':'GOALL'
   };
@@ -8698,8 +10817,6 @@ function reviewCountFromLead(p={}){
 function scoreGoallFit(p={}){
   const industry=String(p.aiExactIndustry||p.industry||p.organizationType||p.cause||'').toLowerCase();
   const text=[industry,p.organizationType,p.primaryService,p.operationalIndicators,p.donorEstimateBasis,p.employeeEstimateBasis,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ').toLowerCase();
-  const intel=buildGoallIntelligenceProfile(p,industry||'business');
-  const signalText=[text,intel.signals.growth,intel.signals.workforce,intel.signals.engagement,intel.employee.note].join(' ').toLowerCase();
   let score=45;
   const preferred=/trucking|construction|electrical|hvac|plumbing|law|chiropractic|medical|manufactur|staffing|professional|home care|roof|weld|logistics|dental|insurance|accounting/.test(text);
   if(preferred) score+=18;
@@ -8707,11 +10824,7 @@ function scoreGoallFit(p={}){
   if(validEmail(p.email)) score+=8;
   if(validPhone(p.phone)) score+=8;
   if(p.decisionMakerName||p.decisionMakerTitle) score+=8;
-  if(/multiple|locations|fleet|dispatch|crew|staff|team|hiring|careers|warehouse|service teams|employees/.test(signalText)) score+=10;
-  if(intel.employee.count) score+=8;
-  if(/hiring|job postings?|careers|technicians?|recruit|staffing|short.?staffed|turnover|burnout|scheduling|overwhelmed/.test(signalText)) score+=8;
-  if(/expanded|expansion|new location|opened|opening|new office|new market|contract|award|fastest growing|best places to work/.test(signalText)) score+=8;
-  if(/linkedin|post|announcement|community|news|active website|google reviews?/.test(signalText)) score+=5;
+  if(/multiple|locations|fleet|dispatch|crew|staff|team|hiring|careers|warehouse|service teams|employees/.test(text)) score+=10;
   const reviews=reviewCountFromLead(p);
   if(reviews>=100) score+=8;
   else if(reviews>=25) score+=5;
@@ -8721,9 +10834,6 @@ function scoreGoallFit(p={}){
     preferred?'priority GOALL industry':'general business fit',
     p.website?'active website':'website unclear',
     validEmail(p.email)||validPhone(p.phone)?'reachable contact path':'no reachable contact path',
-    intel.employee.count?`employee estimate ${intel.employee.count}`:'employee count unclear',
-    intel.signals.growth && !/^No specific/i.test(intel.signals.growth)?'growth signal found':'',
-    intel.signals.workforce && !/^No clear/i.test(intel.signals.workforce)?'workforce signal found':'',
     reviews?`${reviews} Google reviews`:'',
     p.decisionMakerName||p.decisionMakerTitle?'decision-maker signal':''
   ].filter(Boolean).join('; ');
@@ -8735,27 +10845,25 @@ function leadScoreFromGoallFit(p={}){
   const c=leadContactability(p);
   const industryText=String([p.aiExactIndustry,p.industry,p.organizationType,p.primaryService,p.cause].filter(Boolean).join(' ')).toLowerCase();
   const signalText=String([p.operationalIndicators,p.donorEstimateBasis,p.employeeEstimateBasis,p.growthActivity,p.hiringActivity,p.careersPage,p.goallFitReason,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ')).toLowerCase();
-  const intel=buildGoallIntelligenceProfile(p,industryText||'business');
-  const employeeCount=donorValue(intel.employee.numeric)||employeeEstimateMinimum(intel.employee.count);
   const highestIndustries=/trucking|hvac|plumbing|electrical|welding|construction|roofing|manufactur|law office|chiropractic|medical|dental|staffing|home care|logistics|commercial cleaning|security|fire protection/.test(industryText);
   const alignedIndustries=highestIndustries || /accounting|insurance|wealth|engineering|architecture|property management|auto repair|collision|equipment rental|physical therapy|behavioral health|veterinary/.test(industryText);
-  const employeeSignals=!!intel.employee.count || /10\+|employees|staff|team|crew|fleet|dispatch|payroll|benefit|multiple locations|hiring|careers|warehouse|commercial|field teams|service teams/.test(signalText);
+  const employeeSignals=/10\+|employees|staff|team|crew|fleet|dispatch|payroll|benefit|multiple locations|hiring|careers|warehouse|commercial|field teams|service teams/.test(signalText);
   const decisionMakerFound=!!(p.decisionMakerName||p.linkedinPersonalUrl);
   const strongContact=c.contactabilityStatus==='full_contactability';
   const reachable=!!(c.hasEmail||c.hasPhone);
-  const strongActivity=employeeSignals || reviewCountFromLead(p)>=100 || /multiple locations|hiring|careers|commercial|fleet|dispatch|crew|team/.test(signalText) || !/^No specific/i.test(intel.signals.growth) || !/^No clear/i.test(intel.signals.workforce);
+  const strongActivity=employeeSignals || reviewCountFromLead(p)>=100 || /multiple locations|hiring|careers|commercial|fleet|dispatch|crew|team/.test(signalText);
   const weakSignals=/solo|sole proprietor|one person|very small|weak|unclear|missing website|no website|low-fit|low fit/.test(signalText);
   let leadScore=3;
   let leadScoreReason='Score 3 because the business appears relevant, but decision-maker, employee-size, or contact evidence is incomplete.';
-  if(highestIndustries && decisionMakerFound && strongContact && strongActivity && fit>=78 && (employeeSignals || employeeCount>=10)){
+  if(highestIndustries && decisionMakerFound && strongContact && strongActivity && fit>=78){
     leadScore=1;
-    leadScoreReason='Score 1 because the business is strongly GOALL-aligned, has a verified decision-maker signal, full contactability, and meaningful employee, growth, hiring, or workforce evidence.';
+    leadScoreReason='Score 1 because the business is strongly GOALL-aligned, has a verified decision-maker signal, full contactability, and meaningful activity or employee-size evidence.';
   }else if(highestIndustries && reachable && fit>=65){
     leadScore=2;
-    leadScoreReason='Score 2 because the business is strongly aligned and reachable, but decision-maker, employee-size, or workforce evidence still needs confirmation.';
+    leadScoreReason='Score 2 because the business is strongly aligned and reachable, but decision-maker or employee-size evidence still needs confirmation.';
   }else if(alignedIndustries && reachable && fit>=58){
     leadScore=2;
-    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but full contactability, decision-maker, employee-size, or workforce evidence is not fully verified.';
+    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but full contactability, decision-maker, or employee-size evidence is not fully verified.';
   }else if(fit>=48 && !weakSignals){
     leadScore=3;
     leadScoreReason='Score 3 because the business may fit GOALL, but the current evidence is incomplete.';
@@ -8939,217 +11047,6 @@ function leadDomain(value){
   }
 }
 
-function leadArrayText(value){
-  if(Array.isArray(value)) return value.filter(Boolean).map(v=>String(v).trim()).filter(Boolean).join('; ');
-  return String(value||'').trim();
-}
-
-function firstLeadValue(...values){
-  for(const value of values){
-    const text=leadArrayText(value);
-    if(text && !/^(unknown|unclear|none|null|undefined|n\/a)$/i.test(text)) return text;
-  }
-  return '';
-}
-
-function employeeCountBand(n){
-  const value=Number(n)||0;
-  if(value>=500) return '500+';
-  if(value>=250) return '250-499';
-  if(value>=100) return '100-249';
-  if(value>=50) return '50-99';
-  if(value>=25) return '25-49';
-  if(value>=10) return '10-24';
-  if(value>0) return '1-9';
-  return '';
-}
-
-function employeeEstimateMinimum(value){
-  const raw=String(value||'');
-  const range=raw.match(/\b(\d{1,5})\s*(?:-|to|–)\s*(\d{1,5})\b/);
-  if(range) return Number(range[1])||0;
-  const plus=raw.match(/\b(\d{1,5})\s*\+\b/);
-  if(plus) return Number(plus[1])||0;
-  return donorValue(raw);
-}
-
-function goallEmployeeEstimate(p={}){
-  const rawEmployeeValue=firstLeadValue(
-    p.estimatedEmployeeCount,
-    p.estimated_employee_count,
-    p.scrapedNumberOfEmployees,
-    p.scraped_number_of_employees,
-    p.employeeCount,
-    p.employees,
-    p.linkedinEmployeeCount,
-    p.linkedin_employee_count,
-    p.linkedinCompanyEmployeeCount,
-    p.approximateDonors,
-    p.estimatedDonors,
-    p.donorCount
-  );
-  const rangeMatch=String(rawEmployeeValue||'').match(/\b(\d{1,5})\s*(?:-|to|–)\s*(\d{1,5})\b|\b(\d{1,5})\s*\+\b/);
-  const band=firstLeadValue(
-    p.linkedinCompanySizeBand,
-    p.linkedin_company_size_band,
-    p.employeeCountRange,
-    p.employee_count_range,
-    p.companySizeBand
-  ) || (rangeMatch?rangeMatch[0]:'');
-  const exact=rangeMatch?0:donorValue(rawEmployeeValue);
-  const basis=firstLeadValue(
-    p.employeeCountNote,
-    p.employee_count_note,
-    p.employeeEstimateBasis,
-    p.donorEstimateBasis,
-    p.linkedinMatchNotes,
-    p.linkedin_match_notes,
-    Array.isArray(p.evidenceSignals)?p.evidenceSignals.join('; '):p.evidenceSignals,
-    p.googleRaw
-  );
-  if(exact){
-    return {
-      count:String(exact),
-      confidence:firstLeadValue(p.employeeCountConfidence,p.employee_count_confidence) || (p.linkedinEmployeeCount||p.linkedin_employee_count?'high':'medium'),
-      note:basis || 'Employee count estimate came from public scrape/enrichment signals.',
-      numeric:exact
-    };
-  }
-  if(band){
-    return {
-      count:band,
-      confidence:firstLeadValue(p.employeeCountConfidence,p.employee_count_confidence) || 'medium',
-      note:basis || 'Exact employee count was not found, so the available public company-size band is stored.',
-      numeric:0
-    };
-  }
-  const signalText=String([p.organizationType,p.industry,p.operationalIndicators,p.hiringActivity,p.careersPage,leadArrayText(p.evidenceSignals)].filter(Boolean).join(' ')).toLowerCase();
-  let inferred='';
-  if(/\bfleet|warehouse|multiple locations|dispatch|crews?|technicians?|commercial|manufacturing|staffing|logistics|trucking\b/.test(signalText)) inferred='10-49';
-  if(/\bmultiple locations|branch|branches|regional|large fleet|distribution|factory|plant\b/.test(signalText)) inferred='25-99';
-  if(inferred){
-    return {
-      count:inferred,
-      confidence:'low',
-      note:'Exact employee count was not public. Range is inferred from public operating signals such as crews, locations, fleet, hiring, or commercial operations.',
-      numeric:0
-    };
-  }
-  return {
-    count:'',
-    confidence:'unknown',
-    note:'No reasonable employee count estimate was found from website, listing, LinkedIn, hiring, or public source signals.',
-    numeric:0
-  };
-}
-
-function goallLeadSignals(p={},employee={}){
-  const evidence=leadArrayText(p.evidenceSignals);
-  const growth=firstLeadValue(
-    p.growthSignals,
-    p.growth_signals,
-    p.growthActivity,
-    p.operationalActivity,
-    p.eventsOrCampaigns,
-    p.newsRaw,
-    p.news_raw_last_60_days
-  );
-  const leadership=firstLeadValue(
-    p.leadershipSignals,
-    p.leadership_signals,
-    p.leadershipChangeSummary,
-    p.leadership_change_summary,
-    p.decisionMakerName?`${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`:'',
-    p.linkedinCurrentTitle
-  );
-  const workforce=firstLeadValue(
-    p.workforcePainSignals,
-    p.workforce_pain_signals,
-    p.workforceStabilitySignal,
-    p.workforce_stability_signal,
-    p.hiringActivity,
-    p.careersPage,
-    p.reviewSentimentTrend,
-    p.operationalIndicators
-  );
-  const engagement=firstLeadValue(
-    p.engagementActivitySignals,
-    p.engagement_activity_signals,
-    p.socialActivity,
-    p.linkedinNotes,
-    p.linkedin_notes,
-    p.linkedinCompanyDescription,
-    p.googleReviewCount||p.google_rating?`${p.googleReviewCount||''} Google reviews${p.googleRating?' / '+p.googleRating+' rating':''}`:'',
-    p.website?'Active website found':''
-  );
-  const missing=[
-    employee.count?'':'employee count estimate',
-    p.decisionMakerName?'':'decision-maker name',
-    validEmail(p.email)?'':'decision-maker or company email',
-    validPhone(p.phone)?'':'phone',
-    p.linkedinCompanyUrl||p.linkedinOrganizationUrl?'':'company LinkedIn page',
-    growth?'':'recent growth signal'
-  ].filter(Boolean);
-  return {
-    growth:growth || 'No specific growth event found yet.',
-    leadership:leadership || 'No named leadership signal found yet.',
-    workforce:workforce || 'No clear hiring, retention, or workforce pain signal found yet.',
-    engagement:engagement || 'Limited public engagement/activity signal found.',
-    evidence:evidence || '',
-    missing
-  };
-}
-
-function buildGoallFirstCallAngle(p={},employee={},signals={}){
-  const name=p.organizationName||p.name||'the company';
-  const growth=signals.growth && !/^No specific/i.test(signals.growth) ? signals.growth : '';
-  const workforce=signals.workforce && !/^No clear/i.test(signals.workforce) ? signals.workforce : '';
-  const employeePhrase=employee.count ? `${employee.count} employees` : 'an employee base';
-  if(p.recommendedFirstCallAngle||p.recommended_first_call_angle) return p.recommendedFirstCallAngle||p.recommended_first_call_angle;
-  if(growth || workforce){
-    const hook=growth || workforce;
-    return `I noticed ${name} appears to have ${employeePhrase} and ${hook}. We work with growing employers that are trying to retain good people while controlling benefits and workforce costs.`;
-  }
-  return `I was looking at ${name} and saw enough employee-base and operating activity to think retention, hiring, benefits costs, or workforce stability may be relevant. We help employers make that easier to manage.`;
-}
-
-function buildGoallIntelligenceProfile(p={},exactIndustry='business'){
-  const employee=goallEmployeeEstimate(p);
-  const signals=goallLeadSignals(p,employee);
-  const contactability=leadContactability(p);
-  const company=p.organizationName||p.name||'Unnamed company';
-  const overview=`${company} is a ${exactIndustry||p.industry||p.organizationType||'business'}${p.location?' in '+p.location:''}.`;
-  const firstCall=buildGoallFirstCallAngle(p,employee,signals);
-  const missing=signals.missing.length?signals.missing.join(', '):'No major caller-critical gaps.';
-  const relevance=[
-    employee.count?`employee base estimated at ${employee.count}`:'employee count not yet verified',
-    signals.growth && !/^No specific/i.test(signals.growth)?'growth/activity signal found':'growth signal weak',
-    signals.workforce && !/^No clear/i.test(signals.workforce)?'workforce or hiring signal found':'workforce pain unclear',
-    contactability.contactabilityStatus.replace(/_/g,' ')
-  ].join('; ');
-  const note=[
-    `Company overview: ${overview}`,
-    `Employee count estimate: ${employee.count||'unknown'} (${employee.confidence}). ${employee.note}`,
-    `Growth signals discovered: ${signals.growth}`,
-    `Leadership signals discovered: ${signals.leadership}`,
-    `Workforce or hiring signals discovered: ${signals.workforce}`,
-    `Engagement/activity signals: ${signals.engagement}`,
-    `Why GOALL may be relevant: ${relevance}.`,
-    `Recommended first-call approach: ${firstCall}`,
-    `Missing data: ${missing}`
-  ].join('\n');
-  return {employee,signals,firstCall,missing,note,overview};
-}
-
-function strongGoallManualReviewLead(p={},intel=buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.industry||p.organizationType||'business')){
-  const hasGrowth=intel.signals.growth && !/^No specific/i.test(intel.signals.growth);
-  const hasWorkforce=intel.signals.workforce && !/^No clear/i.test(intel.signals.workforce);
-  const hasLeadership=intel.signals.leadership && !/^No named/i.test(intel.signals.leadership);
-  const hasEmployees=!!intel.employee.count && intel.employee.confidence!=='unknown';
-  const hasPublicFootprint=!!(p.website||p.googleMapsUrl||p.googleRaw||p.linkedinCompanyUrl||p.linkedinOrganizationUrl);
-  return hasPublicFootprint && hasEmployees && (hasGrowth || hasWorkforce || hasLeadership);
-}
-
 function leadCompanySummary(p,exactIndustry,contactability){
   const name=p.organizationName||p.name||'Unnamed business';
   const location=p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear';
@@ -9168,19 +11065,8 @@ function leadCustomFieldsFromProspect(p){
   const name=p.organizationName||p.name||'';
   const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
   const exactIndustry=String(p.aiExactIndustry||p.ai_exact_industry||p.exactIndustry||p.industry||p.cause||p.primaryService||'unclear').trim()||'unclear';
-  const isGoall=(p.leadProfile||'').toLowerCase()!=='westwood';
-  const automation=isGoall?mapGoallAutomationTag(p):{};
-  const normalizedProspect={
-    ...p,
-    email:p.email||p.decisionMakerEmail||p.decision_maker_email||'',
-    phone:p.phone||p.decisionMakerPhone||p.decision_maker_phone||'',
-    linkedinPersonalUrl:p.linkedinPersonalUrl||p.decisionMakerLinkedin||p.decisionMakerLinkedIn||p.decision_maker_linkedin||'',
-    linkedinCompanyUrl:p.linkedinCompanyUrl||p.companyLinkedin||p.companyLinkedIn||p.company_linkedin||''
-  };
-  p=normalizedProspect;
+  const automation=(p.leadProfile||'').toLowerCase()==='westwood'?{}:mapGoallAutomationTag(p);
   const contactability=leadContactability(p);
-  const goallIntel=isGoall?buildGoallIntelligenceProfile(p,exactIndustry):null;
-  const manualReviewOnly=isGoall && !contactability.importable && strongGoallManualReviewLead(p,goallIntel);
   const now=new Date().toISOString();
   const processedAt=p.leadLastProcessedAt||p.lead_last_processed_at||now;
   const ingestedAt=p.leadIngestedAt||p.lead_ingested_at||processedAt;
@@ -9208,7 +11094,7 @@ function leadCustomFieldsFromProspect(p){
   ].filter(Boolean);
   const signalSummary=positiveSignals.length?positiveSignals.join('; '):'Limited public signals found.';
   const topIndicators=positiveSignals.slice(0,5).join('\n');
-  const salesAngle=goallIntel?.firstCall||p.nextOutreachAngle||p.recommendedOutreachAngle||'Position GOALL around growth, follow-up, employee-base complexity, and turning missed opportunities into pipeline.';
+  const salesAngle=p.nextOutreachAngle||p.recommendedOutreachAngle||'Position GOALL around growth, follow-up, employee-base complexity, and turning missed opportunities into pipeline.';
   const contactPayload=[
     `Decision maker: ${p.decisionMakerName||'not verified'}`,
     `Title: ${p.decisionMakerTitle||p.linkedinCurrentTitle||'unclear'}`,
@@ -9247,19 +11133,15 @@ function leadCustomFieldsFromProspect(p){
     `GOALL fit reason: ${p.goallFitReason||'unclear'}`,
     `Email source: ${p.emailSource||'unclear'} (${p.emailQuality||classifyEmail(p.email)})`,
     `RocketReach: ${p.rocketReachStatus||p.rocketReach?.error||p.rocketReach?.data?.rawPreview||'not available'}`,
-    `Employee estimate: ${goallIntel?.employee?.count||p.estimatedEmployeeCount||p.estimated_employee_count||'unclear'}`,
-    `Employee estimate confidence: ${goallIntel?.employee?.confidence||p.employeeCountConfidence||p.employee_count_confidence||'unclear'}`,
-    `Employee estimate basis: ${goallIntel?.employee?.note||p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
-    `Growth signals: ${goallIntel?.signals?.growth||p.growthSignals||p.growth_signals||p.growthActivity||'unclear'}`,
-    `Workforce pain signals: ${goallIntel?.signals?.workforce||p.workforcePainSignals||p.workforce_pain_signals||p.workforceStabilitySignal||'unclear'}`,
-    `Recommended first call angle: ${goallIntel?.firstCall||p.nextOutreachAngle||'unclear'}`,
+    `Employee estimate basis: ${p.donorEstimateBasis||p.employeeEstimateBasis||'unclear'}`,
+    `Next outreach angle: ${p.nextOutreachAngle||'unclear'}`,
     `Confidence: ${p.confidence||'unclear'}`
   ].filter(Boolean).join('\n');
-  const fields = {
+  return {
     lead_source_system:'Grace Intelligence',
     lead_ingested_at:ingestedAt,
     lead_ingestion_id:enrichmentRunId,
-    lead_processing_status:contactability.importable?'ready_for_import':(manualReviewOnly?'manual_review':'rejected'),
+    lead_processing_status:contactability.importable?'ready_for_import':'rejected',
     painpoint:p.painpoint||p.painPoint||salesAngle,
     call_transcript:p.callTranscript||p.call_transcript||'',
     lead_dedupe_key:dedupeKey,
@@ -9298,7 +11180,7 @@ function leadCustomFieldsFromProspect(p){
     lead_score:String(p.leadScore||p.lead_score||''),
     lead_score_reason:p.leadScoreReason||p.lead_score_reason||'',
     lead_scored_at:p.leadScoredAt||p.lead_scored_at||processedAt,
-    lead_rejected_reason:contactability.importable||manualReviewOnly?'':(contactability.rejectionReason||'missing_email_and_phone'),
+    lead_rejected_reason:contactability.importable?'':(contactability.rejectionReason||'missing_email_and_phone'),
     lead_scoring_version:p.leadScoringVersion||p.lead_scoring_version||'goall-v2-contactability-company-person',
     approximat_donor_count:donorCount?String(donorCount):'unclear',
     linkedin_personal:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
@@ -9383,30 +11265,9 @@ function leadCustomFieldsFromProspect(p){
     needs_new_automation:automation.automationTag?String(!!automation.needsNewAutomation):'',
     suggested_new_automation_tag:automation.suggestedNewAutomationTag||''
   };
-  if(isGoall && goallIntel){
-    Object.assign(fields,{
-      estimated_employee_count:goallIntel.employee.count||'',
-      employee_count_confidence:goallIntel.employee.confidence||'unknown',
-      employee_count_note:goallIntel.employee.note||'',
-      growth_signals:goallIntel.signals.growth,
-      leadership_signals:goallIntel.signals.leadership,
-      workforce_pain_signals:goallIntel.signals.workforce,
-      engagement_activity_signals:goallIntel.signals.engagement,
-      decision_maker_name:p.decisionMakerName||'',
-      decision_maker_title:p.decisionMakerTitle||p.linkedinCurrentTitle||'',
-      decision_maker_email:contactability.email||'',
-      decision_maker_phone:contactability.phone||'',
-      decision_maker_linkedin:p.linkedinPersonalUrl||p.decisionMakerLinkedIn||'',
-      company_linkedin:p.linkedinCompanyUrl||p.linkedinOrganizationUrl||'',
-      goall_intelligence_note:goallIntel.note,
-      recommended_first_call_angle:goallIntel.firstCall,
-      missing_data:goallIntel.missing
-    });
-  }
-  return fields;
 }
 
-async function getOpportunityTarget(){
+async function resolveOpportunityTarget(){
   const data=await ghl('GET',`/opportunities/pipelines?locationId=${GHL_LOC}`);
   const pipelines=data.pipelines||data.data||[];
   if(GHL_OPPORTUNITY_PIPELINE_ID&&GHL_OPPORTUNITY_STAGE_ID){
@@ -9434,7 +11295,7 @@ async function getOpportunityTarget(){
     throw new Error(`No GHL opportunity pipeline matched "${GHL_OPPORTUNITY_PIPELINE_NAME}". Set GHL_OPPORTUNITY_PIPELINE_ID to the exact pipeline id in Railway. Available pipelines: ${available||'none returned'}`);
   }
   const stages=pipeline.stages||pipeline.pipelineStages||[];
-  const stage=stages.find(s=>{
+  const stage=stages.find(s=>GHL_OPPORTUNITY_STAGE_ID && String(s.id||s._id||'')===String(GHL_OPPORTUNITY_STAGE_ID)) || stages.find(s=>{
     const name=String(s.name||s.title||'').toLowerCase();
     return wantStage && name===wantStage;
   }) || stages.find(s=>{
@@ -9443,9 +11304,21 @@ async function getOpportunityTarget(){
   }) || {};
   if(!stage.id){
     const available=stages.map(s=>`${s.name||s.title||'Unnamed'} (${s.id||s._id||'no id'})`).slice(0,20).join(' | ');
-    throw new Error(`No GHL opportunity stage matched "${GHL_OPPORTUNITY_STAGE_NAME}" in pipeline "${pipeline.name||pipeline.title||pipeline.id}". Set GHL_OPPORTUNITY_STAGE_ID to the exact stage id in Railway. Available stages: ${available||'none returned'}`);
+    throw new Error(`No GHL opportunity stage matched "${GHL_OPPORTUNITY_STAGE_NAME}"${GHL_OPPORTUNITY_STAGE_ID?` or id ${GHL_OPPORTUNITY_STAGE_ID}`:''} in pipeline "${pipeline.name||pipeline.title||pipeline.id}". Set GHL_OPPORTUNITY_STAGE_ID to the exact stage id in Railway. Available stages: ${available||'none returned'}`);
   }
   return {pipelineId:pipeline.id,stageId:stage.id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
+}
+
+let opportunityTargetCache=null;
+let opportunityTargetPromise=null;
+async function getOpportunityTarget(){
+  if(opportunityTargetCache) return opportunityTargetCache;
+  if(!opportunityTargetPromise){
+    opportunityTargetPromise=resolveOpportunityTarget()
+      .then(target=>(opportunityTargetCache=target,target))
+      .finally(()=>{ opportunityTargetPromise=null; });
+  }
+  return opportunityTargetPromise;
 }
 
 async function getPartnerOpportunityTarget(){
@@ -9671,6 +11544,34 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
   };
 }
 
+const OUTSCRAPER_POLL_INTERVAL_MS = Number(process.env.OUTSCRAPER_POLL_INTERVAL_MS) || 3000;
+const OUTSCRAPER_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_POLL_TIMEOUT_MS) || 90000;
+const OUTSCRAPER_SUBMIT_TIMEOUT_MS = Number(process.env.OUTSCRAPER_SUBMIT_TIMEOUT_MS) || 14000;
+
+function sleep(ms){
+  return new Promise(resolve=>setTimeout(resolve,ms));
+}
+
+// Polls an Outscraper async request until it finishes (Success/Error) or the
+// poll budget runs out. Outscraper's own guidance is to submit async and poll
+// rather than holding a single connection open, since Maps searches can take
+// well over the old 14s synchronous timeout depending on result volume.
+async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey){
+  const pollUrl=resultsLocation||`https://api.outscraper.com/requests/${encodeURIComponent(requestId)}`;
+  const deadline=Date.now()+OUTSCRAPER_POLL_TIMEOUT_MS;
+  while(Date.now()<deadline){
+    await sleep(OUTSCRAPER_POLL_INTERVAL_MS);
+    const response=await fetchWithTimeout(pollUrl,{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Level 1 map/business search poll').catch(e=>null);
+    if(!response) continue;
+    const data=await readJsonResponse(response);
+    const status=String(data.status||'').toLowerCase();
+    if(status==='success') return {ok:true,data};
+    if(status==='error' || status==='failed' || status==='failure') return {ok:false,error:data.errorMessage||data.message||'Outscraper request failed'};
+    // status is Pending or unrecognized - keep polling until deadline
+  }
+  return {ok:false,error:'Level 1 map/business search timed out waiting for async results'};
+}
+
 async function discoverOutscraperProspects({organizationType,employeeMinimum,market,limit,leadProfile}){
   const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
   if(!outscraperKey) return {configured:false, leads:[], error:'OUTSCRAPER_API_KEY is not set'};
@@ -9680,10 +11581,20 @@ async function discoverOutscraperProspects({organizationType,employeeMinimum,mar
     : `${organizationType} businesses in ${market}`;
   url.searchParams.set('query',query);
   url.searchParams.set('limit',String(limit||12));
-  url.searchParams.set('async','false');
-  const response=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_FETCH_TIMEOUT_MS,'Level 1 map/business search');
-  const data=await readJsonResponse(response);
-  if(!response.ok) return {configured:true, leads:[], error:data.errorMessage||data.message||`Outscraper ${response.status}`};
+  url.searchParams.set('async','true');
+  const submitResponse=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Level 1 map/business search submit');
+  const submitData=await readJsonResponse(submitResponse);
+  if(!submitResponse.ok) return {configured:true, leads:[], error:submitData.errorMessage||submitData.message||`Outscraper ${submitResponse.status}`};
+  // Outscraper can occasionally return results inline even on an async submission
+  // (e.g. for very small/fast jobs) - use that directly instead of polling if present.
+  let data=submitData;
+  if(!Array.isArray(submitData.data) || !submitData.data.length){
+    const requestId=submitData.id||submitData.request_id;
+    if(!requestId) return {configured:true, leads:[], error:'Outscraper did not return a request id for the async job'};
+    const polled=await pollOutscraperRequest(requestId,submitData.results_location,outscraperKey);
+    if(!polled.ok) return {configured:true, leads:[], error:polled.error};
+    data=polled.data;
+  }
   const rows=(Array.isArray(data.data)?data.data:[data]).flat(4).filter(v=>v&&typeof v==='object');
   const leads=rows.map(r=>normalizeOutscraperPlace(r,organizationType,employeeMinimum,market))
     .map(p=>({...p,leadProfile,source:leadProfile==='westwood'?'Grace Intelligence Limitless Leads':'LimitLess Leads'}))
@@ -9714,41 +11625,32 @@ function buildGoallSearchJobs(plan){
   return jobs.slice(0,GOALL_LEAD_SEARCH_CALLS_MAX);
 }
 
-const GOALL_LEAD_JOB_CONCURRENCY = Number(process.env.GOALL_LEAD_JOB_CONCURRENCY) || 6;
-const GOALL_CRM_DEDUPE_CONCURRENCY = Number(process.env.GOALL_CRM_DEDUPE_CONCURRENCY) || 8;
+const GOALL_LEAD_JOB_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_JOB_CONCURRENCY)||10,1),10);
+const GOALL_CRM_DEDUPE_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_CRM_DEDUPE_CONCURRENCY)||8,1),12);
+const GOALL_LEAD_PER_SEARCH_MAX = Math.min(Math.max(Number(process.env.GOALL_LEAD_PER_SEARCH_MAX)||200,12),200);
 
-function normalizedPhoneDigits(value){
-  return String(value||'').replace(/\D/g,'').replace(/^1(?=\d{10}$)/,'');
-}
-
-// Checks whether a scraped lead already exists in the GHL CRM by email or phone.
+// Uses the same email, phone, website/domain, and company-name matcher as final import.
 // Returns {exists, contactId, matchedOn} - never throws; treats lookup failures as "not found"
 // so a transient GHL/API hiccup doesn't silently block the scraper from importing leads.
 async function checkCrmDuplicate(lead){
-  const email=String(lead.email||'').toLowerCase().trim();
-  const phoneDigits=normalizedPhoneDigits(lead.phone||lead.decisionMakerPhone);
-  if(!email && !phoneDigits) return {exists:false};
   try{
-    if(email){
-      const matches=await ghlMcp.searchContacts({query:email,limit:5}).catch(()=>[]);
-      const hit=(matches||[]).find(c=>String(c.email||'').toLowerCase().trim()===email);
-      if(hit) return {exists:true,contactId:hit.id,matchedOn:'email'};
-    }
-    if(phoneDigits){
-      const matches=await ghlMcp.searchContacts({query:phoneDigits,limit:5}).catch(()=>[]);
-      const hit=(matches||[]).find(c=>normalizedPhoneDigits(c.phone)===phoneDigits);
-      if(hit) return {exists:true,contactId:hit.id,matchedOn:'phone'};
-    }
+    // Discovery handles hundreds of rows. Use the strongest available lookup here;
+    // the final import guard still performs the full four-signal duplicate check.
+    const match=await findExistingGhlLeadDuplicate(lead,{maxQueries:1});
+    return match?{exists:true,contactId:match.id,matchedOn:match.match||'crm_match'}:{exists:false};
   }catch(e){
     return {exists:false,lookupError:e.message};
   }
-  return {exists:false};
 }
 
 async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   const jobs=buildGoallSearchJobs(plan);
   const requested=plan.requestedViableLeads;
-  const perSearchLimit=Math.min(50,Math.max(12,Math.ceil(Math.min(GOALL_LEAD_RAW_SEARCH_MAX,requested*4)/Math.max(1,Math.min(jobs.length,GOALL_LEAD_SEARCH_CALLS_MAX)))));
+  // A broad GOALL batch should sample every selected industry instead of allowing
+  // the first one or two searches to fill the entire 200-lead result set.
+  const perSearchLimit=jobs.length===1
+    ? Math.min(GOALL_LEAD_PER_SEARCH_MAX,requested)
+    : Math.min(GOALL_LEAD_PER_SEARCH_MAX,Math.max(3,Math.ceil((requested*1.5)/Math.max(1,jobs.length))));
   const raw=[];
   const errors=[];
   let configured=true;
@@ -9790,10 +11692,16 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
     if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
     scrapeResults.forEach(mergeScraped);
   }else{
-    const scrapeResults=await mapWithConcurrency(jobs,GOALL_LEAD_JOB_CONCURRENCY,scrapeJob);
-    const missing=scrapeResults.find(result=>!result.scraped.configured);
-    if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
-    scrapeResults.forEach(mergeScraped);
+    const rawTarget=Math.min(GOALL_LEAD_RAW_SEARCH_MAX,Math.max(requested,Math.ceil(requested*1.5)));
+    const jobConcurrency=plan.allPriority?GOALL_LEAD_MIXED_JOB_CONCURRENCY:GOALL_LEAD_JOB_CONCURRENCY;
+    for(let index=0;index<jobs.length;index+=jobConcurrency){
+      const wave=jobs.slice(index,index+jobConcurrency);
+      const scrapeResults=await Promise.all(wave.map(scrapeJob));
+      const missing=scrapeResults.find(result=>!result.scraped.configured);
+      if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
+      scrapeResults.forEach(mergeScraped);
+      if(raw.length>=rawTarget) break;
+    }
   }
   // Filter out leads that already exist in the GHL CRM (by email or phone) before spending
   // enrichment calls (website scrape, Apollo, RocketReach) on them.
@@ -9812,8 +11720,9 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   // If CRM-dedupe filtered out a large share of the batch, run one bounded top-up pass
   // (higher per-search limit, same jobs) so the user still gets close to what they asked for.
   if(freshLeads.length<requested && freshLeads.length<raw.length){
-    const topUpLimit=Math.min(50,perSearchLimit*2);
-    const topUpResults=await mapWithConcurrency(jobs,GOALL_LEAD_JOB_CONCURRENCY,async job=>{
+    const topUpLimit=Math.min(GOALL_LEAD_PER_SEARCH_MAX,perSearchLimit*2);
+    const topUpJobs=jobs.slice(0,GOALL_LEAD_JOB_CONCURRENCY);
+    const topUpResults=await Promise.all(topUpJobs.map(async job=>{
       const scraped=await discoverOutscraperProspects({
         organizationType:job.industry,
         employeeMinimum:plan.employeeMinimum,
@@ -9822,7 +11731,7 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
         leadProfile:plan.leadProfile
       }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
       return {job,scraped};
-    });
+    }));
     topUpResults.forEach(mergeScraped);
     const newRaw=raw.slice(crmChecked.length);
     if(newRaw.length){
@@ -9840,11 +11749,15 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
     }
   }
   const enrichLimit=Math.min(freshLeads.length,GOALL_LEAD_RAW_SEARCH_MAX);
-  const enrichmentConcurrency=requested>=100?10:(requested>=25?6:3);
+  const broadPreview=requested>=100;
+  const broadGoallPersonLookup=broadPreview && plan.leadProfile==='goall';
+  const enrichmentConcurrency=broadGoallPersonLookup?20:(requested>=25?6:3);
   const enriched=await mapWithConcurrency(freshLeads.slice(0,Math.min(enrichLimit,requested)),enrichmentConcurrency,async prospect=>{
-    const next=await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch}).catch(e=>({...prospect,rocketReachStatus:e.message}));
+    const next=broadGoallPersonLookup
+      ? await enrichProspectWithApollo(prospect).then(value=>({...value,rocketReachStatus:'deferred until review'})).catch(e=>({...prospect,apolloStatus:e.message,rocketReachStatus:'deferred until review'}))
+      : await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch||broadPreview}).catch(e=>({...prospect,rocketReachStatus:e.message}));
     const exactIndustry=next.aiExactIndustry||next.industry||next.organizationType||prospect.organizationType||'unclear';
-    return applyLeadScoring({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile});
+    return applyLeadScoring(sanitizeDecisionMaker({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile}));
   });
   const viable=[];
   for(const lead of enriched){
@@ -10042,7 +11955,7 @@ async function discoverHbsLeadProspects(body={}){
         'Do not reject a prospect solely because email, phone, or decision-maker name is missing.',
         '',
         'Return JSON with this exact shape:',
-        '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"estimatedEmployeeCount":"","employeeCountConfidence":"","employeeCountNote":"","donorEstimateBasis":"","evidenceSignals":[""],"growthSignals":"","leadershipSignals":"","workforcePainSignals":"","engagementActivitySignals":"","decisionMakerName":"","decisionMakerTitle":"","decisionMakerEmail":"","decisionMakerPhone":"","decisionMakerLinkedin":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","companyLinkedin":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","goallIntelligenceNote":"","recommendedFirstCallAngle":"","missingData":"","nextOutreachAngle":"","confidence":""}]}'
+        '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
       ].join('\n');
       try{
         raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
@@ -10111,7 +12024,7 @@ function leadDiscoveryFailureText({plan,scraped,webError}={}){
     'Try this next:',
     '- Run a smaller test batch, like 12 leads.',
     '- Use one specific industry and city, for example "HVAC companies in Phoenix".',
-    '- Open Register Your Keys and test Outscraper and OpenAI if this happens on every search.'
+    '- Open API Keys & Connections and test Outscraper and OpenAI if this happens on every search.'
   ].filter(Boolean).join('\n');
 }
 
@@ -10138,7 +12051,7 @@ function leadDiscoveryErrorPayload(body,error){
     searchPlan:plan||{criteria,market,organizationType,employeeMinimum,leadBrand:body?.leadProfile==='westwood'?'Westwood':'GOALL'},
     report:{requestedViableLeads:Number(body?.limit)||12,viableLeads:0,rawCount:0},
     error:scraped.error,
-    content:leadDiscoveryFailureText({plan:plan||{criteria,market,organizationType,employeeMinimum,leadBrand:body?.leadProfile==='westwood'?'Westwood':'GOALL'},scraped,webError:scraped.error})
+    content:leadDiscoveryFailureText({plan:plan||{criteria,market,organizationType,employeeMinimum,leadBrand:body?.leadProfile==='westwood'?'Westwood':'GOALL'},scraped})
   };
 }
 
@@ -10156,6 +12069,7 @@ function leadPreviewText(discovered){
     cities:discovered.searchPlan?.cities||[],
     rejectedReasons:discovered.scraped?.rejectedReasons||{}
   });
+  const alreadyInCrm=Number(report.rejectedReasons?.already_in_crm||0);
   const level1Status=p=>{
     const hasBusiness=!!(p.organizationName||p.name);
     const hasWebsite=!!p.website;
@@ -10179,6 +12093,7 @@ function leadPreviewText(discovered){
     `Search: ${discovered.organizationType} | ${discovered.employeeMinimum}+ employees | ${discovered.market}`,
     `Requested viable leads: ${report.requestedViableLeads}`,
     `Viable found: ${report.viableLeadsFound} | Full: ${report.fullContactability} | Email only: ${report.emailOnly} | Phone only: ${report.phoneOnly} | No contact method: ${report.noContact||0}`,
+    alreadyInCrm?`Already in GHL CRM and filtered before enrichment: ${alreadyInCrm}`:'',
     brand==='GOALL'?`Pipeline volume standard: ${report.viableLeadsFound}/${GOALL_PIPELINE_MINIMUM} people/prospects found in this batch. ${report.pipelineVolumeStatus==='sufficient'?'Minimum met.':'Not enough yet.'}`:'',
     brand==='GOALL'&&report.pipelineVolumeWarning?report.pipelineVolumeWarning:'',
     'Lead Score Breakdown:',
@@ -10201,13 +12116,11 @@ function leadPreviewText(discovered){
       const automation=brand==='GOALL'?mapGoallAutomationTag(p):{};
       const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
       const contactability=leadContactability(p);
-      const goallIntel=brand==='GOALL'?buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'business'):null;
       return [
         `${i+1}. ${p.organizationName||p.name||'Unnamed organization'}`,
         `   Industry: ${p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear'}`,
         `   Lead Score: ${p.leadScore} (${p.leadScore===1?'Highest Priority':p.leadScore===2?'Strong Fit':p.leadScore===3?'Possible Fit':'Low Fit'})`,
         `   Lead Score Reason: ${p.leadScoreReason}`,
-        goallIntel?`   Recommended First Call Angle: ${goallIntel.firstCall}`:'',
         automation.automationTag?`   Automation Tag: ${automation.automationTag}`:'',
         automation.tagConfidence?`   Tag Confidence: ${automation.tagConfidence}`:'',
         automation.automationTag?`   Needs New Automation: ${automation.needsNewAutomation?'yes':'no'}`:'',
@@ -10219,11 +12132,7 @@ function leadPreviewText(discovered){
         `   Contactability: ${contactability.contactabilityStatus}`,
         `   Outreach: ${leadContactabilityNote(contactability)}`,
         `   Decision maker: ${p.decisionMakerName||'unclear'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`,
-        `   Employee estimate: ${goallIntel?.employee?.count||donorCount||'unclear'}${goallIntel?.employee?.confidence?' ('+goallIntel.employee.confidence+')':''}`,
-        goallIntel?`   Growth signals: ${goallIntel.signals.growth}`:'',
-        goallIntel?`   Workforce signals: ${goallIntel.signals.workforce}`:'',
-        goallIntel?`   Leadership signals: ${goallIntel.signals.leadership}`:'',
-        goallIntel?`   Lead Intelligence Summary: ${goallIntel.note.replace(/\n/g,' | ')}`:'',
+        `   Employee estimate: ${donorCount||'unclear'}`,
         `   ${brand} fit: ${p.goallFitScore||'unclear'}${p.goallFitReason?' - '+p.goallFitReason:''}`,
         `   Evidence: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.slice(0,4).join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
         `   Level 1: ${level1Status(p)}`,
@@ -10264,7 +12173,7 @@ function leadDuplicateNeedles(p={}){
   ].filter(Boolean);
 }
 
-async function findExistingGhlLeadDuplicate(p={}){
+async function findExistingGhlLeadDuplicate(p={},options={}){
   const queries=[
     validEmail(p.email)?String(p.email).trim():'',
     validPhone(p.phone)?String(p.phone).trim():'',
@@ -10275,7 +12184,8 @@ async function findExistingGhlLeadDuplicate(p={}){
   const needles=leadDuplicateNeedles(p);
   if(!queries.length || !needles.length) return null;
   const locationId=await resolveGhlLocationId();
-  for(const q of queries.slice(0,3)){
+  const maxQueries=Math.min(Math.max(Number(options.maxQueries)||4,1),4);
+  for(const q of queries.slice(0,maxQueries)){
     const data=await ghlStrict('GET',`/contacts/?locationId=${encodeURIComponent(locationId||GHL_LOC||'')}&query=${encodeURIComponent(q)}&limit=10`).catch(()=>null);
     const contacts=data?.contacts||data?.data||[];
     for(const contact of contacts){
@@ -10310,8 +12220,7 @@ async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,aut
   const isGoall=(discovered.searchPlan?.leadBrand==='GOALL'||discovered.leadProfile==='goall');
   if(isGoall){
     const leadFields=leadCustomFieldsFromProspect({...lead,...automation});
-    const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
-    await assertGoallLeadScoreField(leadFieldIds);
+    const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
     await updateGhlLeadFields(contactId,leadFields);
   }
   const existing=await findOpenOpportunityForContact(contactId);
@@ -10352,12 +12261,6 @@ async function importApprovedHbsLeads(discovered){
       skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:'missing_automation_tag'});
       return;
     }
-    const contactability=leadContactability(lead);
-    const goallIntel=brand==='GOALL'?buildGoallIntelligenceProfile(lead,lead.aiExactIndustry||lead.ai_exact_industry||lead.industry||lead.organizationType||'business'):null;
-    if(brand==='GOALL' && !contactability.importable && !strongGoallManualReviewLead(lead,goallIntel)){
-      skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:'missing_email_and_phone'});
-      return;
-    }
     try{
       const duplicate=await findExistingGhlLeadDuplicate(lead);
       if(duplicate){
@@ -10388,7 +12291,7 @@ async function importApprovedHbsLeads(discovered){
   const summary=[
     `Imported ${created.length} new ${brand} business lead${created.length===1?'':'s'} to GHL.`,
     `Search: ${organizationType} | ${employeeMinimum}+ employees | ${market}`,
-    brand==='GOALL'?'Tags applied: Employer + per-lead automation tag + GOALL Lead + Limitless Leads':`Tags applied: ${tag} + Employer`,
+    brand==='GOALL'?'Tags applied: per-lead automation tag + GOALL Lead + Limitless Leads':`Tag applied: ${tag}`,
     duplicateCount?`Already in GHL: ${duplicateCount} matching contact${duplicateCount===1?'':'s'} found, so those were not duplicated.`:'',
     repairedOpportunityCount?`Repaired opportunities: ${repairedOpportunityCount} missing opportunit${repairedOpportunityCount===1?'y was':'ies were'} created for existing contact${repairedOpportunityCount===1?'':'s'}.`:'',
     existingOpportunityCount?`Existing opportunities: ${existingOpportunityCount} contact${existingOpportunityCount===1?' already has':'s already have'} an open opportunity.`:'',
@@ -10403,7 +12306,7 @@ async function importApprovedHbsLeads(discovered){
     failed.length?`Failed: ${failed.length}`:'',
     '',
     created.map(c=>`- ${c.name} | Lead Score: ${c.leadScore} | Contactability: ${c.contactabilityStatus}${c.contactabilityStatus==='phone_only'?' | Imported contact with phone only. No email was found, so the initial automated email sequence was not sent.':''} | Exact industry: ${c.aiExactIndustry||'unclear'}${c.automationTag?' | Automation: '+c.automationTag+' ('+c.tagConfidence+')':''} | Tags: ${(c.tags||[]).join(', ')} | Contact: ${c.contactId} | Opportunity value: $${c.value}${c.pipelineName||c.stageName?' | '+[c.pipelineName,c.stageName].filter(Boolean).join(' / '):''}${c.pipelineId?' | Pipeline ID: '+c.pipelineId:''}${c.stageId?' | Stage ID: '+c.stageId:''}${c.customFieldUpdate?.updated?'':' | Custom field warning: '+(c.customFieldUpdate?.reason||c.customFieldUpdate?.error||'not updated')}`).join('\n'),
-    skipped.length?'\nSkipped / repaired leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='duplicate'?(s.opportunityCreated?'Matching GHL contact already existed; missing opportunity was created.':s.opportunityExisting?'Matching GHL contact already has an open opportunity.':'Skipped because a matching GHL contact already exists.'):s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':s.reason==='missing_email_and_phone'?'Contact was not imported because no email or phone was found and the company intelligence was not strong enough for manual review routing.':'Skipped before import.'} Reason: ${s.reason}${s.contactId?' | Existing contact: '+s.contactId:''}${s.opportunityError?' | Opportunity repair failed: '+s.opportunityError:''}`).join('\n'):'',
+    skipped.length?'\nSkipped / repaired leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='duplicate'?(s.opportunityCreated?'Matching GHL contact already existed; missing opportunity was created.':s.opportunityExisting?'Matching GHL contact already has an open opportunity.':'Skipped because a matching GHL contact already exists.'):s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':'Skipped before import.'} Reason: ${s.reason}${s.contactId?' | Existing contact: '+s.contactId:''}${s.opportunityError?' | Opportunity repair failed: '+s.opportunityError:''}`).join('\n'):'',
     failed.length?'\nFailed imports:\n'+failed.map(f=>`- ${f.name}: ${f.error}`).join('\n'):''
   ].filter(Boolean).join('\n');
   await saveMemoryItem({
@@ -10416,10 +12319,10 @@ async function importApprovedHbsLeads(discovered){
   return {ok:true,created,failed,skipped,content:summary};
 }
 
-async function enrichProspectWithRocketReach(p){
+async function enrichProspectWithRocketReach(p,options={}){
   const rocketReachKey=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
   if(!rocketReachKey) return {...p,rocketReachStatus:'ROCKETREACH_API_KEY is not set'};
-  const rocket=await lookupRocketReachDecisionMaker(p.organizationName||p.name||'',p).catch(e=>({error:e.message}));
+  const rocket=await lookupRocketReachDecisionMaker(p.organizationName||p.name||'',p,options).catch(e=>({error:e.message}));
   const data=rocket?.data||{};
   const nextEmail=isLikelyPersonEmail(data.email) || !p.email ? data.email : p.email;
   const nextPhone=validPhone(data.phone) && !validPhone(p.phone) ? data.phone : p.phone;
@@ -10513,17 +12416,10 @@ async function createGhlLeadFromProspect(p,opts={}){
   const source=isWestwood?'Grace Intelligence Limitless Leads':'LimitLess Leads';
   const country=normalizeCountryCode(p.country);
   const contactability=leadContactability(p);
-  const goallIntel=isWestwood?null:buildGoallIntelligenceProfile(p,p.aiExactIndustry||p.industry||p.organizationType||'business');
-  const allowManualReview=!isWestwood && !contactability.importable && strongGoallManualReviewLead(p,goallIntel);
-  if(!contactability.importable && !allowManualReview){
-    throw new Error('missing_email_and_phone');
-  }
   const leadFields=leadCustomFieldsFromProspect(p);
-  const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
-  if(!isWestwood) await assertGoallLeadScoreField(leadFieldIds);
+  const leadFieldIds=await resolveLeadFieldIds().catch(()=>({}));
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
   const tags=isWestwood?[tag,'Employer']:[automation.automationTag,'Employer','GOALL Lead','Limitless Leads'];
-  if(allowManualReview) tags.push('Manual Review');
   if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
@@ -10570,9 +12466,6 @@ async function createGhlLeadFromProspect(p,opts={}){
   const note=[
     ...enrichmentLevelSummaryLines(p,contactability),
     '',
-    !isWestwood && goallIntel?.note?`Lead Intelligence Summary:\n${goallIntel.note}`:'',
-    !isWestwood && goallIntel?.firstCall?`Recommended First Call Angle:\n${goallIntel.firstCall}`:'',
-    allowManualReview?'Manual review route: no email or phone was found, but company intelligence is strong enough to review before outreach.':'',
     p.decisionMakerName
       ? `Decision maker verified: ${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
       : 'Public data did not return a reliable name for the decision maker. First and last name were set to unknown. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
@@ -11104,7 +12997,7 @@ app.get('/api/val/memory/search',async(req,res)=>{
     res.json({ok:true,query:q,results:ranked});
   }catch(e){res.status(500).json({error:e.message});}
 });
-+function transcriptSupportingQuote(transcript,requested=''){
+function transcriptSupportingQuote(transcript,requested=''){
   const text=String(transcript||''),quote=String(requested||'').trim();
   if(quote&&text.toLowerCase().includes(quote.toLowerCase()))return quote.slice(0,800);
   const sentences=text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
@@ -11296,7 +13189,7 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});const result={ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})};await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title,source:body.source||''},success:true}).catch(()=>{});res.json(result);}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/conversations/:id',async(req,res)=>{

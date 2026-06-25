@@ -5,14 +5,25 @@ var draftSignalState={drafts:[],loaded:false,error:''};
 var navItems=[
   ['dashboard','⌂','Dashboard'],['chat','✦','General Chat'],['relationships','◎','Relationships'],['meetings','▣','Meetings'],['transcripts','≣','Transcripts'],
   ['communications','✉','Communications'],['email_intelligence','✉','Email Intelligence'],['opportunities','↗','Opportunities'],['tasks','✓','Tasks'],['drafts','✎','Drafts'],['intelligence','✦','Intelligence'],
-  ['leads_employers','⌕','Scrape Employers'],['leads_partners','◇','Scrape Partners'],['settings','⚙','Settings'],['settings_templates','▤','Templates'],['settings_security','◈','Security & Privacy']
+  ['leads_employers','⌕','Scrape Employers'],['leads_partners','◇','Scrape Partners'],['settings','⚙','Settings'],['settings_api_keys','⌘','API Keys & Connections'],['settings_templates','▤','Templates'],['settings_dashboard_studio','✧','Dashboard Studio'],['settings_security','◈','Security & Privacy']
 ];
 function safe(value){return typeof docSafe==='function'?docSafe(String(value==null?'':value)):String(value==null?'':value).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function call(name){var fn=window[name];if(typeof fn==='function')return fn.apply(window,[].slice.call(arguments,1));}
+function dashboardStudioEnabled(){return !!(window.VAL_CONFIG&&VAL_CONFIG.featureFlags&&VAL_CONFIG.featureFlags.dashboard_studio_beta);}
+function visibleNavItems(){return navItems.filter(function(n){return n[0]!=='settings_dashboard_studio'||dashboardStudioEnabled();});}
+function navHtml(){
+  return '<div class="val-nav-brand"><span class="val-nav-mark">V</span><span><strong id="valNavBrand">VAL</strong><small>Command Center</small></span></div><div class="val-nav-items">'+visibleNavItems().map(function(n){var group=n[0]==='leads_employers'?'<div class="val-nav-group-label">Lead Scraper</div>':(n[0]==='settings'?'<div class="val-nav-group-label">Settings</div>':'');var child=/^leads_/.test(n[0])||n[0]==='settings_api_keys'||n[0]==='settings_templates'||n[0]==='settings_security'||n[0]==='settings_dashboard_studio'?' child':'';return group+'<button class="val-nav-item'+(n[0]==='dashboard'?' active':'')+child+'" data-view="'+n[0]+'" onclick="commandCenterNavigate(\''+n[0]+'\')"><span class="val-nav-icon">'+n[1]+'</span><span>'+n[2]+'</span></button>';}).join('')+'</div><div class="val-nav-foot"><span id="valNavStatus">System ready</span></div>';
+}
+window.refreshCommandCenterNav=function(){
+  var nav=document.getElementById('valPrimaryNav');
+  if(!nav) return;
+  nav.innerHTML=navHtml();
+  var brand=document.getElementById('valNavBrand');if(brand&&window.VAL_CONFIG)brand.textContent=VAL_CONFIG.brandName||VAL_CONFIG.clientName||'VAL';
+};
 function installShell(){
   var app=document.querySelector('.app');if(!app||document.getElementById('valPrimaryNav'))return;
   var nav=document.createElement('nav');nav.id='valPrimaryNav';nav.className='val-primary-nav';nav.setAttribute('aria-label','Primary navigation');
-  nav.innerHTML='<div class="val-nav-brand"><span class="val-nav-mark">V</span><span><strong id="valNavBrand">VAL</strong><small>Command Center</small></span></div><div class="val-nav-items">'+navItems.map(function(n){var group=n[0]==='leads_employers'?'<div class="val-nav-group-label">Lead Scraper</div>':(n[0]==='settings'?'<div class="val-nav-group-label">Settings</div>':'');var child=/^leads_/.test(n[0])||n[0]==='settings_templates'||n[0]==='settings_security'?' child':'';return group+'<button class="val-nav-item'+(n[0]==='dashboard'?' active':'')+child+'" data-view="'+n[0]+'" onclick="commandCenterNavigate(\''+n[0]+'\')"><span class="val-nav-icon">'+n[1]+'</span><span>'+n[2]+'</span></button>';}).join('')+'</div><div class="val-nav-foot"><span id="valNavStatus">System ready</span></div>';
+  nav.innerHTML=navHtml();
   app.insertBefore(nav,app.firstChild);
   var top=document.querySelector('.topbar');if(top){var b=document.createElement('button');b.className='val-mobile-nav';b.setAttribute('aria-label','Open navigation');b.innerHTML='☰';b.onclick=function(){nav.classList.toggle('open');};top.insertBefore(b,top.firstChild);}
   var center=document.querySelector('.center'),cmd=center&&center.querySelector('.cmd-area');if(center&&cmd){var view=document.createElement('section');view.id='valTranscriptView';view.className='val-transcript-view';center.insertBefore(view,cmd);}
@@ -25,7 +36,7 @@ window.commandCenterNavigate=function(view){
   setActive(view);closeTranscriptView();
   if(view==='dashboard'){call('closeDetail');buildCommandCenter();return;}
   if(view==='transcripts'){openTranscripts();return;}
-  var routes={chat:'openGeneralChat',relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'askComms',email_intelligence:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',drafts:'openDraftsPage',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel',settings_templates:'openTemplatesPage',settings_security:'openSecurityPrivacyPage'};
+  var routes={chat:'openGeneralChat',relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'askComms',email_intelligence:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',drafts:'openDraftsPage',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel',settings_api_keys:'openKeysPanel',settings_templates:'openTemplatesPage',settings_dashboard_studio:'openDashboardStudioPage',settings_security:'openSecurityPrivacyPage'};
   call(routes[view]||'closeDetail');
 };
 function listLine(label,value){return '<div class="val-mini-item"><strong>'+safe(label)+'</strong><span>'+safe(value)+'</span></div>';}
@@ -47,8 +58,16 @@ function buildCommandCenter(){
   recapDrafts.slice(0,2).forEach(function(d){var ctx=d.sourceContext||{};recapHtml+=listLine(d.subject||'Meeting recap draft',ctx.meetingTitle||ctx.transcriptTitle||d.status||'Draft');});
   if(Number(transcriptState.counts.failedProcessing||0))recapHtml+=listLine('Failed transcript processing',transcriptState.counts.failedProcessing+' need attention');
   recentTranscriptTasks.forEach(function(t){recapHtml+=listLine(t.title||t.taskTitle||'Transcript task',t.dueDate||t.status||'created');});
-  var html='<div class="cw-label">Executive Command Center</div><div class="cw-title">Today, clearly.</div><div class="cw-sub">The decisions, relationships, and commitments most likely to need your attention—without the dashboard noise.</div><div class="val-command-grid">';
-  html+=commandCard("Today's Priorities",tasks.overdue.length?'Close the open loops first':'Your highest-leverage work is ready','VAL ranked today across meetings, communication, relationships, commitments, and revenue.','openPriorityReview()','Do It',{count:(tasks.overdue.length+unread+(stalled||0))+' signals',html:priorityHtml},true);
+  var bookMode=typeof isBookEditorMode==='function'&&isBookEditorMode();
+  var studioOverrides=(window.VAL_CONFIG&&VAL_CONFIG.dashboardStudioOverrides)||{};
+  var dashboardOverride=studioOverrides.dashboard||{};
+  var defaultTitle=bookMode?'Continue the book, gently.':'Today, clearly.';
+  var defaultSub=bookMode?'Start at the beginning, use prior editor notes, and move chapter by chapter without making Michele manage the machinery.':'The decisions, relationships, and commitments most likely to need your attention—without the dashboard noise.';
+  var html='<div class="cw-label">'+(bookMode?'Book Command Center':'Executive Command Center')+'</div><div class="cw-title">'+safe(dashboardOverride.heroTitle||defaultTitle)+'</div><div class="cw-sub">'+safe(dashboardOverride.heroSubtitle||defaultSub)+'</div><div class="val-command-grid">';
+  if(bookMode){
+    html+=commandCard('Continue My Book','Continue My Book','Read the current manuscript chapter, use Michele’s prior edit notes, ask one gentle question, then update the manuscript safely.','openMicheleBookCompanion()','Continue My Book',{count:'Start here'},true);
+  }
+  html+=commandCard(bookMode?'Book Priorities':"Today's Priorities",tasks.overdue.length?'Close the open loops first':'Your highest-leverage work is ready',bookMode?'VAL is holding the manuscript, prior notes, and editorial tasks in one place.':'VAL ranked today across meetings, communication, relationships, commitments, and revenue.','openPriorityReview()',bookMode?'Review Priorities':'Do It',{count:(tasks.overdue.length+unread+(stalled||0))+' signals',html:priorityHtml},!bookMode&&true);
   html+=commandCard('Meetings',next?(next.title||next.summary||'Next meeting'):'No upcoming meeting',next?'Your next conversation is ready for context and preparation.':'Your connected calendar has no upcoming event.','openMeetingBriefing()','Prepare Briefing',{count:events.length+' upcoming'});
   html+=commandCard('Transcripts',transcriptState.error?'Unable to load transcripts':tr.length?'Recent conversations are in memory':'No transcripts received yet',transcriptState.error?'The transcript archive could not be reached. Open it to retry.':'Webhook transcripts, summaries, and open actions live together here.','openTranscripts()','View Transcripts',{count:transcriptState.error?'Needs attention':transcriptState.counts.needsReview+' to review',html:trHtml||''});
   html+=commandCard('Meeting Recaps & Drafts',recapDrafts.length?recapDrafts.length+' recap drafts need approval':'Recaps and transcript drafts are current',draftSignalState.error?'Draft signals could not be loaded.':'Review recap drafts, failed transcript processing, and tasks created from transcript intelligence.','openDraftsPage()','Review Drafts',{count:(recapDrafts.length+Number(transcriptState.counts.failedProcessing||0))+' items',html:recapHtml||''});
