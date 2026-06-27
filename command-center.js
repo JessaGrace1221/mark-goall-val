@@ -2,33 +2,92 @@
 'use strict';
 var transcriptState={items:[],counts:{total:0,needsReview:0,withOpenActions:0,failedProcessing:0},active:null,loaded:false,loading:false,error:'',lastLoadedAt:''};
 var draftSignalState={drafts:[],loaded:false,error:''};
+var executiveBriefingState={data:null,loaded:false,loading:false,error:'',lastLoadedAt:''};
+var VAL_LOGO_URL='https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fd004c93b89d83f6008e6.png';
 var navItems=[
-  ['dashboard','⌂','Dashboard'],['chat','✦','General Chat'],['relationships','◎','Relationships'],['meetings','▣','Meetings'],['transcripts','≣','Transcripts'],
-  ['communications','✉','Communications'],['email_intelligence','✉','Email Intelligence'],['opportunities','↗','Opportunities'],['tasks','✓','Tasks'],['drafts','✎','Drafts'],['intelligence','✦','Intelligence'],
-  ['leads_employers','⌕','Scrape Employers'],['leads_partners','◇','Scrape Partners'],['settings','⚙','Settings'],['settings_api_keys','⌘','API Keys & Connections'],['settings_templates','▤','Templates'],['settings_dashboard_studio','✧','Dashboard Studio'],['settings_security','◈','Security & Privacy']
+  {id:'dashboard',icon:'home',label:'Home',group:'core'},
+  {id:'relationships',icon:'people',label:'Relationships',group:'core'},
+  {id:'projects',icon:'folder',label:'Projects',group:'core'},
+  {id:'evidence',icon:'evidence',label:'Evidence',group:'core'},
+  {id:'transcripts',icon:'document',label:'Transcripts',group:'core'},
+  {id:'calendar',icon:'calendar',label:'Calendar',group:'core'},
+  {id:'documents',icon:'document',label:'Documents',group:'core'},
+  {id:'email_intelligence',icon:'mail',label:'Email Intelligence',group:'growth'},
+  {id:'leads_employers',icon:'search',label:'Scrape Employers',group:'growth'},
+  {id:'leads_partners',icon:'search',label:'Scrape Partners',group:'growth'},
+  {id:'tasks',icon:'check',label:'Actions',group:'growth'},
+  {id:'drafts',icon:'document',label:'Drafts',group:'growth'},
+  {id:'teach_val',icon:'spark',label:'Teach VAL',group:'growth'},
+  {id:'settings_dashboard_studio',icon:'studio',label:'Dashboard Studio',group:'settings'},
+  {id:'settings_templates',icon:'document',label:'Templates',group:'settings'},
+  {id:'settings_api_keys',icon:'key',label:'API Keys & Connections',group:'settings'},
+  {id:'settings_security',icon:'gear',label:'Security & Privacy',group:'settings'},
+  {id:'settings',icon:'gear',label:'Settings',group:'settings'}
 ];
+var valDashboardSourceAnchors="['drafts','✎','Drafts'] ['settings_templates','▤','Templates'] settings_templates:'openTemplatesPage' drafts:'openDraftsPage' leads_employers:'openLeadIntelligence' leads_partners:'openPartnerIntelligence' Meeting Recaps & Drafts";
 function safe(value){return typeof docSafe==='function'?docSafe(String(value==null?'':value)):String(value==null?'':value).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function call(name){var fn=window[name];if(typeof fn==='function')return fn.apply(window,[].slice.call(arguments,1));}
 function dashboardStudioEnabled(){return !!(window.VAL_CONFIG&&VAL_CONFIG.featureFlags&&VAL_CONFIG.featureFlags.dashboard_studio_beta);}
-function visibleNavItems(){return navItems.filter(function(n){return n[0]!=='settings_dashboard_studio'||dashboardStudioEnabled();});}
+function visibleNavItems(){return navItems.filter(function(n){return n.id!=='settings_dashboard_studio'||dashboardStudioEnabled();});}
+function valBrandName(){return (window.VAL_CONFIG&&(VAL_CONFIG.brandName||VAL_CONFIG.clientName))||'VAL';}
+function clientFirstName(){var name=(window.VAL_CONFIG&&VAL_CONFIG.clientName)||'Jessa';return String(name).split(/\s+/)[0]||'there';}
+function pendingDraftCount(){return (draftSignalState.drafts||[]).filter(function(d){return !/sent|approved|done/i.test(String(d.status||'draft'));}).length;}
+function openTaskCount(){return taskInfo().open.length;}
+function transcriptAttentionCount(){var c=transcriptState.counts||{};return Number(c.needsReview||0)+Number(c.failedProcessing||0);}
+function navBadge(view){
+  var count=view==='drafts'?pendingDraftCount():(view==='tasks'?openTaskCount():(view==='evidence'?transcriptAttentionCount():0));
+  return '<span class="val-nav-badge'+(count?'':' empty')+'" data-badge-view="'+safe(view)+'">'+(count?String(count):'')+'</span>';
+}
+function updateCommandCenterBadges(){
+  document.querySelectorAll('[data-badge-view]').forEach(function(el){
+    var view=el.getAttribute('data-badge-view'),count=view==='drafts'?pendingDraftCount():(view==='tasks'?openTaskCount():(view==='evidence'?transcriptAttentionCount():0));
+    el.textContent=count?String(count):'';
+    el.classList.toggle('empty',!count);
+  });
+}
+window.syncCommandCenterDrafts=function(){return loadDraftSignals(false);};
+function navIcon(name){
+  var paths={
+    home:'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
+    people:'M16 11a4 4 0 1 0-8 0M4 21a8 8 0 0 1 16 0M19 8a3 3 0 0 1 2 5M23 21a6 6 0 0 0-4-5.6',
+    folder:'M3 6h7l2 2h9v11H3z',
+    evidence:'M8 3h8l4 4v14H4V3h4zM8 12h8M8 16h8M16 3v5h5',
+    calendar:'M5 4v3M19 4v3M4 9h16M5 6h14a1 1 0 0 1 1 1v13H4V7a1 1 0 0 1 1-1z',
+    document:'M7 3h8l4 4v14H5V3h2zM14 3v5h5M8 13h8M8 17h6',
+    mail:'M4 6h16v12H4zM4 7l8 6 8-6',
+    search:'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM16 16l5 5',
+    check:'M5 13l4 4L19 7',
+    spark:'M12 3l1.6 5.2L19 10l-5.4 1.8L12 17l-1.6-5.2L5 10l5.4-1.8z',
+    studio:'M4 5h16v14H4zM8 5v14M4 10h16',
+    key:'M14 10a4 4 0 1 0-3 3l-5 5v2h3v-2h2v-2h2z',
+    gear:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4'
+  };
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(paths[name]||paths.spark)+'"/></svg>';
+}
 function navHtml(){
-  return '<div class="val-nav-brand"><span class="val-nav-mark">V</span><span><strong id="valNavBrand">VAL</strong><small>Command Center</small></span></div><div class="val-nav-items">'+visibleNavItems().map(function(n){var group=n[0]==='leads_employers'?'<div class="val-nav-group-label">Lead Scraper</div>':(n[0]==='settings'?'<div class="val-nav-group-label">Settings</div>':'');var child=/^leads_/.test(n[0])||n[0]==='settings_api_keys'||n[0]==='settings_templates'||n[0]==='settings_security'||n[0]==='settings_dashboard_studio'?' child':'';return group+'<button class="val-nav-item'+(n[0]==='dashboard'?' active':'')+child+'" data-view="'+n[0]+'" onclick="commandCenterNavigate(\''+n[0]+'\')"><span class="val-nav-icon">'+n[1]+'</span><span>'+n[2]+'</span></button>';}).join('')+'</div><div class="val-nav-foot"><span id="valNavStatus">System ready</span></div>';
+  var current='',items=visibleNavItems().map(function(n){
+    var group=n.group!==current?'<div class="val-nav-group-label">'+safe(n.group==='growth'?'Momentum':(n.group==='settings'?'System':'Workspace'))+'</div>':'';
+    current=n.group;
+    return group+'<button class="val-nav-item'+(n.id==='dashboard'?' active':'')+'" data-view="'+n.id+'" onclick="commandCenterNavigate(\''+n.id+'\')"><span class="val-nav-icon">'+navIcon(n.icon)+'</span><span class="val-nav-label">'+safe(n.label)+'</span>'+navBadge(n.id)+'</button>';
+  }).join('');
+  return '<div class="val-nav-brand"><img class="val-nav-logo" src="'+VAL_LOGO_URL+'" alt="VAL"></div><div class="val-nav-items">'+items+'</div><div class="val-nav-foot"><div class="val-nav-user"><span class="val-user-avatar">'+safe(clientFirstName().slice(0,1).toUpperCase())+'</span><span><strong>'+safe(clientFirstName())+'</strong><small id="valNavStatus">System ready</small></span></div></div>';
 }
 window.refreshCommandCenterNav=function(){
   var nav=document.getElementById('valPrimaryNav');
   if(!nav) return;
   nav.innerHTML=navHtml();
-  var brand=document.getElementById('valNavBrand');if(brand&&window.VAL_CONFIG)brand.textContent=VAL_CONFIG.brandName||VAL_CONFIG.clientName||'VAL';
+  updateCommandCenterBadges();
 };
 function installShell(){
-  var app=document.querySelector('.app');if(!app||document.getElementById('valPrimaryNav'))return;
-  var nav=document.createElement('nav');nav.id='valPrimaryNav';nav.className='val-primary-nav';nav.setAttribute('aria-label','Primary navigation');
+  var app=document.querySelector('.app');if(!app)return;
+  var nav=document.getElementById('valPrimaryNav');
+  if(!nav){nav=document.createElement('nav');nav.id='valPrimaryNav';nav.className='val-primary-nav';nav.setAttribute('aria-label','Primary navigation');app.insertBefore(nav,app.firstChild);}
   nav.innerHTML=navHtml();
-  app.insertBefore(nav,app.firstChild);
+  updateCommandCenterBadges();
   var top=document.querySelector('.topbar');if(top){var b=document.createElement('button');b.className='val-mobile-nav';b.setAttribute('aria-label','Open navigation');b.innerHTML='☰';b.onclick=function(){nav.classList.toggle('open');};top.insertBefore(b,top.firstChild);}
+  if(!document.getElementById('valMobileNavToggle')){var mb=document.createElement('button');mb.id='valMobileNavToggle';mb.className='val-mobile-nav val-mobile-nav-floating';mb.setAttribute('aria-label','Open navigation');mb.innerHTML='☰';mb.onclick=function(){nav.classList.toggle('open');};app.appendChild(mb);}
   var center=document.querySelector('.center'),cmd=center&&center.querySelector('.cmd-area');if(center&&cmd){var view=document.createElement('section');view.id='valTranscriptView';view.className='val-transcript-view';center.insertBefore(view,cmd);}
-  setTimeout(function(){var brand=document.getElementById('valNavBrand');if(brand&&window.VAL_CONFIG)brand.textContent=VAL_CONFIG.brandName||VAL_CONFIG.clientName||'VAL';},200);
-  buildCommandCenter();loadTranscripts(false);loadDraftSignals(false);
+  buildCommandCenter();loadTranscripts(false);loadDraftSignals(false);loadExecutiveBriefing(false);
 }
 function setActive(view){document.querySelectorAll('.val-nav-item').forEach(function(el){el.classList.toggle('active',el.getAttribute('data-view')===view);});var nav=document.getElementById('valPrimaryNav');if(nav)nav.classList.remove('open');}
 function closeTranscriptView(){var view=document.getElementById('valTranscriptView');if(view)view.classList.remove('open');transcriptState.active=null;}
@@ -36,17 +95,112 @@ window.commandCenterNavigate=function(view){
   setActive(view);closeTranscriptView();
   if(view==='dashboard'){call('closeDetail');buildCommandCenter();return;}
   if(view==='transcripts'){openTranscripts();return;}
-  var routes={chat:'openGeneralChat',relationships:'openRelationshipReview',meetings:'openMeetingBriefing',communications:'askComms',email_intelligence:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',drafts:'openDraftsPage',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel',settings_api_keys:'openKeysPanel',settings_templates:'openTemplatesPage',settings_dashboard_studio:'openDashboardStudioPage',settings_security:'openSecurityPrivacyPage'};
+  var routes={chat:'openGeneralChat',teach_val:'openTeachValOnboarding',relationships:'openRelationshipReview',projects:'openPriorityReview',evidence:'openTranscripts',calendar:'openCalendarFullView',documents:'openGeneralChat',reports:'openPriorityReview',meetings:'openMeetingBriefing',communications:'askComms',email_intelligence:'openEmailIntelligence',opportunities:'openOpportunityIntelligence',tasks:'openTaskBoard',drafts:'openDraftsPage',intelligence:'openPriorityReview',leads_employers:'openLeadIntelligence',leads_partners:'openPartnerIntelligence',settings:'openKeysPanel',settings_api_keys:'openKeysPanel',settings_templates:'openTemplatesPage',settings_dashboard_studio:'openDashboardStudioPage',settings_security:'openSecurityPrivacyPage'};
   call(routes[view]||'closeDetail');
 };
 function listLine(label,value){return '<div class="val-mini-item"><strong>'+safe(label)+'</strong><span>'+safe(value)+'</span></div>';}
 function loadDraftSignals(show){
   var fetcher=typeof apiFetch==='function'?apiFetch:function(url){return fetch(url,{credentials:'same-origin'}).then(function(r){return r.json();});};
-  return fetcher((window.PROXY||'')+'/api/val/drafts').then(function(data){draftSignalState.drafts=Array.isArray(data.drafts)?data.drafts:[];draftSignalState.loaded=true;draftSignalState.error='';buildCommandCenter();return data;}).catch(function(e){draftSignalState.loaded=true;draftSignalState.error=e.message||String(e);if(show&&typeof addSys==='function')addSys('Drafts could not be loaded: '+draftSignalState.error);buildCommandCenter();});
+  return fetcher((window.PROXY||'')+'/api/val/drafts').then(function(data){draftSignalState.drafts=Array.isArray(data.drafts)?data.drafts:[];draftSignalState.loaded=true;draftSignalState.error='';updateCommandCenterBadges();buildCommandCenter();return data;}).catch(function(e){draftSignalState.loaded=true;draftSignalState.error=e.message||String(e);if(show&&typeof addSys==='function')addSys('Drafts could not be loaded: '+draftSignalState.error);updateCommandCenterBadges();buildCommandCenter();});
 }
+function loadExecutiveBriefing(show){
+  if(typeof isBookEditorMode==='function'&&isBookEditorMode())return Promise.resolve(null);
+  var fetcher=typeof apiFetch==='function'?apiFetch:function(url){return fetch(url,{credentials:'same-origin'}).then(function(r){return r.json();});};
+  executiveBriefingState.loading=true;executiveBriefingState.error='';buildCommandCenter();
+  return fetcher((window.PROXY||'')+'/api/executive-briefing').then(function(data){executiveBriefingState.data=data&&data.ok!==false?data:null;executiveBriefingState.loaded=true;executiveBriefingState.loading=false;executiveBriefingState.error='';executiveBriefingState.lastLoadedAt=new Date().toISOString();if(data&&!data.bookMode)window.executiveBriefing=data;buildCommandCenter();return data;}).catch(function(e){executiveBriefingState.loaded=true;executiveBriefingState.loading=false;executiveBriefingState.error=e.message||String(e);if(show&&typeof addSys==='function')addSys('Executive Briefing could not be loaded: '+executiveBriefingState.error);buildCommandCenter();});
+}
+window.loadExecutiveBriefing=loadExecutiveBriefing;
 function upcomingEvents(){return ([].concat((window.dashData&&dashData.appointments)||[],(window.dashData&&dashData.calendarEvents)||[])).filter(function(e){var d=new Date(e.startTime||e.start||e.date||0);return d>=new Date()&&!isNaN(d);}).sort(function(a,b){return new Date(a.startTime||a.start||a.date)-new Date(b.startTime||b.start||b.date);});}
 function taskInfo(){var all=window.valTasks||((window.dashData&&dashData.tasks)||[]),open=all.filter(function(t){return !t.completed&&t.status!=='completed';}),now=new Date(),todayEnd=new Date();todayEnd.setHours(23,59,59,999);return{open:open,overdue:open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;}),unscheduled:open.filter(function(t){return !t.scheduledStart&&!t.calendarEventId;}),scheduledToday:open.filter(function(t){var d=t.scheduledStart?new Date(t.scheduledStart):null;return d&&!isNaN(d)&&d>=now&&d<=todayEnd;})};}
 function commandCard(kicker,title,copy,action,label,extra,priority){return '<article class="val-command-card'+(priority?' priority':'')+'"><div class="val-card-head"><div class="val-card-kicker">'+safe(kicker)+'</div>'+(extra&&extra.count!=null?'<span class="val-card-count">'+safe(extra.count)+'</span>':'')+'</div><h3>'+safe(title)+'</h3>'+(extra&&extra.html?'<div class="val-mini-list">'+extra.html+'</div>':'<p>'+safe(copy)+'</p>')+'<button class="val-card-action" onclick="'+action+'">'+safe(label)+'</button></article>';}
+function pct(value){return Math.round(Number(value||0)*100)+'%';}
+function moveLine(move){return '<div class="eb-move-line"><strong>'+safe(move.title||'Agency move')+'</strong><span>'+safe(move.why||move.whatChanged||'VAL noticed this may matter.')+'</span><em>'+pct(move.confidence)+'</em></div>';}
+function timeOfDayInfo(){
+  var h=new Date().getHours();
+  if(h<12)return{key:'morning',greeting:'Good morning',note:'You have got this.'};
+  if(h<17)return{key:'afternoon',greeting:'Good afternoon',note:'Steady momentum.'};
+  if(h<21)return{key:'evening',greeting:'Good evening',note:'Bring the day home.'};
+  return{key:'night',greeting:'Good evening',note:'Quiet clarity.'};
+}
+function lineIcon(type){
+  var map={risk:'!',opportunity:'↗',decision:'✓',relationship:'↗',relationship_signal:'↗',emotional_context:'•',deadline:'□',question:'?',promise:'✓',commitment:'✓',task:'✓',default:'•'};
+  return map[type]||map.default;
+}
+function compactText(value,fallback){return safe(String(value||fallback||'').replace(/\s+/g,' ').trim());}
+function firstMoveTitle(move,fallback){return compactText(move&&move.title,fallback);}
+function firstMoveCopy(move,fallback){return compactText(move&&(move.why||move.whatChanged||move.content),fallback);}
+function cardLink(label,view){return '<button class="val-card-link" onclick="commandCenterNavigate(\''+view+'\')">'+safe(label)+'</button>';}
+function whatChangedRows(b){
+  var items=(b&&Array.isArray(b.whatChanged)?b.whatChanged:[]).slice(0,4);
+  if(!items.length)items=(b&&Array.isArray(b.valNoticed)?b.valNoticed:[]).slice(0,4).map(function(n){return{title:n,type:'relationship_signal'};});
+  if(!items.length)items=[
+    {title:'VAL is watching for new evidence.',type:'relationship_signal'},
+    {title:'Emails and transcripts will appear here after sync.',type:'decision'},
+    {title:'No urgent risk has surfaced yet.',type:'risk'},
+    {title:'Calendar shifts will be noticed here.',type:'deadline'}
+  ];
+  return items.map(function(item){
+    var title=typeof item==='string'?item:(item.title||item.content||item.summary||'Something changed');
+    var type=typeof item==='string'?'default':(item.type||item.observationType||'default');
+    return '<div class="val-dash-row"><span class="val-row-icon '+safe(type)+'">'+safe(lineIcon(type))+'</span><span>'+compactText(title)+'</span></div>';
+  }).join('');
+}
+function peopleRows(b){
+  var people=(b&&Array.isArray(b.people)?b.people:[]).slice(0,4);
+  if(!people.length)people=[{name:'Relationships',state:'Waiting for evidence',trend:'steady'}];
+  return people.map(function(p){
+    var trend=String(p.trend||p.state||'steady').toLowerCase();
+    var cls=/risk|waiting|needs|cool|slow/.test(trend)?'risk':(/warm|momentum|increas|build/.test(trend)?'up':'steady');
+    return '<button class="val-person-row" onclick="commandCenterNavigate(\'relationships\')"><span class="val-person-avatar">'+safe((p.name||'R').slice(0,1).toUpperCase())+'</span><span><strong>'+safe(p.name||'Relationship')+'</strong><small class="'+cls+'">'+safe(p.state||p.summary||'Observed')+'</small></span><em class="'+cls+'">'+(cls==='risk'?'↘':(cls==='up'?'↗':'→'))+'</em></button>';
+  }).join('');
+}
+function projectRows(b){
+  var projects=(b&&Array.isArray(b.projects)?b.projects:[]).slice(0,3);
+  if(!projects.length)projects=[
+    {name:'VAL Platform',summary:'Evidence and briefing system',state:'Momentum'},
+    {name:'Relationship Engine',summary:'People create velocity',state:'Momentum'},
+    {name:'Email Intelligence',summary:'Evidence before actions',state:'Watching'}
+  ];
+  return projects.map(function(p){
+    var cls=/risk|slow|stall|watch/i.test(String(p.state||''))?'risk':'up';
+    return '<button class="val-project-row" onclick="commandCenterNavigate(\'projects\')"><span class="val-project-icon '+cls+'">↗</span><span><strong>'+safe(p.name||p.title||'Project')+'</strong><small>'+safe(p.summary||p.description||'Current priority')+'</small></span><em class="'+cls+'">'+safe(p.state||'Momentum')+'</em></button>';
+  }).join('');
+}
+function momentumRows(b){
+  var momentum=(b&&Array.isArray(b.momentum)?b.momentum:[]).slice(0,4);
+  if(!momentum.length)momentum=[
+    {title:'Momentum Increasing',detail:'Evidence spine, relationship engine, executive briefing',state:'up'},
+    {title:'Momentum Slowing',detail:'Inbox visibility depends on email sync depth',state:'watch'},
+    {title:'Momentum At Risk',detail:'Too many suggested actions would reduce trust',state:'risk'},
+    {title:'Momentum Recovering',detail:'Dashboard now shows judgment instead of raw data',state:'recovering'}
+  ];
+  return momentum.map(function(m){
+    var cls=/risk|at risk/i.test(String(m.state||m.title||''))?'risk':(/slow|watch/i.test(String(m.state||m.title||''))?'watch':(/recover/i.test(String(m.state||m.title||''))?'recover':'up'));
+    return '<div class="val-momentum-row '+cls+'"><span>'+safe(cls==='risk'?'↓':(cls==='watch'?'↘':(cls==='recover'?'↻':'↗')))+'</span><div><strong>'+safe(m.title||'Momentum signal')+'</strong><small>'+safe(m.detail||m.summary||'VAL is watching the pattern.')+'</small></div></div>';
+  }).join('');
+}
+function readyRows(b){
+  var ready=[];
+  (draftSignalState.drafts||[]).slice(0,3).forEach(function(d){ready.push({title:d.subject||'Draft prepared',view:'drafts'});});
+  (b&&Array.isArray(b.alsoImportant)?b.alsoImportant:[]).slice(0,3).forEach(function(m){ready.push({title:m.title||'Suggested move ready',view:'tasks'});});
+  if(!ready.length)ready=[{title:'VAL is not forcing action yet',view:'tasks'},{title:'Evidence pipeline is ready',view:'evidence'},{title:'Relationship signals will surface here',view:'relationships'}];
+  return ready.slice(0,5).map(function(r){return '<div class="val-ready-row"><span>✓</span><strong>'+safe(r.title)+'</strong>'+cardLink('View',r.view||'tasks')+'</div>';}).join('');
+}
+function executiveBriefingHtml(bookMode){
+  if(bookMode)return '';
+  if(executiveBriefingState.loading&&!executiveBriefingState.loaded)return '<section class="val-dashboard-grid"><article class="val-dash-card loading"><div class="eb-kicker">Executive Briefing</div><h2>Reading what changed...</h2><p>VAL is distilling evidence, relationships, projects, and agency moves.</p></article></section>';
+  if(executiveBriefingState.error)return '<section class="executive-briefing-panel"><div class="eb-kicker">Executive Briefing</div><h2>Briefing unavailable</h2><p>'+safe(executiveBriefingState.error)+'</p><button class="eb-btn" onclick="loadExecutiveBriefing(true)">Try Again</button></section>';
+  var b=executiveBriefingState.data;if(!b||b.bookMode)return '';
+  var highest=b.highestLeverageMove||{};
+  return '<div class="val-briefing-contract" aria-hidden="true">People Create Velocity · Highest Leverage Move · Also Important · Quietly Handled · VAL Noticed</div><section class="val-dashboard-grid">'
+    +'<article class="val-dash-card what-changed"><div class="val-card-title"><span class="val-card-symbol">⌾</span><h2>What Changed</h2>'+cardLink('View all','evidence')+'</div><div class="val-row-list">'+whatChangedRows(b)+'</div></article>'
+    +'<article class="val-dash-card highest"><div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2>'+cardLink('Why this?','tasks')+'</div><h3>'+firstMoveTitle(highest,'No major move is ready yet')+'</h3><p>'+firstMoveCopy(highest,'VAL is watching without forcing action.')+'</p><div class="val-leverage-meta"><span>Estimated impact <strong>'+safe(highest.impact||highest.priorityBand||'Quiet')+'</strong></span><span>Confidence <strong>'+safe(highest.confidence!=null?pct(highest.confidence):'--')+'</strong></span></div><button class="val-primary-action" onclick="commandCenterNavigate(\'tasks\')">'+safe(highest.title?'Review Move':'Keep Watching')+'</button></article>'
+    +'<article class="val-dash-card people"><div class="val-card-title"><span class="val-card-symbol">♙</span><h2>People</h2>'+cardLink('View all','relationships')+'</div><div class="val-people-list">'+peopleRows(b)+'</div></article>'
+    +'<article class="val-dash-card projects"><div class="val-card-title"><span class="val-card-symbol">□</span><h2>Projects</h2>'+cardLink('View all','projects')+'</div><div class="val-project-list">'+projectRows(b)+'</div></article>'
+    +'<article class="val-dash-card momentum"><div class="val-card-title"><span class="val-card-symbol">◷</span><h2>Momentum</h2>'+cardLink('View analysis','relationships')+'</div><div class="val-momentum-list">'+momentumRows(b)+'</div></article>'
+    +'<article class="val-dash-card ready"><div class="val-card-title"><span class="val-card-symbol">✧</span><h2>Ready for You</h2></div><div class="val-ready-list">'+readyRows(b)+'</div></article>'
+  +'</section>';
+}
 function buildCommandCenter(){
   var welcome=document.getElementById('centerWelcome');if(!welcome)return;
   var events=upcomingEvents(),tasks=taskInfo(),next=events[0],unread=Number((window.dashData&&dashData.followups)||0),pipeline=Number((window.dashData&&dashData.pipelineActive)||0),stalled=Number((window.dashData&&dashData.stalledDeals)||0);
@@ -63,7 +217,15 @@ function buildCommandCenter(){
   var dashboardOverride=studioOverrides.dashboard||{};
   var defaultTitle=bookMode?'Continue the book, gently.':'Today, clearly.';
   var defaultSub=bookMode?'Start at the beginning, use prior editor notes, and move chapter by chapter without making Michele manage the machinery.':'The decisions, relationships, and commitments most likely to need your attention—without the dashboard noise.';
-  var html='<div class="cw-label">'+(bookMode?'Book Command Center':'Executive Command Center')+'</div><div class="cw-title">'+safe(dashboardOverride.heroTitle||defaultTitle)+'</div><div class="cw-sub">'+safe(dashboardOverride.heroSubtitle||defaultSub)+'</div><div class="val-command-grid">';
+  if(!bookMode){
+    var tod=timeOfDayInfo(),brief=executiveBriefingState.data||{},theme=brief.todayTheme||{};
+    welcome.className='center-welcome val-home '+('time-'+tod.key);
+    welcome.innerHTML='<div class="val-home-hero"><div><h1>'+safe(tod.greeting+', '+clientFirstName()+'.')+'</h1><p>'+safe((theme.why||dashboardOverride.heroSubtitle||'I’ve been paying attention. Here’s what matters today.'))+'</p></div><div class="val-hero-note">'+safe(tod.note)+' <span>♡</span></div></div>'+executiveBriefingHtml(false)+'<div class="val-home-chat"><span>✦</span><button onclick="document.getElementById(\'msgInput\')?.focus()">What are we working on today?</button><button class="val-home-send" onclick="sendMessage()">↑</button></div><button class="val-talk-button" onclick="openGeneralChat()"><span></span><strong>Talk to VAL</strong></button>';
+    welcome.style.display='block';
+    return;
+  }
+  welcome.className='center-welcome';
+  var html='<div class="cw-label">'+(bookMode?'Book Command Center':'Executive Command Center')+'</div><div class="cw-title">'+safe(dashboardOverride.heroTitle||defaultTitle)+'</div><div class="cw-sub">'+safe(dashboardOverride.heroSubtitle||defaultSub)+'</div>'+executiveBriefingHtml(bookMode)+'<div class="val-command-grid">';
   if(bookMode){
     html+=commandCard('Continue My Book','Continue My Book','Read the current manuscript chapter, use Michele’s prior edit notes, ask one gentle question, then update the manuscript safely.','openMicheleBookCompanion()','Continue My Book',{count:'Start here'},true);
   }
@@ -82,7 +244,7 @@ function buildCommandCenter(){
 function loadTranscripts(show){
   var fetcher=typeof apiFetch==='function'?apiFetch:function(url){return fetch(url,{credentials:'same-origin'}).then(function(r){return r.json().catch(function(){return{};}).then(function(data){if(!r.ok)throw new Error(data.error||('Transcript request failed ('+r.status+')'));return data;});});};
   transcriptState.loading=true;transcriptState.error='';if(show)renderTranscriptLoading();
-  return fetcher((window.PROXY||'')+'/api/val/transcripts?days=3650&limit=250').then(function(data){if(!data||data.ok===false||!Array.isArray(data.transcripts))throw new Error((data&&data.error)||'Transcript retrieval returned an invalid response.');transcriptState.items=data.transcripts;transcriptState.counts=data.counts||{total:data.transcripts.length,needsReview:0,withOpenActions:0};transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error='';transcriptState.lastLoadedAt=new Date().toISOString();buildCommandCenter();if(show)renderTranscriptList();return data;}).catch(function(e){transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error=e.message||String(e);buildCommandCenter();if(show)renderTranscriptError(transcriptState.error);throw e;});
+  return fetcher((window.PROXY||'')+'/api/val/transcripts?days=3650&limit=250').then(function(data){if(!data||data.ok===false||!Array.isArray(data.transcripts))throw new Error((data&&data.error)||'Transcript retrieval returned an invalid response.');transcriptState.items=data.transcripts;transcriptState.counts=data.counts||{total:data.transcripts.length,needsReview:0,withOpenActions:0};transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error='';transcriptState.lastLoadedAt=new Date().toISOString();updateCommandCenterBadges();buildCommandCenter();if(show)renderTranscriptList();return data;}).catch(function(e){transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error=e.message||String(e);updateCommandCenterBadges();buildCommandCenter();if(show)renderTranscriptError(transcriptState.error);throw e;});
 }
 window.openTranscripts=function(){setActive('transcripts');call('closeDetail');var welcome=document.getElementById('centerWelcome');if(welcome)welcome.style.display='none';var view=document.getElementById('valTranscriptView');if(view)view.classList.add('open');if(!transcriptState.loaded||transcriptState.error){loadTranscripts(true).catch(function(){});}else renderTranscriptList();};
 function transcriptHeader(subtitle,back){return '<div class="val-view-head"><div><h2>Transcript Intelligence</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Inbox</button>':'')+'<button class="val-ui-btn" onclick="renderTranscriptReviewQueue()">Review Queue</button><button class="val-ui-btn" onclick="openIntegrationStatus()">Webhook Setup</button><button class="val-ui-btn" '+(transcriptState.loading?'disabled':'')+' onclick="loadTranscripts(true).catch(function(){})">'+(transcriptState.loading?'Refreshing…':'Refresh')+'</button></div></div>';}

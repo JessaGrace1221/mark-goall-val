@@ -31,10 +31,17 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
   assert.match(server,/legacyGroups/);
 });
 
+test('transcript titles reject command labels and prefer real topics',()=>{
+  assert.match(server,/function transcriptTopicTitleFromText/);
+  assert.match(server,/prepare me for\|summarize this past meeting\|meeting prep/);
+  assert.match(server,/speaker\|user\|time\|date\|summary\|system\|assistant/);
+  assert.match(server,/const topic=transcriptTopicTitleFromText/);
+});
+
 test('retrieval returns required fields and accurate counters',()=>{
   for(const field of ['receivedAt','reviewStatus','openActionCount','sourcePayloadMetadata','company','contactName'])assert.ok(server.includes(field));
   assert.match(server,/\['new','unreviewed','needs_review'\]\.includes\(t\.reviewStatus\)/);
-  assert.match(server,/t\.openActionCount>0/);
+  assert.match(server,/Number\(t\.openActionCount\|\|t\.taskCount\|\|0\)>0/);
   assert.match(server,/\[transcripts\] retrieval requested/);
   assert.match(server,/\[transcripts\] retrieval failed/);
 });
@@ -51,7 +58,20 @@ test('refresh reloads the full durable archive and updates counts',()=>{
   assert.match(ui,/api\/val\/transcripts\?days=3650&limit=250/);
   assert.match(ui,/onclick="loadTranscripts\(true\)\.catch/);
   assert.match(ui,/transcriptState\.counts=data\.counts/);
+  assert.match(ui,/updateCommandCenterBadges/);
   assert.match(ui,/lastLoadedAt=new Date\(\)\.toISOString/);
+});
+
+test('left navigation exposes live transcript, task, and draft badges',()=>{
+  assert.match(ui,/function navBadge/);
+  assert.match(ui,/data-badge-view/);
+  assert.match(ui,/function pendingDraftCount/);
+  assert.match(ui,/function openTaskCount/);
+  assert.match(ui,/function transcriptAttentionCount/);
+  assert.match(ui,/window\.syncCommandCenterDrafts/);
+  assert.match(css,/\.val-nav-badge\{/);
+  assert.match(css,/\.val-nav-badge\.empty\{display:none\}/);
+  assert.match(css,/\.val-nav-label/);
 });
 
 test('every transcript card exposes the four required actions',()=>{

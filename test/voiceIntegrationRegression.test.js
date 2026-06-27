@@ -18,8 +18,12 @@ test('voice playback uses server-side Deepgram TTS proxy instead of browser-side
 
 test('voice status exposes safe diagnostics without leaking the Deepgram key',()=>{
   assert.match(server,/app\.get\('\/api\/val\/voice\/status'/);
+  assert.match(server,/app\.post\('\/api\/val\/voice\/test'/);
   assert.match(server,/ttsConfigured:!!DEEPGRAM_API_KEY/);
   assert.match(server,/ttsModel:deepgramTtsModel\(\)/);
+  assert.match(server,/ttsModelSource:deepgramTtsModelSource\(\)/);
+  assert.match(server,/ttsKeySource:deepgramKeySource\(\)/);
+  assert.match(server,/lastTtsDiagnostic:lastDeepgramTtsDiagnostic/);
   assert.match(server,/voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE/);
   assert.doesNotMatch(server,/apiKey:DEEPGRAM_API_KEY/);
 });
@@ -27,6 +31,8 @@ test('voice status exposes safe diagnostics without leaking the Deepgram key',()
 test('voice defaults to Deepgram Aura 2 Cora and visible fallback warnings',()=>{
   assert.match(server,/aura-2-cora-en/);
   assert.match(dashboard,/Deepgram voice failed, using temporary browser voice/);
+  assert.match(dashboard,/\/api\/val\/voice\/test/);
+  assert.match(dashboard,/Deepgram server test passed/);
   assert.match(dashboard,/voiceTtsWarnedAt/);
   assert.match(dashboard,/endpointing=800/);
 });

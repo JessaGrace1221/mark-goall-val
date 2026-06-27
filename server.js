@@ -69,7 +69,7 @@ const GHL_KEY = process.env.GHL_KEY || process.env.GHL_API_KEY;
 const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
 const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',').map(v=>v.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const OPENAI_KEY = process.env.OPENAI_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
 const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
@@ -1261,6 +1261,14 @@ function tenantApiKeyProvider(provider){
 function tenantApiKeyPreview(value){
   return maskSecret(value).replace('...','••••••');
 }
+function tenantApiKeyLooksValid(provider,value){
+  const key=String(value||'').trim();
+  const p=String(provider||'').toLowerCase();
+  if(!key) return false;
+  if(p==='openai') return /^sk-[A-Za-z0-9_\-]{20,}$/.test(key);
+  if(p==='anthropic') return /^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key);
+  return key.length>=8 && /^[\x20-\x7E]+$/.test(key);
+}
 function dashboardStudioPolicyMatch(lower,patterns){
   return patterns.find(p=>p.test(lower))||null;
 }
@@ -2053,7 +2061,7 @@ async function getIntegrationCredential(provider,credentialType,userId=currentVa
 }
 async function resolveIntegrationSecret(provider,credentialType,fallback=''){
   if(String(credentialType||'')==='api_key'&&tenantApiKeyProvider(provider)){
-    return resolveTenantApiKey(provider,{fallback,sourceLabel:'resolveIntegrationSecret'});
+    return resolveTenantApiKey(provider,{fallback,allowPlatformFallback:platformKeyFallbackAllowed(provider),sourceLabel:'resolveIntegrationSecret'});
   }
   const row=await getIntegrationCredential(provider,credentialType);
   if(row?.encrypted_value||row?.encryptedValue){
@@ -2157,6 +2165,7 @@ async function saveTenantApiKey(req,{provider,apiKey,metadata={}}){
   if(!encryptionConfigured()) throw new Error('ENCRYPTION_KEY is required to save tenant API keys.');
   const secret=String(apiKey||'').trim();
   if(!secret) throw new Error(`Your ${p.displayName} key is not connected yet. Add it in API Keys & Connections to use this feature.`);
+  if(!tenantApiKeyLooksValid(p.providerId,secret)) throw new Error(`That does not look like a valid ${p.displayName} API key. It was not saved.`);
   const tenant=tenantId(), userId=currentUserId(), encrypted=encryptSecret(secret), preview=tenantApiKeyPreview(secret);
   const row={id:uuid('tenantkey'),tenantId:tenant,provider:p.providerId,encryptedSecret:encrypted,keyPreview:preview,status:'saved',lastTestedAt:null,lastUpdatedAt:new Date().toISOString(),createdByUserId:userId,updatedByUserId:userId,metadata:{...metadata,displayName:p.displayName},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   await valDbReady;
@@ -2234,16 +2243,25 @@ async function testTenantApiKey(req,provider){
     throw e;
   }
 }
-function platformKeyFallbackAllowed(){
-  return DEMO_MODE || /^(1|true|yes)$/i.test(String(process.env.VAL_ALLOW_PLATFORM_KEY_FALLBACK||process.env.VAL_ADMIN_ALLOW_PLATFORM_KEY_FALLBACK||''));
+function platformKeyFallbackAllowed(provider=''){
+  const explicit=String(process.env.VAL_ALLOW_PLATFORM_KEY_FALLBACK||process.env.VAL_ADMIN_ALLOW_PLATFORM_KEY_FALLBACK||'').trim();
+  if(DEMO_MODE || /^(1|true|yes)$/i.test(explicit)) return true;
+  if(/^(0|false|no)$/i.test(explicit)) return false;
+  const p=String(provider||'').toLowerCase();
+  if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
+  return false;
 }
 async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
   const p=tenantApiKeyProvider(provider);
   if(!p) return fallback||'';
   const tenantKey=await getTenantApiKeySecret(p.providerId).catch(e=>{console.error(`Tenant API key read failed for ${p.providerId}:`,e.message);return '';});
-  if(tenantKey){console.log(`[tenant-key] ${sourceLabel} using tenant vault key for ${p.providerId}`);return tenantKey;}
+  if(tenantKey&&tenantApiKeyLooksValid(p.providerId,tenantKey)){console.log(`[tenant-key] ${sourceLabel} using tenant vault key for ${p.providerId}`);return tenantKey;}
+  if(tenantKey&&!tenantApiKeyLooksValid(p.providerId,tenantKey)){
+    console.warn(`[tenant-key] ${sourceLabel} ignoring invalid tenant vault key for ${p.providerId}`);
+    await updateTenantApiKeyStatus(p.providerId,'invalid',{errorMessage:'Stored key does not match expected provider key format.'}).catch(()=>{});
+  }
   const legacy=await (async()=>{const row=await getIntegrationCredential(p.providerId,'api_key');const encrypted=row?.encrypted_value||row?.encryptedValue;return encrypted?decryptSecret(encrypted):'';})().catch(e=>{console.error(`Legacy integration credential read failed for ${p.providerId}:`,e.message);return '';});
-  if(legacy){console.log(`[tenant-key] ${sourceLabel} using legacy tenant credential for ${p.providerId}`);return legacy;}
+  if(legacy&&tenantApiKeyLooksValid(p.providerId,legacy)){console.log(`[tenant-key] ${sourceLabel} using legacy tenant credential for ${p.providerId}`);return legacy;}
   if(allowPlatformFallback&&fallback){console.log(`[tenant-key] ${sourceLabel} using platform/demo fallback for ${p.providerId}`);return fallback;}
   return '';
 }
@@ -2518,6 +2536,392 @@ async function dbQuery(sql,params){
     return {rows:[],rowCount:0};
   }
 }
+function railwayFix(variableName, redeploy=true){
+  return `Railway → Your Baby VAL project → Variables → Add ${variableName}${redeploy?' → Redeploy':''}`;
+}
+function envStatus({name,present,misconfigured=false,controls,fix}){
+  return {
+    name,
+    status:present?(misconfigured?'Misconfigured':'Connected'):'Missing',
+    controls,
+    howToFix:fix || railwayFix(name),
+    redeployRequired:true
+  };
+}
+function missingEnvNames(names){
+  return names.filter(name=>!process.env[name]);
+}
+function setupHealthPayload(){
+  const googleMissing=missingEnvNames(['GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','GOOGLE_REDIRECT_URI']);
+  const microsoftMissing=missingEnvNames(['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET','MICROSOFT_REDIRECT_URI']);
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    items:[
+      envStatus({name:'DATABASE_URL',present:!!process.env.DATABASE_URL,controls:'Postgres storage for chats, Dashboard Studio settings, OAuth tokens, tasks, transcripts, and memory.',fix:'Railway → Your Baby VAL project → Add or attach Postgres → confirm DATABASE_URL exists in Variables → Redeploy'}),
+      envStatus({name:'OPENAI_API_KEY',present:!!OPENAI_KEY,controls:'Baby VAL chat and AI responses.',fix:'Railway → Your Baby VAL project → Variables → Add OPENAI_API_KEY → Redeploy Baby VAL'}),
+      envStatus({name:'GOOGLE_CLIENT_ID',present:!!GOOGLE_CLIENT_ID,misconfigured:!!GOOGLE_CLIENT_ID&&!validGoogleClientId(),controls:'Google OAuth for Gmail and Google Calendar.',fix:'Railway → Your Baby VAL project → Variables → Add GOOGLE_CLIENT_ID → Redeploy'}),
+      envStatus({name:'GOOGLE_CLIENT_SECRET',present:!!GOOGLE_CLIENT_SECRET,controls:'Google OAuth secret for Gmail and Google Calendar.',fix:railwayFix('GOOGLE_CLIENT_SECRET')}),
+      envStatus({name:'GOOGLE_REDIRECT_URI',present:!!CONFIGURED_GOOGLE_REDIRECT_URI,controls:'Google OAuth callback URL. Use https://your-app.up.railway.app/auth/callback.',fix:railwayFix('GOOGLE_REDIRECT_URI')}),
+      envStatus({name:'MICROSOFT_CLIENT_ID',present:!!MICROSOFT_CLIENT_ID,controls:'Microsoft OAuth for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_ID')}),
+      envStatus({name:'MICROSOFT_CLIENT_SECRET',present:!!MICROSOFT_CLIENT_SECRET,controls:'Microsoft OAuth secret for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_SECRET')}),
+      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')})
+    ],
+    google:{
+      connected:false,
+      configured:googleMissing.length===0,
+      missingVariables:googleMissing,
+      setupMessage:googleMissing.length?`Google cannot connect yet because these Railway variables are missing: ${googleMissing.join(', ')}. Add them in Railway → Variables, then redeploy.`:'Google is configured. Use Connect Google or Reconnect Google to authorize Gmail and Google Calendar.'
+    },
+    microsoft:{
+      connected:false,
+      configured:microsoftMissing.length===0,
+      missingVariables:microsoftMissing,
+      setupMessage:microsoftMissing.length?`Microsoft cannot connect yet because these Railway variables are missing: ${microsoftMissing.join(', ')}. Add them in Railway → Variables, then redeploy.`:'Microsoft is configured. Use Connect Microsoft or Reconnect Microsoft to authorize Outlook Mail and Outlook Calendar.'
+    }
+  };
+}
+const DEFAULT_BABY_STUDIO_SETTINGS = {
+  babyValName:'',
+  welcomeMessage:'',
+  accentColor:'#C4963A',
+  aboutMe:'',
+  preferredTone:'',
+  importantLinks:[],
+  shownCards:['today','chat','calendar','tasks','integrations'],
+  simpleInstructions:''
+};
+const TEACH_VAL_VOICE_PROMPT = `You are VAL, a warm, intelligent Executive AI and Chief of Staff.
+
+This is your first conversation with your owner.
+
+Your job is not just to collect information. Your job is to begin understanding how this person thinks.
+
+Be warm, thoughtful, encouraging, and organized.
+
+Let the user ramble. Do not rush them. Do not interrupt long answers. If they tell a story, listen for the meaning behind the story.
+
+When they share something important, acknowledge it naturally and summarize what you heard.
+
+Use phrases like:
+- That is helpful context.
+- I can tell this matters to you.
+- Let me make sure I understood that.
+- That sounds like an important lesson.
+- I will make sure this is remembered.
+- Tell me more about that.
+
+Avoid exaggerated praise.
+Avoid therapy language.
+Avoid corporate hype.
+Avoid sounding like a questionnaire.
+
+You are helping this person teach VAL who they are, what they are building, who matters, what lessons they have learned, how they prefer to work, and where they need support.
+
+Move through these topics naturally:
+1. Who they are
+2. What they do
+3. Their company or work
+4. Their current projects
+5. Their most important people
+6. Lessons learned
+7. Frustrations and blockers
+8. Preferences and working style
+9. Missing processes or messy areas
+10. What they want VAL to help with first
+
+After each major topic, briefly summarize what you heard and ask if you understood correctly.
+
+At the end, thank them and explain that the next step is bringing in context from their existing ChatGPT or Claude account.`;
+const TEACH_VAL_KNOWLEDGE_CARDS = [
+  {category:'current_projects',title:'Current Projects',prompt:'Based on everything you know from our conversations, list my current active projects. For each project, include what it is, why it matters, current status, key people involved, open loops, frustrations, and what seems most important next.'},
+  {category:'important_people',title:'Important People',prompt:'Based on everything you know from our conversations, list the people, clients, partners, collaborators, mentors, team members, and important relationships I talk about most often. For each person, include who they are, how they are connected to me, what matters about the relationship, any opportunities, any concerns, and what a future executive assistant should remember.'},
+  {category:'lessons_learned',title:'Lessons Learned',prompt:'Based on everything you know from our conversations, list the lessons I have learned the hard way. Include the story or situation behind each lesson, what I learned, and what rule or reminder my future AI should remember.'},
+  {category:'work_preferences',title:'Work Preferences',prompt:'Based on everything you know from our conversations, describe how I prefer to work, communicate, make decisions, manage time, receive reminders, handle meetings, write, delegate, and use AI.'},
+  {category:'frustrations',title:'Frustrations and Repeated Problems',prompt:'Based on everything you know from our conversations, list the frustrations, blockers, messy processes, repeated problems, or operational gaps I bring up most often. Include what appears to cause them and what kind of support would help.'},
+  {category:'opportunities',title:'Opportunities',prompt:'Based on everything you know from our conversations, list the business opportunities, ideas, offers, partnerships, products, services, or strategies that still seem relevant. Include why each one matters and what the next step might be.'},
+  {category:'things_to_remember',title:'Things To Never Forget',prompt:'Based on everything you know from our conversations, what should a personal executive AI remember about me forever? Include values, preferences, context, important stories, priorities, relationships, and anything that would help it support me well.'}
+];
+function teachValDefaultState(){
+  return {
+    stage:'welcome',
+    progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
+    voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started',turns:[]},
+    mode:'onboarding',
+    testMode:true,
+    lastError:'',
+    webhookAttempts:[]
+  };
+}
+function normalizeTeachValState(state={}){
+  return {...teachValDefaultState(),...(state||{}),progress:{...teachValDefaultState().progress,...((state||{}).progress||{})},voiceInterview:{...teachValDefaultState().voiceInterview,...((state||{}).voiceInterview||{})}};
+}
+function teachValCardFor(category){
+  return TEACH_VAL_KNOWLEDGE_CARDS.find(c=>c.category===category)||null;
+}
+function teachValStoreArray(name){
+  const store=valStore();
+  store[name]=Array.isArray(store[name])?store[name]:[];
+  return {store,rows:store[name]};
+}
+function teachValSessionRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    status:row.status||'draft',
+    state:normalizeTeachValState(row.state_json||row.stateJson||row.state||{}),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
+  };
+}
+function teachValImportRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    category:row.category,
+    promptUsed:row.prompt_used||row.promptUsed||'',
+    rawResponse:row.raw_response||row.rawResponse||'',
+    structuredSummary:row.structured_json||row.structuredSummary||{},
+    extractedItems:row.items_json||row.extractedItems||[],
+    reviewed:!!row.reviewed,
+    status:row.status||'Waiting for Paste',
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
+  };
+}
+function teachValMemoryRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    category:row.category,
+    title:row.title||'',
+    summary:row.summary||'',
+    source:row.source||'teach_val_onboarding',
+    confidence:Number(row.confidence||0.72),
+    data:row.data_json||row.data||{},
+    createdAt:row.created_at||row.createdAt||new Date().toISOString()
+  };
+}
+async function getTeachValSession(id=''){
+  await valDbReady;
+  if(pgPool){
+    const args=[tenantId(),currentUserId()];
+    let where='tenant_id=$1 and user_id=$2';
+    if(id){args.push(id);where+=' and id=$3';}
+    const r=await dbQuery(`select * from teach_val_onboarding_sessions where ${where} order by updated_at desc limit 1`,args);
+    return teachValSessionRow(r.rows[0]);
+  }
+  const {rows}=teachValStoreArray('teachValOnboardingSessions');
+  const found=rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&(!id||r.id===id)).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
+  return teachValSessionRow(found);
+}
+async function saveTeachValSession(session){
+  await valDbReady;
+  const clean=teachValSessionRow(session);
+  clean.updatedAt=new Date().toISOString();
+  if(pgPool){
+    await dbQuery(`insert into teach_val_onboarding_sessions (id,tenant_id,user_id,status,state_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()),now())
+      on conflict (id) do update set status=excluded.status,state_json=excluded.state_json,updated_at=now()`,[clean.id,clean.tenantId,clean.userId,clean.status,JSON.stringify(clean.state),clean.createdAt]);
+    return getTeachValSession(clean.id);
+  }
+  const {store,rows}=teachValStoreArray('teachValOnboardingSessions');
+  const idx=rows.findIndex(r=>r.id===clean.id);
+  const row={id:clean.id,tenantId:clean.tenantId,userId:clean.userId,status:clean.status,state:clean.state,createdAt:clean.createdAt,updatedAt:clean.updatedAt};
+  if(idx>=0)rows[idx]=row;else rows.unshift(row);
+  saveValStore(store);
+  return teachValSessionRow(row);
+}
+async function listTeachValImports(sessionId){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from teach_val_imports where tenant_id=$1 and user_id=$2 and session_id=$3 order by created_at asc',[tenantId(),currentUserId(),sessionId]);
+    return r.rows.map(teachValImportRow);
+  }
+  const {rows}=teachValStoreArray('teachValImports');
+  return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValImportRow);
+}
+async function saveTeachValImport(record){
+  await valDbReady;
+  const row=teachValImportRow({...record,id:record.id||uuid('tvi'),tenantId:tenantId(),userId:currentUserId(),updatedAt:new Date().toISOString()});
+  if(pgPool){
+    await dbQuery(`insert into teach_val_imports (id,session_id,tenant_id,user_id,category,prompt_used,raw_response,structured_json,items_json,reviewed,status,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,coalesce($12::timestamptz,now()),now())
+      on conflict (id) do update set prompt_used=excluded.prompt_used,raw_response=excluded.raw_response,structured_json=excluded.structured_json,items_json=excluded.items_json,reviewed=excluded.reviewed,status=excluded.status,updated_at=now()`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.promptUsed,row.rawResponse,JSON.stringify(row.structuredSummary||{}),JSON.stringify(row.extractedItems||[]),row.reviewed,row.status,row.createdAt]);
+    return teachValImportRow((await dbQuery('select * from teach_val_imports where id=$1',[row.id])).rows[0]);
+  }
+  const {store,rows}=teachValStoreArray('teachValImports');
+  const idx=rows.findIndex(r=>r.id===row.id);
+  const stored={id:row.id,sessionId:row.sessionId,tenantId:row.tenantId,userId:row.userId,category:row.category,promptUsed:row.promptUsed,rawResponse:row.rawResponse,structuredSummary:row.structuredSummary,extractedItems:row.extractedItems,reviewed:row.reviewed,status:row.status,createdAt:row.createdAt,updatedAt:row.updatedAt};
+  if(idx>=0)rows[idx]=stored;else rows.push(stored);
+  saveValStore(store);
+  return teachValImportRow(stored);
+}
+async function listTeachValMemory(sessionId){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from teach_val_memory_items where tenant_id=$1 and user_id=$2 and session_id=$3 order by created_at desc',[tenantId(),currentUserId(),sessionId]);
+    return r.rows.map(teachValMemoryRow);
+  }
+  const {rows}=teachValStoreArray('teachValMemoryItems');
+  return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValMemoryRow);
+}
+async function insertTeachValMemoryItems(items){
+  await valDbReady;
+  const saved=[];
+  for(const item of items){
+    const row=teachValMemoryRow({...item,id:item.id||uuid('tvm'),tenantId:tenantId(),userId:currentUserId(),createdAt:new Date().toISOString()});
+    if(pgPool){
+      await dbQuery(`insert into teach_val_memory_items (id,session_id,tenant_id,user_id,category,title,summary,source,confidence,data_json,created_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+        on conflict (id) do nothing`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.title,row.summary,row.source,row.confidence,JSON.stringify(row.data||{})]);
+    }else{
+      const {store,rows}=teachValStoreArray('teachValMemoryItems');
+      rows.push({id:row.id,sessionId:row.sessionId,tenantId:row.tenantId,userId:row.userId,category:row.category,title:row.title,summary:row.summary,source:row.source,confidence:row.confidence,data:row.data,createdAt:row.createdAt});
+      saveValStore(store);
+    }
+    saved.push(row);
+  }
+  return saved;
+}
+async function teachValStateResponse(sessionId=''){
+  let session=await getTeachValSession(sessionId);
+  if(!session){
+    session=await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:teachValDefaultState(),createdAt:new Date().toISOString()});
+  }
+  const imports=await listTeachValImports(session.id);
+  const memory=await listTeachValMemory(session.id);
+  return {ok:true,session,cards:TEACH_VAL_KNOWLEDGE_CARDS,imports,memory,voicePrompt:TEACH_VAL_VOICE_PROMPT};
+}
+function normalizeTeachValItems(category,items=[]){
+  return (Array.isArray(items)?items:[]).map((item,idx)=>{
+    const title=String(item.title||item.name||item.projectName||item.personName||item.lessonTitle||item.preferenceType||`${category} ${idx+1}`).trim();
+    const summary=String(item.summary||item.lesson||item.ruleGoingForward||item.howValShouldUseThis||item.nextStep||'').trim();
+    return {
+      id:item.id||uuid('tvi_item'),
+      title:title||`${category} ${idx+1}`,
+      summary:summary||String(JSON.stringify(item)).slice(0,260),
+      category:item.category||category,
+      source:item.source||'external_ai_import',
+      confidence:Number(item.confidence||0.72),
+      include_in_val:item.include_in_val!==false,
+      data:item
+    };
+  }).slice(0,40);
+}
+async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
+  const card=teachValCardFor(category)||{};
+  if(!String(rawResponse||'').trim()) throw new Error('Paste the response from ChatGPT or Claude before saving this card.');
+  const system=[
+    'Extract calm, useful onboarding memory for an executive AI.',
+    'Return strict JSON only.',
+    'Do not invent facts. Use short summaries. Preserve source attribution.',
+    'Required JSON shape: {"summary":{}, "items":[{"title":"","summary":"","category":"","source":"external_ai_import","confidence":0.0,"include_in_val":true,"data":{}}]}',
+    'Categories should stay close to: projects, relationships, lessons, preferences, frustrations, process_gaps, opportunities, things_to_remember.'
+  ].join('\n');
+  const user=`Knowledge card: ${card.title||category}\nPrompt used:\n${promptUsed||card.prompt||''}\n\nRaw response:\n${String(rawResponse).slice(0,30000)}`;
+  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
+  let parsed=null;
+  try{parsed=raw?JSON.parse(raw):null;}catch(e){}
+  if(!parsed){
+    const chunks=String(rawResponse).split(/\n{2,}|(?:^|\n)\s*[-*]\s+/).map(x=>x.trim()).filter(Boolean).slice(0,12);
+    parsed={summary:{fallback:true,card:card.title||category},items:chunks.map(x=>({title:x.split(/[.:]/)[0].slice(0,90)||card.title||category,summary:x.slice(0,500),category,source:'external_ai_import',confidence:0.48,include_in_val:true,data:{text:x}}))};
+  }
+  parsed.items=normalizeTeachValItems(category,parsed.items);
+  return parsed;
+}
+async function summarizeTeachValInterview(transcript){
+  const clean=String(transcript||'').trim();
+  if(!clean) throw new Error('Add the voice interview transcript before saving this stage.');
+  const system='Summarize a Teach VAL About You onboarding interview. Return strict JSON with keys: executive_profile, company_context, current_projects, important_relationships, lessons_learned, frustrations, preferences, process_gaps, priorities, raw_transcript.';
+  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true}).catch(()=>null);
+  try{return raw?JSON.parse(raw):{raw_transcript:clean};}catch(e){return {executive_profile:{summary:clean.slice(0,800)},raw_transcript:clean};}
+}
+function teachValCompiledPayload({session,imports,items,testMode=false}){
+  const voice=session.state.voiceInterview||{};
+  const by=(name)=>items.filter(i=>i.category===name||i.data?.category===name);
+  return {
+    source:'teach_val_onboarding',
+    client_id:tenantId(),
+    user_id:currentUserId(),
+    created_at:new Date().toISOString(),
+    test_mode:!!testMode,
+    onboarding_mode:session.state.mode||'onboarding',
+    voice_interview:{transcript:voice.transcript||'',summary:voice.summary||{},duration:voice.duration||null},
+    external_ai_imports:imports.map(i=>({category:i.category,prompt_used:i.promptUsed,raw_response:i.rawResponse,structured_summary:i.structuredSummary,reviewed:!!i.reviewed})),
+    knowledge_cards:{
+      executive_profile:voice.summary?.executive_profile||{},
+      company_context:voice.summary?.company_context||{},
+      projects:by('current_projects').concat(by('projects')),
+      relationships:by('important_people').concat(by('relationships')),
+      lessons:by('lessons_learned').concat(by('lessons')),
+      preferences:by('work_preferences').concat(by('preferences')),
+      frustrations:by('frustrations'),
+      process_gaps:by('process_gaps'),
+      opportunities:by('opportunities'),
+      things_to_remember:by('things_to_remember')
+    }
+  };
+}
+function normalizeBabyStudioSettings(input={}){
+  const links=Array.isArray(input.importantLinks)?input.importantLinks:String(input.importantLinks||'').split('\n').map(line=>{
+    const parts=line.split('|');
+    return {label:String(parts[0]||'').trim(),url:String(parts[1]||parts[0]||'').trim()};
+  });
+  const shownCards=Array.isArray(input.shownCards)?input.shownCards:String(input.shownCards||'').split(',');
+  return {
+    babyValName:String(input.babyValName||input.name||'').trim().slice(0,120),
+    welcomeMessage:String(input.welcomeMessage||'').trim().slice(0,500),
+    accentColor:String(input.accentColor||'#C4963A').trim().slice(0,40),
+    aboutMe:String(input.aboutMe||'').trim().slice(0,4000),
+    preferredTone:String(input.preferredTone||'').trim().slice(0,1000),
+    importantLinks:links.filter(l=>l.label||l.url).slice(0,12),
+    shownCards:shownCards.map(x=>String(x||'').trim()).filter(Boolean).slice(0,20),
+    simpleInstructions:String(input.simpleInstructions||'').trim().slice(0,4000)
+  };
+}
+async function getBabyStudioSettings(){
+  const fallback={...DEFAULT_BABY_STUDIO_SETTINGS,babyValName:CLIENT_CONFIG.brandName,welcomeMessage:`Welcome back, ${CLIENT_CONFIG.clientName}.`};
+  if(DEMO_MODE) return fallback;
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select settings_json from baby_val_studio_settings where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),currentUserId()]);
+    return {...fallback,...(r.rows[0]?.settings_json||{})};
+  }
+  const store=valStore();
+  return {...fallback,...(store.babyValStudioSettings||{})};
+}
+async function saveBabyStudioSettings(input){
+  const settings=normalizeBabyStudioSettings(input);
+  if(!settings.babyValName) throw new Error('Could not save because required field is missing: Baby VAL name.');
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into baby_val_studio_settings (tenant_id,user_id,settings_json,updated_at)
+      values ($1,$2,$3,now())
+      on conflict (tenant_id,user_id) do update set settings_json=excluded.settings_json,updated_at=now()`,[tenantId(),currentUserId(),JSON.stringify(settings)]);
+    return settings;
+  }
+  if(process.env.DATABASE_URL) throw new Error('Could not save because Postgres is unavailable. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
+  const store=valStore();store.babyValStudioSettings=settings;saveValStore(store);return settings;
+}
+async function babyStudioPromptContext(){
+  const s=await getBabyStudioSettings().catch(()=>null);
+  if(!s) return '';
+  return [
+    `Baby VAL name: ${s.babyValName||CLIENT_CONFIG.brandName}`,
+    s.aboutMe?`About the user: ${s.aboutMe}`:'',
+    s.preferredTone?`Preferred tone: ${s.preferredTone}`:'',
+    s.simpleInstructions?`Simple instructions for how Baby VAL should help: ${s.simpleInstructions}`:''
+  ].filter(Boolean).join('\n');
+}
 async function initValDb(){
   if(!pgPool) return;
   await dbQuery(`
@@ -2637,6 +3041,151 @@ async function initValDb(){
       error_message text,
       created_at timestamptz not null default now()
     );
+    create table if not exists evidence_items (
+      id text primary key,
+      tenant_id text not null default 'default',
+      source_type text not null,
+      source_id text not null,
+      source_url text,
+      occurred_at timestamptz,
+      captured_at timestamptz not null default now(),
+      title text,
+      raw_text text,
+      summary text,
+      participants_json jsonb not null default '[]',
+      entities_json jsonb not null default '{}',
+      confidence numeric not null default 0,
+      status text not null default 'captured',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists evidence_observations (
+      id text primary key,
+      tenant_id text not null default 'default',
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_type text not null,
+      person_id text,
+      organization_id text,
+      project_id text,
+      content text not null,
+      exact_quote text,
+      confidence numeric not null default 0,
+      status text not null default 'observed',
+      due_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint evidence_observation_type_check check (observation_type in ('promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'))
+    );
+    create table if not exists relationship_profiles (
+      id text primary key,
+      tenant_id text not null default 'default',
+      profile_type text not null,
+      profile_key text not null,
+      person_id text,
+      organization_id text,
+      project_id text,
+      display_name text not null default '',
+      summary text not null default '',
+      relationship_status text not null default 'observed',
+      confidence numeric not null default 0,
+      last_observed_at timestamptz,
+      observation_count integer not null default 0,
+      open_loop_count integer not null default 0,
+      promise_count integer not null default 0,
+      risk_count integer not null default 0,
+      opportunity_count integer not null default 0,
+      preference_count integer not null default 0,
+      emotional_context_json jsonb not null default '[]',
+      relationship_signals_json jsonb not null default '[]',
+      risks_json jsonb not null default '[]',
+      opportunities_json jsonb not null default '[]',
+      preferences_json jsonb not null default '[]',
+      open_loops_json jsonb not null default '[]',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint relationship_profile_type_check check (profile_type in ('person','organization','project')),
+      unique (tenant_id,profile_type,profile_key)
+    );
+    create table if not exists relationship_timeline_events (
+      id text primary key,
+      tenant_id text not null default 'default',
+      profile_type text not null,
+      profile_key text not null,
+      profile_id text,
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_id text not null references evidence_observations(id) on delete cascade,
+      observation_type text not null,
+      content text not null,
+      exact_quote text,
+      confidence numeric not null default 0,
+      status text not null default 'observed',
+      occurred_at timestamptz,
+      due_at timestamptz,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      constraint relationship_timeline_profile_type_check check (profile_type in ('person','organization','project')),
+      unique (tenant_id,profile_type,profile_key,evidence_item_id,observation_type,content)
+    );
+    create table if not exists agency_moves (
+      id text primary key,
+      tenant_id text not null default 'default',
+      move_type text not null,
+      title text not null,
+      why text not null,
+      confidence numeric not null default 0,
+      importance_score numeric not null default 0,
+      urgency_score numeric not null default 0,
+      leverage_score numeric not null default 0,
+      risk_score numeric not null default 0,
+      relationship_score numeric not null default 0,
+      agency_level integer not null default 1,
+      priority_band text not null default 'quiet',
+      status text not null default 'candidate',
+      person_id text,
+      organization_id text,
+      project_id text,
+      due_at timestamptz,
+      source_observation_ids jsonb not null default '[]',
+      source_evidence_ids jsonb not null default '[]',
+      what_changed text,
+      if_ignored text,
+      prepared_payload_json jsonb not null default '{}',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint agency_move_type_check check (move_type in ('draft_reply','send_follow_up','schedule_meeting','prepare_meeting','send_document','answer_question','review_risk','capture_preference','nurture_relationship','close_open_loop','wait','ignore','escalate','prepare','update_project','protect_relationship')),
+      constraint agency_move_status_check check (status in ('candidate','prepared','needs_approval','active','superseded','resolved_by_reality','dismissed','snoozed','ignored')),
+      constraint agency_move_priority_band_check check (priority_band in ('top_recommended','also_important','quiet','watching','ignored')),
+      constraint agency_move_level_check check (agency_level in (1,2,3))
+    );
+    create table if not exists agency_move_sources (
+      id text primary key,
+      tenant_id text not null default 'default',
+      agency_move_id text not null references agency_moves(id) on delete cascade,
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_id text not null references evidence_observations(id) on delete cascade,
+      source_role text not null default 'supports',
+      created_at timestamptz not null default now(),
+      unique (tenant_id,agency_move_id,evidence_item_id,observation_id,source_role)
+    );
+    create table if not exists val_evidence_links (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      source_type text not null,
+      source_id text not null,
+      source_label text,
+      target_type text not null,
+      target_id text not null,
+      relationship text not null default 'supports',
+      summary text,
+      quote text,
+      confidence numeric not null default 0,
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
     create table if not exists val_memory_items (
       id text primary key,
       user_id text not null default 'default',
@@ -2645,6 +3194,51 @@ async function initValDb(){
       raw_text text not null,
       importance integer not null default 1,
       metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists baby_val_studio_settings (
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      settings_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id)
+    );
+    create table if not exists teach_val_onboarding_sessions (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      status text not null default 'draft',
+      state_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists teach_val_imports (
+      id text primary key,
+      session_id text not null references teach_val_onboarding_sessions(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      category text not null,
+      prompt_used text,
+      raw_response text,
+      structured_json jsonb not null default '{}',
+      items_json jsonb not null default '[]',
+      reviewed boolean not null default false,
+      status text not null default 'Waiting for Paste',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists teach_val_memory_items (
+      id text primary key,
+      session_id text not null references teach_val_onboarding_sessions(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      category text not null,
+      title text,
+      summary text,
+      source text not null default 'teach_val_onboarding',
+      confidence numeric not null default 0.72,
+      data_json jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
     create table if not exists val_oauth_tokens (
@@ -3021,11 +3615,45 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       completed_at timestamptz
     );
+    create table if not exists book_conversation_sessions (
+      id text primary key,
+      book_project_id text not null references book_projects(id) on delete cascade,
+      chapter_id text references book_chapters(id) on delete set null,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      status text not null default 'active',
+      mode text not null default 'interview',
+      current_goal text,
+      last_question text,
+      questions_asked jsonb not null default '[]',
+      story_beats jsonb not null default '[]',
+      emotional_threads jsonb not null default '[]',
+      scene_details jsonb not null default '[]',
+      humor_threads jsonb not null default '[]',
+      reader_takeaways jsonb not null default '[]',
+      rewrite_direction text,
+      readiness_score integer not null default 0,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists book_conversation_turns (
+      id text primary key,
+      session_id text not null references book_conversation_sessions(id) on delete cascade,
+      role text not null,
+      content text not null,
+      input_type text not null default 'text',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists tenant_feature_flags_tenant_idx on tenant_feature_flags(tenant_id,feature_key);
     create index if not exists dashboard_change_requests_tenant_idx on dashboard_change_requests(tenant_id,created_at desc);
     create index if not exists tenant_dashboard_studio_overrides_tenant_idx on tenant_dashboard_studio_overrides(tenant_id,active_deployment_id);
+    create index if not exists teach_val_sessions_lookup_idx on teach_val_onboarding_sessions(tenant_id,user_id,updated_at desc);
+    create index if not exists teach_val_imports_lookup_idx on teach_val_imports(tenant_id,user_id,session_id,category);
+    create index if not exists teach_val_memory_lookup_idx on teach_val_memory_items(tenant_id,user_id,category,created_at desc);
     create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
     create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
@@ -3044,6 +3672,8 @@ async function initValDb(){
     create index if not exists book_chapters_project_idx on book_chapters(book_project_id,chapter_number);
     create index if not exists chapter_versions_chapter_idx on chapter_versions(chapter_id,version_number desc);
     create index if not exists rewrite_jobs_chapter_idx on rewrite_jobs(chapter_id,created_at desc);
+    create index if not exists book_conversation_sessions_lookup_idx on book_conversation_sessions(tenant_id,user_id,book_project_id,chapter_id,status,updated_at desc);
+    create index if not exists book_conversation_turns_session_idx on book_conversation_turns(session_id,created_at);
     create index if not exists drafts_lookup_idx on drafts(tenant_id,user_id,status,created_at desc);
     create index if not exists val_templates_lookup_idx on val_templates(tenant_id,user_id,template_key,is_active);
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
@@ -3068,6 +3698,26 @@ async function initValDb(){
   await dbQuery('alter table val_sessions add column if not exists ip_address text');
   await dbQuery('alter table val_sessions add column if not exists user_agent text');
   await dbQuery('alter table val_sessions add column if not exists last_active_at timestamptz not null default now()');
+  await dbQuery(`alter table evidence_observations drop constraint if exists evidence_observation_type_check`);
+  await dbQuery(`alter table evidence_observations add constraint evidence_observation_type_check check (observation_type in ('promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'))`);
+  await dbQuery('create unique index if not exists evidence_items_source_idx on evidence_items(tenant_id,source_type,source_id)');
+  await dbQuery('create index if not exists evidence_items_status_idx on evidence_items(tenant_id,status,captured_at desc)');
+  await dbQuery('create index if not exists evidence_observations_item_idx on evidence_observations(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists evidence_observations_type_idx on evidence_observations(tenant_id,observation_type,status,due_at)');
+  await dbQuery('create index if not exists evidence_observations_person_idx on evidence_observations(tenant_id,person_id,observation_type) where person_id is not null');
+  await dbQuery('create unique index if not exists relationship_profiles_key_idx on relationship_profiles(tenant_id,profile_type,profile_key)');
+  await dbQuery('create index if not exists relationship_profiles_observed_idx on relationship_profiles(tenant_id,profile_type,last_observed_at desc)');
+  await dbQuery('create index if not exists relationship_timeline_profile_idx on relationship_timeline_events(tenant_id,profile_type,profile_key,occurred_at desc)');
+  await dbQuery('create index if not exists relationship_timeline_evidence_idx on relationship_timeline_events(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists relationship_timeline_observation_idx on relationship_timeline_events(tenant_id,observation_id)');
+  await dbQuery('create index if not exists agency_moves_priority_idx on agency_moves(tenant_id,priority_band,status,importance_score desc,confidence desc)');
+  await dbQuery('create index if not exists agency_moves_due_idx on agency_moves(tenant_id,status,due_at)');
+  await dbQuery('create index if not exists agency_moves_person_idx on agency_moves(tenant_id,person_id,status) where person_id is not null');
+  await dbQuery('create index if not exists agency_moves_project_idx on agency_moves(tenant_id,project_id,status) where project_id is not null');
+  await dbQuery('create index if not exists agency_move_sources_evidence_idx on agency_move_sources(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists agency_move_sources_observation_idx on agency_move_sources(tenant_id,observation_id)');
+  await dbQuery('create index if not exists val_evidence_links_source_idx on val_evidence_links(tenant_id,user_id,source_type,source_id)');
+  await dbQuery('create index if not exists val_evidence_links_target_idx on val_evidence_links(tenant_id,user_id,target_type,target_id)');
   await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
@@ -3229,6 +3879,8 @@ function statusPayload(){
       ghlConfigured:!!(GHL_KEY&&GHL_LOC),
       ghlMissing:[GHL_KEY?'':'GHL_KEY/GHL_API_KEY',GHL_LOC?'':'GHL_LOC/GHL_LOCATION_ID'].filter(Boolean),
       openAiConfigured:!!OPENAI_KEY,
+      openAiRuntimeFallbackAllowed:platformKeyFallbackAllowed('openai'),
+      openAiTenantKeyRequired:/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||'')),
       databaseConfigured:!!process.env.DATABASE_URL,
       googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
       microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),
@@ -3331,9 +3983,212 @@ app.get('/api/auth/me',async(req,res)=>{
 app.use(requireAuth);
 app.get('/api/config',async(req,res)=>{
   const studioOverride=await getTenantDashboardStudioOverride().catch(()=>null);
-  res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
+  const babyStudio=await getBabyStudioSettings().catch(()=>null);
+  const configuredName=babyStudio?.babyValName||CLIENT_CONFIG.brandName;
+  res.json({...CLIENT_CONFIG,brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
 });
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
+app.get('/api/setup-health',async(req,res)=>{
+  const payload=setupHealthPayload();
+  const [google,microsoft]=await Promise.all([
+    getGoogleConnectionStatus(GOOGLE_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:GOOGLE_SCOPES})),
+    loadOAuthTokens('microsoft').catch(()=>null)
+  ]);
+  payload.google.connected=!!google.connected;
+  payload.google.error=google.error||'';
+  payload.google.missingScopes=google.missingScopes||[];
+  payload.microsoft.connected=!!microsoft?.refresh_token;
+  res.json(payload);
+});
+app.get('/api/baby-val-studio/settings',async(req,res)=>{
+  try{res.json({ok:true,settings:await getBabyStudioSettings()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/baby-val-studio/settings',async(req,res)=>{
+  try{res.json({ok:true,settings:await saveBabyStudioSettings(req.body||{}),message:'Saved'});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/teach-val/onboarding',async(req,res)=>{
+  try{res.json(await teachValStateResponse(req.query.sessionId||''));}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/start',async(req,res)=>{
+  try{
+    const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
+    const requestedMode=req.body.mode==='update'?'update':'onboarding';
+    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    const state=normalizeTeachValState(session.state);
+    state.mode=requestedMode;
+    state.stage=state.stage==='welcome'?'voice_interview':state.stage;
+    state.progress.welcome='Complete';
+    state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Ready':state.progress.voice_interview;
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
+  try{
+    const old=await getTeachValSession(req.params.id);
+    if(old){
+      old.status='archived';
+      old.state=normalizeTeachValState({...old.state,lastError:'Started over '+new Date().toISOString()});
+      await saveTeachValSession(old);
+    }
+    const mode=req.body.mode==='update'?'update':'onboarding';
+    const session=await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'welcome',mode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const state=normalizeTeachValState(session.state);
+    const voice={...state.voiceInterview,turns:Array.isArray(state.voiceInterview.turns)?state.voiceInterview.turns:[]};
+    const now=new Date().toISOString();
+    const userMessage=String(req.body.message||'').trim();
+    if(userMessage)voice.turns.push({role:'user',content:userMessage,createdAt:now});
+    let reply='';
+    if(req.body.start||!voice.turns.length){
+      reply='I am here with you. To start, tell me who you are, what you are building or carrying right now, and what you most want VAL to understand about you.';
+      if(!voice.turns.some(t=>t.role==='assistant'&&t.content===reply))voice.turns.push({role:'assistant',content:reply,createdAt:now});
+    }else{
+      const recent=voice.turns.slice(-12).map(t=>(t.role==='user'?'Owner':'VAL')+': '+t.content).join('\n\n');
+      const system=[
+        TEACH_VAL_VOICE_PROMPT,
+        'Continue the onboarding interview inside the dashboard.',
+        'Reply in under 90 words.',
+        'Briefly reflect what you heard, then ask exactly one warm follow-up question.',
+        'Do not sound like a survey. Do not mention saving or setup unless the user asks.'
+      ].join('\n\n');
+      reply=await callValModel({system,user:recent,maxTokens:360,temperature:0.45}).catch(()=>'That helps. What feels most important for VAL to remember or help with first?');
+      reply=String(reply||'That helps. What should VAL remember next?').trim();
+      voice.turns.push({role:'assistant',content:reply,createdAt:now});
+    }
+    voice.transcript=voice.turns.map(t=>(t.role==='user'?'You':'VAL')+': '+t.content).join('\n\n');
+    voice.status='In Progress';
+    state.voiceInterview=voice;
+    state.stage='voice_interview';
+    state.progress.voice_interview='In Progress';
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({...await teachValStateResponse(session.id),reply});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/teach-val/onboarding/:id',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    session.state=normalizeTeachValState({...session.state,...(req.body.state||{})});
+    if(req.body.stage)session.state.stage=String(req.body.stage);
+    if(req.body.testMode!==undefined)session.state.testMode=!!req.body.testMode;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/interview',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const transcript=String(req.body.transcript||'').trim();
+    if(!transcript)return res.status(400).json({ok:false,error:'Add the voice interview transcript before saving this stage.'});
+    const summary=req.body.summary&&typeof req.body.summary==='object'?req.body.summary:await summarizeTeachValInterview(transcript);
+    const state=normalizeTeachValState(session.state);
+    state.voiceInterview={...state.voiceInterview,transcript,summary,duration:req.body.duration||null,status:'Imported'};
+    state.progress.voice_interview='Imported';
+    state.stage='current_projects';
+    session.state=state;
+    await saveTeachValSession(session);
+    await saveTeachValImport({sessionId:session.id,category:'voice_interview',promptUsed:TEACH_VAL_VOICE_PROMPT,rawResponse:transcript,structuredSummary:summary,extractedItems:[],reviewed:true,status:'Imported'});
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const category=String(req.params.category||'').trim();
+    const card=teachValCardFor(category);
+    if(!card)return res.status(404).json({ok:false,error:'Knowledge Card not found.'});
+    const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
+    if(!rawResponse)return res.status(400).json({ok:false,error:'Paste the response from ChatGPT or Claude before saving this card.'});
+    const promptUsed=String(req.body.promptUsed||card.prompt);
+    const structured=await extractTeachValKnowledge({category,rawResponse,promptUsed});
+    const existing=(await listTeachValImports(session.id)).find(i=>i.category===category);
+    await saveTeachValImport({id:existing?.id,sessionId:session.id,category,promptUsed,rawResponse,structuredSummary:structured.summary||{},extractedItems:structured.items||[],reviewed:false,status:'Imported'});
+    const state=normalizeTeachValState(session.state);
+    state.progress[category]='Imported';
+    state.stage=category;
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const target=(await listTeachValImports(session.id)).find(i=>i.id===req.params.importId);
+    if(!target)return res.status(404).json({ok:false,error:'Knowledge Card import not found.'});
+    target.extractedItems=(target.extractedItems||[]).map(item=>String(item.id)===String(req.params.itemId)?{...item,include_in_val:req.body.include_in_val!==false}:item);
+    target.reviewed=true;
+    target.status='Reviewed';
+    await saveTeachValImport(target);
+    const state=normalizeTeachValState(session.state);
+    state.progress[target.category]='Reviewed';
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const imports=await listTeachValImports(session.id);
+    const included=imports.flatMap(i=>(i.extractedItems||[]).filter(item=>item.include_in_val!==false).map(item=>({
+      sessionId:session.id,
+      category:item.category||i.category,
+      title:item.title||item.name||i.category,
+      summary:item.summary||'',
+      source:item.source||'teach_val_onboarding',
+      confidence:Number(item.confidence||0.72),
+      data:{...item.data,itemId:item.id,importId:i.id,promptUsed:i.promptUsed,sourceCategory:i.category}
+    })));
+    const testMode=req.body.testMode!==undefined?!!req.body.testMode:!!session.state.testMode;
+    const payload=teachValCompiledPayload({session,imports,items:included,testMode});
+    const state=normalizeTeachValState(session.state);
+    let webhook={status:testMode?'test_mode':'not_configured',message:testMode?'Test mode: payload built but not sent to production memory.':'No external onboarding webhook configured. Stored in local VAL onboarding memory.'};
+    if(!testMode){
+      await insertTeachValMemoryItems(included);
+      const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
+      if(url){
+        try{
+          const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+          const body=await readJsonResponse(r).catch(()=>({}));
+          webhook={status:r.ok?'sent':'failed',statusCode:r.status,message:r.ok?'Webhook sent successfully.':(body.error||body.message||`Webhook failed with status ${r.status}`)};
+          if(!r.ok) throw new Error(webhook.message);
+        }catch(e){
+          webhook={status:'failed',message:e.message};
+          state.lastError='Webhook failed: '+e.message;
+          state.webhookAttempts=(state.webhookAttempts||[]).concat({at:new Date().toISOString(),status:'failed',message:e.message});
+          session.state=state;await saveTeachValSession(session);
+          return res.status(502).json({ok:false,error:'Teach VAL could not send the onboarding webhook. '+e.message,payload,webhook});
+        }
+      }
+    }
+    state.stage='complete';
+    state.progress.review='Reviewed';
+    state.progress.send_to_val=testMode?'Tested':'Sent to VAL';
+    state.webhookAttempts=(state.webhookAttempts||[]).concat({at:new Date().toISOString(),...webhook});
+    session.status=testMode?'test_completed':'committed';
+    session.state=state;
+    await saveTeachValSession(session);
+    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status},success:webhook.status!=='failed'}).catch(()=>{});
+    res.json({ok:true,payload,webhook,memory:testMode?[]:await listTeachValMemory(session.id),state});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
 app.get('/api/dashboard-studio',requireDashboardStudioAccess,async(req,res)=>{
   try{
@@ -3795,6 +4650,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       const c=classifyEmail(email,rules);
       return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
+    const evidenceResults=await saveEmailEvidenceBatch(emails);
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed').length;
@@ -3813,10 +4669,10 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
       rules
     };
   }catch(e){
@@ -4226,7 +5082,7 @@ app.post('/api/analyze-image',async(req,res)=>{
     const {base64,mediaType,prompt}=req.body;
     if(!base64||!mediaType) return res.status(400).json({error:'Missing base64 or mediaType'});
     const openAiKey=await resolveOpenAIKey();
-    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    if(!openAiKey) return res.status(500).json({error:'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'});
     const r=await fetch('https://api.openai.com/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -4257,7 +5113,7 @@ app.post('/api/generate-image',async(req,res)=>{
     const {prompt,size,quality}=req.body;
     if(!prompt) return res.status(400).json({error:'Missing prompt'});
     const openAiKey=await resolveOpenAIKey();
-    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    if(!openAiKey) return res.status(500).json({error:'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'});
     const r=await fetch('https://api.openai.com/v1/images/generations',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -4461,7 +5317,8 @@ app.get('/api/google/calendar', async (req, res) => {
 });
 
 app.get('/auth/microsoft',(req,res)=>{
-  if(!MICROSOFT_CLIENT_ID||!MICROSOFT_REDIRECT_URI) return res.status(500).send('Microsoft OAuth is not configured.');
+  const missing=missingEnvNames(['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET','MICROSOFT_REDIRECT_URI']);
+  if(missing.length) return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Microsoft cannot connect yet</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>Microsoft cannot connect yet because these Railway variables are missing: ${missing.map(escapeHtml).join(', ')}.</p><p>Add them in Railway → Variables, then redeploy.</p><p><strong>Redirect URI should be:</strong><br><code>${escapeHtml((CLIENT_CONFIG.publicBaseUrl||baseUrl(req)).replace(/\/$/,'')+'/auth/microsoft/callback')}</code></p></div>`);
   const url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize?'+new URLSearchParams({
     client_id:MICROSOFT_CLIENT_ID,
     response_type:'code',
@@ -4893,6 +5750,59 @@ function classifyEmail(email,rules=[]){
     return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
   }
   return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
+}
+function emailEvidenceStatus(email){
+  const classification=String(email.classification||'').toLowerCase();
+  if(['ignored','low_priority','solicitation','spam_like'].includes(classification))return 'ignored';
+  if(['needs_attention','needs_reply','waiting_on_response','forward_to_team','appointment_recap_needed'].includes(classification))return 'action_suggested';
+  return 'parsed';
+}
+function emailConfidenceNumber(confidence){
+  const c=String(confidence||'medium').toLowerCase();
+  if(c==='high')return 0.9;
+  if(c==='low')return 0.45;
+  return 0.65;
+}
+function emailParticipantsJson(email){
+  return [
+    email.from?{role:'from',name:email.from.name||'',email:email.from.email||''}:null,
+    ...(email.to||[]).map(p=>({role:'to',name:p.name||'',email:p.email||''})),
+    ...(email.cc||[]).map(p=>({role:'cc',name:p.name||'',email:p.email||''}))
+  ].filter(p=>p&&(p.name||p.email));
+}
+function emailSourceText(email){
+  return [email.subject,email.bodyText,email.bodyPreview,email.snippet].filter(Boolean).join('\n\n').trim();
+}
+function emailObservationCandidates(email){
+  const text=emailSourceText(email), lower=text.toLowerCase(), candidates=[];
+  const add=(observationType,content,exactQuote='',confidence=emailConfidenceNumber(email.confidence),status='observed')=>{
+    if(content)candidates.push({observationType,content,exactQuote:exactQuote||transcriptSupportingQuote(text,content),confidence,status});
+  };
+  if(/\b(unsubscribe|newsletter|digest|roundup)\b/i.test(lower))add('newsletter','Email appears to be a newsletter or bulk update.',email.snippet||email.subject,0.85,'ignored');
+  if(/\b(receipt|order confirmation|payment received|invoice paid|your order|transaction)\b/i.test(lower))add('receipt','Email appears to be a receipt or transactional record.',email.snippet||email.subject,0.85,'ignored');
+  if(/\b(seo|special offer|limited time|cold email|sponsor|advertis|book a call|unsubscribe)\b/i.test(lower))add('spam','Email appears promotional, unsolicited, or low relationship value.',email.snippet||email.subject,0.75,'ignored');
+  if(email.classification==='needs_reply')add('reply_needed',email.reason||'Email asks for a response or decision.',email.snippet||email.bodyPreview,emailConfidenceNumber(email.confidence),'needs_review');
+  if(email.classification==='waiting_on_response')add('follow_up',email.reason||'Thread appears to be waiting on a response.',email.snippet||email.bodyPreview,emailConfidenceNumber(email.confidence),'action_suggested');
+  if(/\b(price|pricing|cost|quote|estimate|budget|how much|starting at|proposal)\b/i.test(lower))add('pricing_question','Email includes pricing, cost, quote, estimate, budget, or proposal language.',email.snippet||email.bodyPreview,0.8,'needs_review');
+  if(/\b(available|availability|schedule|meeting|meet|call|zoom|google meet|calendar)\b/i.test(lower))add('meeting_request','Email includes scheduling or meeting language.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(send|share|attach|attachment|document|proposal|contract|agreement|worksheet|file|pdf|doc)\b/i.test(lower))add('document_request','Email may involve a document request or document follow-up.',email.snippet||email.bodyPreview,0.7,'needs_review');
+  if(/\b(intro|introduction|referral|partner|partnership|client|lead|opportunity|proposal)\b/i.test(lower))add('opportunity','Email may contain relationship or revenue opportunity signal.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(urgent|concern|issue|blocked|problem|risk|complaint|confused|not sure|worried)\b/i.test(lower))add('risk','Email may contain a risk, blocker, or relationship concern.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(thank you|appreciate|excited|looking forward|great talking|good to meet|warm|referred)\b/i.test(lower))add('relationship_signal','Email contains relationship momentum or warmth.',email.snippet||email.bodyPreview,0.65,'observed');
+  if(!candidates.length&&email.classification&&!['low_priority','ignored','solicitation','spam_like'].includes(email.classification))add('relationship_signal',email.reason||'Email may be relationship-relevant.',email.snippet||email.bodyPreview,0.55,'observed');
+  return candidates;
+}
+async function saveEmailEvidence(email){
+  if(!email?.messageId)return null;
+  const sourceType=email.provider==='outlook'?'outlook_email':'gmail_email';
+  const status=emailEvidenceStatus(email);
+  const evidence=await saveEvidenceItem({sourceType,sourceId:email.messageId,sourceUrl:email.webLink||'',occurredAt:email.date||email.receivedAt||'',capturedAt:new Date().toISOString(),title:email.subject||'(No subject)',rawText:emailSourceText(email),summary:email.reason||email.snippet||email.bodyPreview||'',participantsJson:emailParticipantsJson(email),entitiesJson:{threadId:email.threadId||'',provider:email.provider||'',classification:email.classification||'',recommendedAction:email.recommendedAction||'',from:email.from||{},hasAttachments:!!email.hasAttachments},confidence:emailConfidenceNumber(email.confidence),status,metadataJson:{provider:email.provider||'',messageId:email.messageId||'',threadId:email.threadId||'',labels:email.labels||[],requiresApproval:!!email.requiresApproval,matchedRuleId:email.matchedRuleId||''}}).catch(()=>null);
+  if(!evidence?.id)return null;
+  await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(()=>null);
+  return evidence;
+}
+async function saveEmailEvidenceBatch(emails=[]){
+  return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
 }
 function emailNeedsResponseSignal(email){
   return /\b(proposal|contract|pricing|introduction|intro|please confirm|let me know|waiting on|can you review|next steps|following up|recap|circle back|review this|thoughts|approve|approval)\b/i.test([email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' '));
@@ -5699,6 +6609,241 @@ async function buildRelationshipReview({windowDays=7}={}){
   };
 }
 
+function relationshipContactFromStoredProfile(profile={}){
+  const openLoops=(profile.openLoops||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const opportunities=(profile.opportunities||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const risks=(profile.risks||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const signals=(profile.relationshipSignals||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const score=Math.min(100,Math.round(
+    Math.min(35,Number(profile.openLoopCount||0)*9)+
+    Math.min(25,Number(profile.opportunityCount||0)*8)+
+    Math.min(25,Number(profile.riskCount||0)*8)+
+    Math.min(15,Number(profile.observationCount||0)*2)
+  ));
+  const lastEvidenceSummary=openLoops[0]||opportunities[0]||risks[0]||signals[0]||profile.summary||'Stored relationship observation.';
+  const contact={
+    key:profile.profileKey,
+    id:profile.personId||profile.id,
+    contactId:profile.personId||'',
+    name:profile.displayName||'Relationship',
+    email:'',
+    company:'',
+    score,
+    scoreBreakdown:{
+      total:score,
+      strategicImportance:Math.min(25,Number(profile.observationCount||0)*3),
+      opportunityPotential:Math.min(20,Number(profile.opportunityCount||0)*7),
+      relationshipActivity:Math.min(15,Number(profile.observationCount||0)*2),
+      driftRisk:Math.min(15,Number(profile.riskCount||0)*6),
+      openLoopsCommitments:Math.min(15,Number(profile.openLoopCount||0)*5),
+      reciprocityBalance:0
+    },
+    relationshipType:profile.opportunityCount?'Opportunity':profile.riskCount?'Risk':profile.openLoopCount?'Open Loop':'Observed',
+    lastInteractionAt:profile.lastObservedAt||profile.updatedAt||'',
+    lastInteractionDays:daysSince(profile.lastObservedAt||profile.updatedAt),
+    lastEvidenceSummary,
+    openLoops,
+    opportunitySignals:opportunities,
+    riskSignals:risks,
+    topics:signals.slice(0,6),
+    tags:['Relationship Engine'],
+    evidence:[{type:'relationship_engine',summary:lastEvidenceSummary,date:profile.lastObservedAt||profile.updatedAt,confidence:profile.confidence>=0.75?'high':'medium',sourceId:profile.id}],
+    reason:profile.summary||`VAL has ${profile.observationCount||0} observation${Number(profile.observationCount||0)===1?'':'s'} connected to this relationship.`,
+    recommendedAction:openLoops[0]?`Close the open loop: ${openLoops[0]}`:risks[0]?`Review the risk: ${risks[0]}`:opportunities[0]?`Move the opportunity forward: ${opportunities[0]}`:'Review the relationship history and choose one useful next move.'
+  };
+  contact.draftOutreach=draftRelationshipOutreach(contact);
+  contact.profile=relationshipProfile(contact);
+  return contact;
+}
+async function relationshipReviewFromStoredProfiles({windowDays=7}={}){
+  const profiles=(await listRelationshipProfiles({limit:120})).filter(p=>p.profileType==='person');
+  const contacts=profiles.map(relationshipContactFromStoredProfile).filter(c=>c.name&&c.name!=='Unknown').sort((a,b)=>b.score-a.score);
+  const topRelationshipPriorities=contacts.slice(0,10);
+  const highestLeverageRelationships=contacts.filter(c=>c.score>=35||c.openLoops.length||c.opportunitySignals.length||c.riskSignals.length).slice(0,8);
+  const coolingRelationships=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14&&c.score>=20).slice(0,8);
+  const momentumRelationships=contacts.filter(c=>c.opportunitySignals.length||c.topics.length).slice(0,8);
+  const peopleNotContactedRecently=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14).slice(0,10);
+  const forgottenCommitments=contacts.flatMap(c=>c.openLoops.map(loop=>({contact:c.name,score:c.score,commitment:loop,sourceEvidence:c.evidence[0],recommendedAction:`Close the loop with ${c.name}.`}))).slice(0,12);
+  const hiddenOpportunities=contacts.filter(c=>c.opportunitySignals.length).slice(0,10).map(c=>({contact:c.name,score:c.score,opportunity:c.opportunitySignals[0],evidence:c.evidence,recommendedAction:c.recommendedAction}));
+  return {
+    ok:true,windowDays,generatedAt:new Date().toISOString(),source:'relationship_profiles',errors:[],
+    relationshipProfiles:contacts.map(c=>c.profile),
+    topRelationshipPriorities,
+    highestLeverageRelationships,
+    coolingRelationships,
+    momentumRelationships,
+    peopleNotContactedRecently,
+    forgottenCommitments,
+    hiddenOpportunities,
+    suggestedIntroductions:[],
+    relationshipTaskPriorities:topRelationshipPriorities.map(c=>({contact:c.name,priority:c.score>=70?'High':c.score>=45?'Medium':'Low',tasks:c.openLoops||[],suggestedNextTask:c.recommendedAction,recommendedOutreach:c.draftOutreach})),
+    draftCommunications:topRelationshipPriorities.slice(0,8).map(c=>({contact:c.name,score:c.score,draft:c.draftOutreach,evidence:c.evidence.slice(0,2)})),
+    priorityReviewIntegration:{highestLeverageRelationship:highestLeverageRelationships[0]||null,top3RelationshipPriorities:topRelationshipPriorities.slice(0,3),oneCoolingRelationship:coolingRelationships[0]||null,oneForgottenCommitment:forgottenCommitments[0]||null,oneSuggestedIntroduction:null,oneHiddenOpportunity:hiddenOpportunities[0]||null},
+    askForAssistance:{question:'Would you like me to help with any of these relationships?',options:['Draft outreach','Create tasks','Brainstorm opportunities','Prepare for upcoming meeting','Review relationship history']}
+  };
+}
+
+function transcriptBackfillParticipants(record={},detail={}){
+  const fromDetail=(detail.participants||[]).map(p=>({
+    role:'participant',
+    name:p.matchedContactName||p.speakerNameRaw||'',
+    email:p.matchedEmail||'',
+    matchedContactId:p.matchedContactId||'',
+    matchedCompany:p.matchedCompany||''
+  })).filter(p=>p.name||p.email||p.matchedContactId);
+  if(fromDetail.length)return fromDetail;
+  return splitPeopleFromText([record.title,record.rawText,JSON.stringify(record.metadata||{})].join(' ')).slice(0,12).map(p=>({role:'mentioned',name:p.name||'',email:p.email||'',confidence:p.confidence||'low'}));
+}
+function transcriptEvidenceSnippet(text='',pattern){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(!clean)return '';
+  const sentences=clean.split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(Boolean);
+  const commandLike=/^(prepare me for|summarize this|good morning|here'?s your situation|daily briefing)\b/i;
+  const found=sentences.find(s=>pattern.test(s)&&!commandLike.test(s));
+  const snippet=found||sentences.find(s=>pattern.test(s))||'';
+  return snippet.length>220?snippet.slice(0,217).replace(/\s+\S*$/,'')+'...':snippet;
+}
+function transcriptFallbackObservationContent(type,record={},text='',pattern){
+  const snippet=transcriptEvidenceSnippet(text,pattern);
+  const subject=snippet||transcriptTopicTitleFromText(text)||valTitleCandidate(record.title)||'Transcript evidence';
+  if(type==='risk')return `Possible risk: ${subject}`;
+  if(type==='opportunity')return `Possible opportunity: ${subject}`;
+  if(type==='pricing_question')return `Pricing or proposal context: ${subject}`;
+  return subject;
+}
+function transcriptBackfillCandidates(record={},participants=[]){
+  const text=String(record.rawText||'');
+  const candidates=[];
+  extractOpenLoopsFromText(text,'transcript',record.createdAt||record.metadata?.timestamp||'').forEach(loop=>{
+    candidates.push({observationType:/follow up|circle back|waiting on/i.test(loop.text)?'follow_up':'task',content:loop.text,exactQuote:transcriptSupportingQuote(text,loop.text),confidence:loop.confidence==='high'?0.82:0.65,status:'open'});
+  });
+  const pricingPattern=/\b(price|pricing|cost|budget|proposal|contract)\b/i,riskPattern=/\b(risk|concern|worried|blocked|stuck|drift|confused|not working)\b/i,opportunityPattern=/\b(opportunity|intro|introduction|referral|partner|lead|client|deal)\b/i;
+  if(pricingPattern.test(text))candidates.push({observationType:'pricing_question',content:transcriptFallbackObservationContent('pricing_question',record,text,pricingPattern),exactQuote:transcriptSupportingQuote(text,'pricing'),confidence:0.68,status:'needs_review'});
+  if(riskPattern.test(text))candidates.push({observationType:'risk',content:transcriptFallbackObservationContent('risk',record,text,riskPattern),exactQuote:transcriptSupportingQuote(text,'risk'),confidence:0.62,status:'needs_review'});
+  if(opportunityPattern.test(text))candidates.push({observationType:'opportunity',content:transcriptFallbackObservationContent('opportunity',record,text,opportunityPattern),exactQuote:transcriptSupportingQuote(text,'opportunity'),confidence:0.66,status:'needs_review'});
+  if(!candidates.length&&participants.length)candidates.push({observationType:'relationship_signal',content:`${record.title||'Transcript'} contains relationship context that should be available to VAL.`,exactQuote:transcriptSupportingQuote(text,record.title||''),confidence:0.55,status:'observed'});
+  return candidates.slice(0,30);
+}
+function transcriptMigrationRecordsFromIndex(index={}){
+  return (index.transcripts||[]).map(row=>{
+    const detail=transcriptDetailFromIndex(index,row);
+    return {
+      id:detail.id||row.transcriptId,
+      type:'transcript',
+      title:detail.title||row.meetingTitle||'Recovered transcript',
+      rawText:detail.transcriptText||row.rawTranscript||'',
+      metadata:{
+        source:row.source||'transcript_index',
+        timestamp:row.meetingDatetime||row.createdAt||'',
+        calendarEventId:row.calendarEventId||'',
+        processingStatus:row.processingStatus||'',
+        summaryStatus:row.summaryStatus||'',
+        recoveredFrom:'transcript_index'
+      },
+      createdAt:row.meetingDatetime||row.createdAt||row.updatedAt||'',
+      detail
+    };
+  }).filter(record=>record.id&&String(record.rawText||'').trim());
+}
+function mergeTranscriptMigrationRecords(records=[],index={}){
+  const byId=new Map();
+  for(const record of transcriptMigrationRecordsFromIndex(index))byId.set(String(record.id),record);
+  for(const record of records||[]){
+    if(!record?.id)continue;
+    const id=String(record.id),existing=byId.get(id);
+    if(existing){
+      byId.set(id,{
+        ...record,
+        ...existing,
+        title:existing.title||record.title,
+        rawText:existing.rawText||record.rawText,
+        metadata:{...(record.metadata||{}),...(existing.metadata||{})},
+        createdAt:existing.createdAt||record.createdAt
+      });
+    }else byId.set(id,record);
+  }
+  return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt||b.metadata?.timestamp)-interactionDate(a.createdAt||a.metadata?.timestamp));
+}
+async function backfillTranscriptEvidence({days=3650,limit=250}={}){
+  const [records,index]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))]);
+  const migrationRecords=mergeTranscriptMigrationRecords(records,index).slice(0,limit);
+  let processed=0,observations=0,relationshipEvents=0,agencyMoves=0,errors=[],found=migrationRecords.length;
+  for(const record of migrationRecords){
+    try{
+      const detailRow=(index.transcripts||[]).find(t=>String(t.transcriptId)===String(record.id));
+      const detail=record.detail||(detailRow?transcriptDetailFromIndex(index,detailRow):{});
+      const title=detail.title||record.title||'Recovered transcript';
+      const rawText=detail.transcriptText||record.rawText||'';
+      if(!rawText.trim())continue;
+      const participants=transcriptBackfillParticipants(record,detail);
+      const summary=detail.summary||{};
+      const parsed={
+        keyDecisions:summary.keyDecisions||[],
+        openQuestions:summary.openQuestions||[],
+        relationshipUpdates:summary.relationshipUpdates||[],
+        tasks:(detail.tasks||[]).map(t=>({taskTitle:t.taskTitle,content:t.taskTitle,sourceQuote:t.sourceQuote,assignedToName:t.assignedToName,dueDate:t.dueDate,confidence:t.confidence,status:t.status||'open'})),
+        contactUpdates:detail.contactUpdates||[],
+        actionItems:[]
+      };
+      await saveEvidenceItem({sourceType:'transcript',sourceId:record.id,occurredAt:detail.meetingDatetime||record.metadata?.timestamp||record.createdAt||null,capturedAt:record.createdAt||new Date().toISOString(),title,rawText,summary:summary.executiveSummary||record.metadata?.summary||'',participantsJson:participants,entitiesJson:{source:'backfill',legacyTranscriptId:record.id,participantCount:participants.length},confidence:0.72,status:'backfilled',metadataJson:{source:'backfill',type:record.type||'',recoveredFrom:record.metadata?.recoveredFrom||''}});
+      let saved=[];
+      if((parsed.keyDecisions.length||parsed.openQuestions.length||parsed.relationshipUpdates.length||parsed.tasks.length||parsed.contactUpdates.length)){
+        saved=await saveTranscriptEvidenceObservations({sourceId:record.id,title,transcript:rawText,parsed,participants,summary});
+      }else{
+        const evidence=await evidenceItemForSource('transcript',record.id);
+        const result=await runObservationEngine(evidence,{candidates:transcriptBackfillCandidates({...record,title,rawText},participants),replace:true});
+        saved=result.observations||[];
+        relationshipEvents+=result.relationshipEngine?.events?.length||0;
+        agencyMoves+=result.agencyEngine?.moves?.length||0;
+      }
+      processed++;
+      observations+=saved.length;
+    }catch(e){errors.push({sourceId:record.id,title:record.title||'',error:e.message});}
+  }
+  return {found,processed,observations,relationshipEvents,agencyMoves,errors};
+}
+function uniqueEmailsByMessageId(results=[]){
+  const seen=new Set(),emails=[];
+  for(const result of results){
+    for(const email of (result&&result.emails)||[]){
+      const key=[email.provider||'',email.messageId||email.id||'',email.threadId||''].join(':');
+      if(!email.messageId||seen.has(key))continue;
+      seen.add(key);emails.push(email);
+    }
+  }
+  return emails;
+}
+async function backfillEmailEvidence({days=90,limit=100}={}){
+  const gmailRecent=`newer_than:${Math.max(1,Math.min(365,Number(days)||90))}d`;
+  const [rules,recent,unread,sent,outlook]=await Promise.all([
+    listEmailRules(currentUserId()).catch(()=>[]),
+    fetchGmailMessages({query:gmailRecent,maxResults:limit,includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchGmailMessages({query:'is:unread',maxResults:Math.min(limit,100),includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchGmailMessages({query:`in:sent newer_than:${Math.max(1,Math.min(365,Number(days)||90))}d`,maxResults:Math.min(limit,100),includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchUnifiedOutlookEmails(Math.min(limit,100)).catch(e=>({emails:[],error:e.message,provider:'outlook'}))
+  ]);
+  const providerErrors=[recent,unread,sent,outlook].filter(r=>r&&r.error).map(r=>({provider:r.provider||'email',error:r.error}));
+  const emails=uniqueEmailsByMessageId([recent,unread,sent,outlook]).map(email=>({...email,...classifyEmail(email,rules)}));
+  const saved=await saveEmailEvidenceBatch(emails);
+  return {processed:emails.length,saved:saved.filter(Boolean).length,providerErrors};
+}
+async function backfillValIntelligence(options={}){
+  if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
+  const days=Math.max(1,Math.min(3650,Number(options.days)||3650));
+  const transcriptLimit=Math.max(1,Math.min(500,Number(options.transcriptLimit)||250));
+  const emailLimit=Math.max(1,Math.min(100,Number(options.emailLimit)||100));
+  const [transcripts,email]=await Promise.all([
+    options.skipTranscripts?Promise.resolve({processed:0,observations:0,relationshipEvents:0,agencyMoves:0,errors:[]}):backfillTranscriptEvidence({days,limit:transcriptLimit}),
+    options.skipEmail?Promise.resolve({processed:0,saved:0,providerErrors:[]}):backfillEmailEvidence({days:Math.min(days,365),limit:emailLimit})
+  ]);
+  const [counts,briefing,storedRelationships]=await Promise.all([
+    executiveBriefingCounts(),
+    buildExecutiveBriefing().catch(()=>null),
+    relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
+  ]);
+  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+}
+
 function mapGoogleEvent(ev){
   return {
     id:ev.id, summary:ev.summary||'(No title)',
@@ -6058,35 +7203,74 @@ function deepgramModelName(value){
 function deepgramTtsModel(){
   return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-cora-en';
 }
+function deepgramTtsModelSource(){
+  if(process.env.DEEPGRAM_TTS_MODEL) return 'DEEPGRAM_TTS_MODEL';
+  if(process.env.VAL_TTS_VOICE) return 'VAL_TTS_VOICE';
+  if(process.env.DEEPGRAM_VOICE_MODEL) return 'DEEPGRAM_VOICE_MODEL';
+  return 'default';
+}
+function deepgramKeySource(){
+  if(process.env.DEEPGRAM_API_KEY) return 'DEEPGRAM_API_KEY';
+  if(process.env.DG_KEY) return 'DG_KEY';
+  return '';
+}
+let lastDeepgramTtsDiagnostic=null;
+async function requestDeepgramTts(text){
+  if(!DEEPGRAM_API_KEY){
+    const err=new Error('Deepgram voice is not configured. Add DEEPGRAM_API_KEY in Railway.');
+    err.statusCode=503;
+    throw err;
+  }
+  const model=deepgramTtsModel();
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+  let dg;
+  try{
+    dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
+  }finally{clearTimeout(timer);}
+  const contentType=dg.headers.get('content-type')||'audio/mpeg';
+  const buffer=Buffer.from(await dg.arrayBuffer());
+  if(!dg.ok){
+    let detail=buffer.toString('utf8').slice(0,500);
+    try{const parsed=JSON.parse(detail);detail=parsed.err_msg||parsed.message||parsed.error||detail;}catch(_){}
+    const err=new Error(`Deepgram TTS failed (${dg.status})`);
+    err.statusCode=dg.status;
+    err.detail=detail;
+    throw err;
+  }
+  return {buffer,contentType,model};
+}
 app.get('/api/val/voice/status',(req,res)=>{
-  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsModel:deepgramTtsModel(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true});
+  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsKeySource:deepgramKeySource(),ttsModel:deepgramTtsModel(),ttsModelSource:deepgramTtsModelSource(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true,lastTtsDiagnostic:lastDeepgramTtsDiagnostic});
+});
+app.post('/api/val/voice/test',async(req,res)=>{
+  const text=String(req.body?.text||'This is the Deepgram voice VAL will use.').replace(/\s+/g,' ').trim().slice(0,500);
+  const started=Date.now();
+  try{
+    const result=await requestDeepgramTts(text||'This is the Deepgram voice VAL will use.');
+    lastDeepgramTtsDiagnostic={ok:true,checkedAt:new Date().toISOString(),provider:'deepgram',model:result.model,modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),contentType:result.contentType,bytes:result.buffer.length,latencyMs:Date.now()-started};
+    res.json(lastDeepgramTtsDiagnostic);
+  }catch(e){
+    const aborted=e.name==='AbortError';
+    lastDeepgramTtsDiagnostic={ok:false,checkedAt:new Date().toISOString(),provider:'deepgram',model:deepgramTtsModel(),modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),statusCode:e.statusCode||(aborted?504:500),error:aborted?'Deepgram TTS timed out.':e.message,detail:e.detail||''};
+    console.warn('[voice] Deepgram voice test failed',lastDeepgramTtsDiagnostic.statusCode,lastDeepgramTtsDiagnostic.detail||lastDeepgramTtsDiagnostic.error);
+    res.status(lastDeepgramTtsDiagnostic.statusCode).json(lastDeepgramTtsDiagnostic);
+  }
 });
 app.post('/api/val/tts',async(req,res)=>{
   try{
     const text=String(req.body?.text||'').replace(/\s+/g,' ').trim().slice(0,4000);
     if(!text) return res.status(400).json({ok:false,error:'No text supplied for voice playback.'});
-    if(!DEEPGRAM_API_KEY) return res.status(503).json({ok:false,error:'Deepgram voice is not configured. Add DEEPGRAM_API_KEY in Railway.'});
-    const model=deepgramTtsModel();
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),20000);
-    let dg;
-    try{
-      dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
-    }finally{clearTimeout(timer);}
-    const contentType=dg.headers.get('content-type')||'audio/mpeg';
-    const buffer=Buffer.from(await dg.arrayBuffer());
-    if(!dg.ok){
-      let detail=buffer.toString('utf8').slice(0,500);
-      try{const parsed=JSON.parse(detail);detail=parsed.err_msg||parsed.message||parsed.error||detail;}catch(_){}
-      console.warn('[voice] Deepgram TTS failed',dg.status,detail);
-      return res.status(dg.status).json({ok:false,error:`Deepgram TTS failed (${dg.status})`,detail});
-    }
-    res.set({'Content-Type':contentType.includes('audio/')?contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':model});
-    res.send(buffer);
+    const result=await requestDeepgramTts(text);
+    lastDeepgramTtsDiagnostic={ok:true,checkedAt:new Date().toISOString(),provider:'deepgram',model:result.model,modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),contentType:result.contentType,bytes:result.buffer.length};
+    res.set({'Content-Type':result.contentType.includes('audio/')?result.contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':result.model});
+    res.send(result.buffer);
   }catch(e){
     const aborted=e.name==='AbortError';
-    console.warn('[voice] TTS proxy failed',e.message);
-    res.status(aborted?504:500).json({ok:false,error:aborted?'Deepgram TTS timed out.':e.message});
+    const status=e.statusCode||(aborted?504:500);
+    lastDeepgramTtsDiagnostic={ok:false,checkedAt:new Date().toISOString(),provider:'deepgram',model:deepgramTtsModel(),modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),statusCode:status,error:aborted?'Deepgram TTS timed out.':e.message,detail:e.detail||''};
+    console.warn('[voice] TTS proxy failed',status,lastDeepgramTtsDiagnostic.detail||lastDeepgramTtsDiagnostic.error);
+    res.status(status).json({ok:false,error:lastDeepgramTtsDiagnostic.error,detail:lastDeepgramTtsDiagnostic.detail,model:lastDeepgramTtsDiagnostic.model,modelSource:lastDeepgramTtsDiagnostic.modelSource,keySource:lastDeepgramTtsDiagnostic.keySource});
   }
 });
 
@@ -8378,6 +9562,7 @@ function micheleBookConfig(){
 function gentleBookError(error){
   console.error('[michele-book]',error);
   const msg=String(error&&error.message||error||'');
+  if(/OPENAI_KEY not configured/i.test(msg)) return 'VAL’s writing brain is not connected yet. Please ask Jessa to check the OpenAI connection in Settings → API Keys & Connections or Railway.';
   if(/This edit would greatly increase|Selected chapter was not found|looks like notes or a chat transcript|Reading\/output doc matches|MICHELE_READING_COPY_DOC_ID/i.test(msg)) return msg;
   return 'I need one small setup fix before I can continue the book. Jessa can see the details in the admin panel.';
 }
@@ -8395,13 +9580,45 @@ function isMicheleChapterHeading(el){
   return /^\s*Chapter\s*#?\s*\d+\s*:/i.test(text)&&text.length<=220;
 }
 function parseMicheleChapterHeading(text){
-  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  const raw=String(text||'').trim();
+  const clean=raw.replace(/\s+/g,' ').trim();
   if(/^\s*Prologue\b/i.test(clean)){
-    const title=clean.replace(/^\s*Prologue\s*:?\s*/i,'').trim();
-    return {number:0,title:title||'Prologue',heading:clean,label:title?`Prologue: ${title}`:'Prologue'};
+    const split=splitMicheleHeadingTitleAndBody(clean.replace(/^\s*Prologue\s*:?\s*/i,''),'Prologue');
+    const title=split.title||'Prologue';
+    return {number:0,title,heading:title,label:title?`Prologue: ${title}`:'Prologue',bodyRemainder:split.bodyRemainder};
   }
   const m=clean.match(/^Chapter\s*#?\s*(\d+)\s*:?\s*(.*)$/i);
-  return {number:m?Number(m[1]):0,title:m?(m[2]||clean).trim():clean,heading:clean,label:m?`Chapter ${Number(m[1])}${m[2]?`: ${m[2].trim()}`:''}`:clean};
+  const number=m?Number(m[1]):0;
+  const split=splitMicheleHeadingTitleAndBody(m?(m[2]||clean):clean,number);
+  const title=split.title;
+  const heading=m?`Chapter #${number}${title?`: ${title}`:''}`:title;
+  return {number,title:title||`Chapter ${number}`,heading,label:m?`Chapter ${number}${title?`: ${title}`:''}`:title,bodyRemainder:split.bodyRemainder};
+}
+function splitMicheleHeadingTitleAndBody(value,number=''){
+  let text=String(value||'').replace(/\s+/g,' ').trim();
+  text=text.replace(/^[:\-–—\s]+/,'').trim();
+  let bodyRemainder='';
+  const bodyMarkers=[
+    /\s+(There[’']?s|There is|There are)\s+/i,
+    /\s+(You can[’']?t|I was|I remember|At that point|The intake process|Instead, I said|A few weeks later)\s+/i,
+    /\s+(Chapter\s+#?\d+\s*:)\s+/i
+  ];
+  for(const re of bodyMarkers){
+    const m=text.match(re);
+    if(m&&m.index>18){bodyRemainder=text.slice(m.index).trim();text=text.slice(0,m.index).trim();break;}
+  }
+  if(text.length>120){
+    const sentence=text.match(/^(.{35,120}?)(?:[.!?]\s|$)/);
+    const titleEnd=(sentence&&sentence[1]?sentence[1]:text.slice(0,110)).trim();
+    bodyRemainder=[text.slice(titleEnd.length).trim(),bodyRemainder].filter(Boolean).join(' ').trim();
+    text=titleEnd;
+  }
+  text=text.replace(/\(\s+/g,'(').replace(/\s+\)/g,')').replace(/\s{2,}/g,' ').trim();
+  if(!text&&Number(number)===0) text='Prologue';
+  return {title:text,bodyRemainder};
+}
+function sanitizeMicheleChapterTitle(value,number=''){
+  return splitMicheleHeadingTitleAndBody(value,number).title;
 }
 function googleDocTextBetweenElements(elements,startIndex,endIndex){
   return (elements||[])
@@ -8419,7 +9636,9 @@ function parseMicheleDocChapters(doc){
     const startIndex=Number(h.el.startIndex||1);
     const bodyStartIndex=Number(h.el.endIndex||startIndex+1);
     const endIndex=next?Number(next.startIndex||googleDocEndIndex(doc)):googleDocEndIndex(doc);
-    return {chapterNumber:h.number,chapterTitle:h.title||h.heading,googleDocSectionMarker:h.heading,startIndex,bodyStartIndex,endIndex,currentText:googleDocTextBetweenElements(elements,bodyStartIndex,endIndex),status:i===0?'in_progress':'draft'};
+    const bodyText=googleDocTextBetweenElements(elements,bodyStartIndex,endIndex);
+    const currentText=[h.bodyRemainder,bodyText].filter(Boolean).join('\n\n').trim();
+    return {chapterNumber:h.number,chapterTitle:h.title||h.heading,googleDocSectionMarker:h.heading,startIndex,bodyStartIndex,endIndex,currentText,status:i===0?'in_progress':'draft'};
   });
 }
 async function readGoogleDocRaw(documentId){
@@ -8567,7 +9786,277 @@ async function importMicheleMasterEdits({project,chapters,text,sourceTitle='Mast
   return {imported:true,count,sourceTitle};
 }
 function normalizeBookChapter(row){
-  return {id:row.id,bookProjectId:row.book_project_id||row.bookProjectId,chapterNumber:row.chapter_number??row.chapterNumber,chapterTitle:row.chapter_title||row.chapterTitle,googleDocSectionMarker:row.google_doc_section_marker||row.googleDocSectionMarker,currentText:row.current_text||row.currentText||'',status:row.status||'draft',lastSyncedAt:row.last_synced_at?row.last_synced_at.toISOString?.()||row.last_synced_at:row.lastSyncedAt||'',startIndex:row.start_index??row.startIndex,bodyStartIndex:row.body_start_index??row.bodyStartIndex,endIndex:row.end_index??row.endIndex};
+  const chapterNumber=row.chapter_number??row.chapterNumber;
+  const marker=row.google_doc_section_marker||row.googleDocSectionMarker;
+  const rawTitle=row.chapter_title||row.chapterTitle||'';
+  const title=sanitizeMicheleChapterTitle(rawTitle,chapterNumber)||sanitizeMicheleChapterTitle(String(marker||'').replace(/^\s*Chapter\s*#?\s*\d+\s*:?\s*/i,''),chapterNumber)||rawTitle;
+  return {id:row.id,bookProjectId:row.book_project_id||row.bookProjectId,chapterNumber,chapterTitle:title,googleDocSectionMarker:marker,currentText:row.current_text||row.currentText||'',status:row.status||'draft',lastSyncedAt:row.last_synced_at?row.last_synced_at.toISOString?.()||row.last_synced_at:row.lastSyncedAt||'',startIndex:row.start_index??row.startIndex,bodyStartIndex:row.body_start_index??row.bodyStartIndex,endIndex:row.end_index??row.endIndex};
+}
+function parseBookConversationJson(value,fallback){
+  if(value===undefined||value===null) return fallback;
+  if(Array.isArray(value)||typeof value==='object') return value;
+  try{return JSON.parse(String(value));}catch(_){return fallback;}
+}
+function normalizeBookConversationSession(row){
+  if(!row) return null;
+  const obj={
+    id:row.id,
+    bookProjectId:row.book_project_id||row.bookProjectId,
+    chapterId:row.chapter_id||row.chapterId||'',
+    userId:row.user_id||row.userId||'default',
+    tenantId:row.tenant_id||row.tenantId||'default',
+    status:row.status||'active',
+    mode:row.mode||'interview',
+    currentGoal:row.current_goal||row.currentGoal||'',
+    lastQuestion:row.last_question||row.lastQuestion||'',
+    questionsAsked:parseBookConversationJson(row.questions_asked??row.questionsAsked,[]),
+    storyBeats:parseBookConversationJson(row.story_beats??row.storyBeats,[]),
+    emotionalThreads:parseBookConversationJson(row.emotional_threads??row.emotionalThreads,[]),
+    sceneDetails:parseBookConversationJson(row.scene_details??row.sceneDetails,[]),
+    humorThreads:parseBookConversationJson(row.humor_threads??row.humorThreads,[]),
+    readerTakeaways:parseBookConversationJson(row.reader_takeaways??row.readerTakeaways,[]),
+    rewriteDirection:row.rewrite_direction||row.rewriteDirection||'',
+    readinessScore:Number((row.readiness_score??row.readinessScore)||0),
+    metadata:parseBookConversationJson(row.metadata_json??row.metadata,{})
+  };
+  obj.createdAt=row.created_at?row.created_at.toISOString?.()||row.created_at:row.createdAt||'';
+  obj.updatedAt=row.updated_at?row.updated_at.toISOString?.()||row.updated_at:row.updatedAt||'';
+  return obj;
+}
+function normalizeBookConversationTurn(row){
+  if(!row) return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    role:row.role,
+    content:row.content||'',
+    inputType:row.input_type||row.inputType||'text',
+    metadata:parseBookConversationJson(row.metadata_json??row.metadata,{}),
+    createdAt:row.created_at?row.created_at.toISOString?.()||row.created_at:row.createdAt||''
+  };
+}
+function publicBookConversationSession(session,turns=[]){
+  const s=normalizeBookConversationSession(session)||{};
+  return {
+    id:s.id,
+    chapterId:s.chapterId,
+    mode:s.mode,
+    lastQuestion:s.lastQuestion,
+    rewriteDirection:s.rewriteDirection,
+    readinessScore:s.readinessScore||0,
+    editorialMove:(s.metadata&&s.metadata.editorialMove)||'',
+    storyBeats:s.storyBeats||[],
+    emotionalThreads:s.emotionalThreads||[],
+    sceneDetails:s.sceneDetails||[],
+    humorThreads:s.humorThreads||[],
+    readerTakeaways:s.readerTakeaways||[],
+    turns:(turns||[]).map(normalizeBookConversationTurn).filter(Boolean).map(t=>({role:t.role,content:t.content,inputType:t.inputType,createdAt:t.createdAt})).slice(-12)
+  };
+}
+async function getOrCreateMicheleBookSession({project,chapter,mode='interview'}){
+  await valDbReady;
+  const projectId=bookProjectId(project);
+  const chapterId=chapter?.id||'';
+  const userId=currentUserId(),tenant=tenantId();
+  if(pgPool){
+    const existing=await dbQuery("select * from book_conversation_sessions where tenant_id=$1 and user_id=$2 and book_project_id=$3 and chapter_id=$4 and status='active' order by updated_at desc limit 1",[tenant,userId,projectId,chapterId]);
+    if(existing.rows[0]){
+      if(mode&&existing.rows[0].mode!==mode) await dbQuery('update book_conversation_sessions set mode=$1,updated_at=now() where id=$2',[mode,existing.rows[0].id]);
+      return normalizeBookConversationSession({...existing.rows[0],mode:mode||existing.rows[0].mode});
+    }
+    const id=uuid('bookchat');
+    await dbQuery('insert into book_conversation_sessions (id,book_project_id,chapter_id,user_id,tenant_id,mode,current_goal,metadata_json) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[id,projectId,chapterId,userId,tenant,mode||'interview','understand chapter direction before rewriting',JSON.stringify({chapterLabel:micheleChapterLabel(chapter)})]);
+    const created=await dbQuery('select * from book_conversation_sessions where id=$1',[id]);
+    return normalizeBookConversationSession(created.rows[0]);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'bookConversationSessions');
+  let row=rows.filter(r=>r.tenantId===tenant&&r.userId===userId&&r.bookProjectId===projectId&&r.chapterId===chapterId&&r.status==='active').sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0];
+  if(!row){
+    row={id:uuid('bookchat'),bookProjectId:projectId,chapterId,userId,tenantId:tenant,status:'active',mode:mode||'interview',currentGoal:'understand chapter direction before rewriting',lastQuestion:'',questionsAsked:[],storyBeats:[],emotionalThreads:[],sceneDetails:[],humorThreads:[],readerTakeaways:[],rewriteDirection:'',readinessScore:0,metadata:{chapterLabel:micheleChapterLabel(chapter)},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    rows.push(row);
+  }else if(mode){row.mode=mode;row.updatedAt=new Date().toISOString();}
+  saveValStore(store);
+  return normalizeBookConversationSession(row);
+}
+async function listMicheleBookSessionTurns(sessionId,limit=24){
+  await valDbReady;
+  if(!sessionId) return [];
+  if(pgPool){
+    const r=await dbQuery('select * from book_conversation_turns where session_id=$1 order by created_at asc',[sessionId]);
+    return r.rows.map(normalizeBookConversationTurn).slice(-Math.max(1,limit));
+  }
+  return (valStore().bookConversationTurns||[]).filter(t=>t.sessionId===sessionId).sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))).map(normalizeBookConversationTurn).slice(-Math.max(1,limit));
+}
+async function appendMicheleBookTurn({sessionId,role,content,inputType='text',metadata={}}){
+  const text=String(content||'').trim();
+  if(!sessionId||!role||!text) return null;
+  const row={id:uuid('bookturn'),sessionId,role,content:text,inputType,metadata,createdAt:new Date().toISOString()};
+  if(pgPool) await dbQuery('insert into book_conversation_turns (id,session_id,role,content,input_type,metadata_json,created_at) values ($1,$2,$3,$4,$5,$6::jsonb,now())',[row.id,sessionId,role,text,inputType,JSON.stringify(metadata||{})]);
+  else{const store=valStore();nextStoreArray(store,'bookConversationTurns').push(row);saveValStore(store);}
+  return normalizeBookConversationTurn(row);
+}
+function mergeUniqueShort(existing=[],incoming=[],limit=12){
+  const out=[];
+  [...(Array.isArray(existing)?existing:[]),...(Array.isArray(incoming)?incoming:[])].forEach(v=>{
+    const text=String(v||'').replace(/\s+/g,' ').trim();
+    if(text&&!out.some(x=>x.toLowerCase()===text.toLowerCase())) out.push(text.length>260?text.slice(0,257).trim()+'…':text);
+  });
+  return out.slice(-limit);
+}
+async function updateMicheleBookSessionState(session,updates={}){
+  const current=normalizeBookConversationSession(session);
+  if(!current?.id) return current;
+  const next={
+    mode:updates.mode||current.mode||'interview',
+    currentGoal:updates.currentGoal??current.currentGoal,
+    lastQuestion:updates.lastQuestion??current.lastQuestion,
+    questionsAsked:mergeUniqueShort(current.questionsAsked,updates.questionsAsked||[],18),
+    storyBeats:mergeUniqueShort(current.storyBeats,updates.storyBeats||[],18),
+    emotionalThreads:mergeUniqueShort(current.emotionalThreads,updates.emotionalThreads||[],14),
+    sceneDetails:mergeUniqueShort(current.sceneDetails,updates.sceneDetails||[],14),
+    humorThreads:mergeUniqueShort(current.humorThreads,updates.humorThreads||[],12),
+    readerTakeaways:mergeUniqueShort(current.readerTakeaways,updates.readerTakeaways||[],12),
+    rewriteDirection:String((updates.rewriteDirection??current.rewriteDirection)||'').trim().slice(0,9000),
+    readinessScore:Math.max(0,Math.min(100,Number((updates.readinessScore??current.readinessScore)||0))),
+    metadata:Object.assign({},current.metadata||{},updates.metadata||{})
+  };
+  if(pgPool){
+    await dbQuery('update book_conversation_sessions set mode=$1,current_goal=$2,last_question=$3,questions_asked=$4::jsonb,story_beats=$5::jsonb,emotional_threads=$6::jsonb,scene_details=$7::jsonb,humor_threads=$8::jsonb,reader_takeaways=$9::jsonb,rewrite_direction=$10,readiness_score=$11,metadata_json=$12::jsonb,updated_at=now() where id=$13',[next.mode,next.currentGoal,next.lastQuestion,JSON.stringify(next.questionsAsked),JSON.stringify(next.storyBeats),JSON.stringify(next.emotionalThreads),JSON.stringify(next.sceneDetails),JSON.stringify(next.humorThreads),JSON.stringify(next.readerTakeaways),next.rewriteDirection,next.readinessScore,JSON.stringify(next.metadata),current.id]);
+  }else{
+    const store=valStore(),row=nextStoreArray(store,'bookConversationSessions').find(r=>r.id===current.id);
+    if(row) Object.assign(row,next,{updatedAt:new Date().toISOString()});
+    saveValStore(store);
+  }
+  return normalizeBookConversationSession(Object.assign({},current,next,{updatedAt:new Date().toISOString()}));
+}
+function micheleConversationStateInstruction(session,turns=[]){
+  const s=normalizeBookConversationSession(session)||{};
+  const recent=(turns||[]).slice(-12).map(t=>(t.role==='user'?'Michele':'VAL')+': '+String(t.content||'')).join('\n');
+  return [
+    s.rewriteDirection?`Accumulated rewrite direction:\n${s.rewriteDirection}`:'',
+    s.storyBeats?.length?`Story beats Michele surfaced:\n- ${s.storyBeats.join('\n- ')}`:'',
+    s.emotionalThreads?.length?`Emotional threads:\n- ${s.emotionalThreads.join('\n- ')}`:'',
+    s.sceneDetails?.length?`Scene details:\n- ${s.sceneDetails.join('\n- ')}`:'',
+    s.humorThreads?.length?`Humor threads:\n- ${s.humorThreads.join('\n- ')}`:'',
+    s.readerTakeaways?.length?`Reader takeaways:\n- ${s.readerTakeaways.join('\n- ')}`:'',
+    recent?`Recent conversation:\n${recent}`:''
+  ].filter(Boolean).join('\n\n');
+}
+function micheleConversationPlannerFallback({chapter,userMessage,session,turns=[]}){
+  const asked=(session?.questionsAsked||[]).concat((turns||[]).filter(t=>t.role==='assistant').map(t=>t.content));
+  const userTurns=(turns||[]).filter(t=>t.role==='user').length;
+  const readiness=Math.min(92,35+(userTurns*15));
+  const editorialMove=readiness>=78?'write':(userTurns===0?'reflect':'explore');
+  const question=micheleNextFallbackQuestion(chapter,userMessage,asked.map(content=>({role:'assistant',content})));
+  return {
+    reply:editorialMove==='write'?'I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.':question,
+    readyToRewrite:editorialMove==='write',
+    readinessScore:readiness,
+    editorialMove,
+    storyBeats:[userMessage],
+    emotionalThreads:[],
+    sceneDetails:[],
+    humorThreads:[],
+    readerTakeaways:[],
+    currentGoal:'continue gathering chapter-specific rewrite direction',
+    rewriteDirection:[session?.rewriteDirection||'',`Michele added: ${userMessage}`].filter(Boolean).join('\n'),
+    mode:'interview'
+  };
+}
+async function michelePlanBookConversationTurn({chapter,userMessage,session,turns=[],lastCompletedChapter=null,mode='interview',voiceMode=false,notes=[],voiceProfile=null}){
+  const selectedMode=micheleEditorialMode(userMessage,mode||session?.mode||'interview');
+  const fallback=micheleConversationPlannerFallback({chapter,userMessage,session,turns});
+  const asksForAnswer=micheleMessageRequestsEditorialAnswer(userMessage);
+  const priorUserTurns=(turns||[]).filter(t=>t.role==='user').length;
+  const sessionReadiness=Number(session?.readinessScore||0);
+  const likelyReady=sessionReadiness>=78||priorUserTurns>=4||/\b(write it|write this|rewrite|i'?m ready|go ahead|do it|create revision|all of the above)\b/i.test(userMessage);
+  try{
+    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.62:0.35,maxTokens:selectedMode==='interview'?900:1800,system:[
+      VAL_SYSTEM_PROMPT,
+      'You are the Conversation Layer for Michele Julian’s VAL book editor. You are not the Google Doc writer.',
+      'Michele is the person speaking. Be warm, intuitive, concrete, and conversational like an expert memoir coach.',
+      'You are not a question sequence. Choose one editorial move each turn: reflect, challenge, explore, or write.',
+      'Reflect means: start with a specific observation from the chapter or Michele’s last answer, then briefly test whether you are reading it correctly.',
+      'Challenge means: gently name where the scene, paragraph, emotional turn, or reader experience may not be landing yet.',
+      'Explore means: ask for one missing concrete detail, emotional truth, or reader-facing meaning from the exact thread Michele just raised.',
+      'Write means: stop asking and say you have enough to shape the revision. Invite only a final protection note, not another interview question.',
+      'The ideal style is: VAL notices something real; Michele responds; VAL follows that thread. No generic writing-class prompts.',
+      'Do not read the chapter aloud. Do not paste chapter text. Do not rewrite manuscript prose in this route.',
+      'Do not say “I hear you,” “Direction captured,” “Use this as rewrite direction,” or “Nothing has changed.”',
+      'If Michele asks for your thoughts, answer her thought first in 1-3 sentences, then ask one natural follow-up question.',
+      'If Michele answers a prior question, absorb her answer and decide whether to reflect, challenge, explore, or write. Do not automatically ask another question.',
+      'When Michele gives an answer, do not jump straight to the next question. First give one grounded sentence naming why her answer is useful.',
+      'Then give one grounded sentence naming how that answer will shape the edit: scene, humor, vulnerability, pacing, transition, reader understanding, or emotional center.',
+      'Then, only if editorialMove is reflect/challenge/explore, ask one next question. This should feel like live editorial feedback, not a quiz.',
+      'Good pattern: “That helps because ____. I can use that to ____. What I still want to understand is ____?”',
+      'Never ask Michele to choose between humor, scene, emotional truth, transitions, or reader takeaway. Assume all of those layers are needed.',
+      'If Michele says “all of the above,” treat that as permission to layer all relevant editorial improvements and ask for the next missing detail.',
+      'If Michele asks what chapter to work on, mention last completed and current chapter briefly, then ask whether to continue the current chapter, move to the next, or work on transitions/book-wide threads.',
+      'Begin each new chapter conversation with an observation, not a bare question: “I noticed…” or “I think the center may be…” then ask if that reading is right.',
+      'Do not over-interview. If readiness is 75 or higher, prefer editorialMove=write unless there is a serious missing fact.',
+      'If likelyReady is true, choose editorialMove=write unless Michele explicitly asks to keep talking.',
+      'Ask only one question when editorialMove is reflect, challenge, or explore. Ask no new substantive question when editorialMove is write.',
+      'Return strict JSON with keys: reply, editorialMove, readyToRewrite, readinessScore, currentGoal, storyBeats, emotionalThreads, sceneDetails, humorThreads, readerTakeaways, rewriteDirection.',
+      'reply must be under 115 words in voice mode and under 190 words otherwise. It must not include manuscript prose.',
+      'editorialMove must be one of reflect, challenge, explore, write.',
+      'rewriteDirection should accumulate the actual editing instruction for the eventual chapter rewrite.'
+    ].join('\n'),user:JSON.stringify({
+      mode:selectedMode,
+      voiceMode:!!voiceMode,
+      asksForEditorialAnswer:asksForAnswer,
+      likelyReady,
+      currentReadinessScore:sessionReadiness,
+      priorUserTurnCount:priorUserTurns,
+      currentChapter:{label:micheleChapterLabel(chapter),chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle,contextSummary:micheleChapterContextSummary(chapter),safeSignals:micheleWordSignals(chapter,12),excerpt:String(chapter.currentText||'').slice(0,9000)},
+      lastCompletedChapter:lastCompletedChapter?{chapterNumber:lastCompletedChapter.chapterNumber,chapterTitle:lastCompletedChapter.chapterTitle}:null,
+      session:{
+        lastQuestion:session?.lastQuestion||'',
+        questionsAsked:session?.questionsAsked||[],
+        storyBeats:session?.storyBeats||[],
+        emotionalThreads:session?.emotionalThreads||[],
+        sceneDetails:session?.sceneDetails||[],
+        humorThreads:session?.humorThreads||[],
+        readerTakeaways:session?.readerTakeaways||[],
+        rewriteDirection:session?.rewriteDirection||''
+      },
+      recentTurns:(turns||[]).slice(-10).map(t=>({role:t.role,content:String(t.content||'').slice(0,900)})),
+      micheleLatestMessage:userMessage,
+      editorNotes:(notes||[]).map(n=>String(n.note_text||n.noteText||'').slice(0,1600)).slice(0,3),
+      authorVoiceProfile:voiceProfile||null
+    })}),10000);
+    const parsed=JSON.parse(raw);
+    let reply=sanitizeMicheleEditorReply(parsed.reply||'').trim();
+    const priorTurns=(turns||[]).map(t=>({role:t.role,content:t.content}));
+    if(!reply||micheleConversationTextLooksLikeManuscript(reply,chapter)||micheleReplyRepeatsPriorQuestion(reply,priorTurns)){
+      reply=fallback.reply;
+    }
+    let editorialMove=String(parsed.editorialMove||fallback.editorialMove||'explore').toLowerCase().trim();
+    if(!['reflect','challenge','explore','write'].includes(editorialMove)) editorialMove=fallback.editorialMove||'explore';
+    let readinessScore=Math.max(0,Math.min(100,Number(parsed.readinessScore||fallback.readinessScore||0)));
+    if(likelyReady&&readinessScore<78) readinessScore=82;
+    const readyToRewrite=!!parsed.readyToRewrite || readinessScore>=78 || editorialMove==='write';
+    if(readyToRewrite&&editorialMove!=='write') editorialMove='write';
+    if(readyToRewrite&&/\?\s*$/.test(reply)&&!asksForAnswer){
+      reply='I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.';
+    }
+    if(voiceMode) reply=micheleVoiceSizedReply(reply);
+    return {
+      reply,
+      editorialMove,
+      readyToRewrite,
+      readinessScore,
+      currentGoal:String(parsed.currentGoal||fallback.currentGoal||'continue the chapter conversation').slice(0,300),
+      storyBeats:compactMicheleBullets(parsed.storyBeats||fallback.storyBeats),
+      emotionalThreads:compactMicheleBullets(parsed.emotionalThreads||fallback.emotionalThreads),
+      sceneDetails:compactMicheleBullets(parsed.sceneDetails||fallback.sceneDetails),
+      humorThreads:compactMicheleBullets(parsed.humorThreads||fallback.humorThreads),
+      readerTakeaways:compactMicheleBullets(parsed.readerTakeaways||fallback.readerTakeaways),
+      rewriteDirection:String(parsed.rewriteDirection||fallback.rewriteDirection||userMessage).trim(),
+      mode:selectedMode
+    };
+  }catch(e){
+    return fallback;
+  }
 }
 async function upsertMicheleChapters(project,chapters){
   const projectId=bookProjectId(project);
@@ -8731,11 +10220,113 @@ async function updateMicheleChapterText(chapter,afterText){
 }
 function compactMicheleBullets(value){
   const arr=Array.isArray(value)?value:String(value||'').split(/\n+/);
-  return arr.map(x=>String(x||'').replace(/^[-*•\d.\s]+/,'').trim()).filter(Boolean).slice(0,3);
+  return arr.map(x=>String(x||'').replace(/^[-*•\d.\s]+/,'').replace(/\s+/g,' ').trim()).filter(Boolean).map(x=>x.length>210?x.slice(0,207).trim()+'…':x).slice(0,3);
+}
+function safeMicheleChapter(chapter){
+  if(!chapter) return null;
+  return {id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:sanitizeMicheleChapterTitle(chapter.chapterTitle,chapter.chapterNumber),status:chapter.status,lastSyncedAt:chapter.lastSyncedAt};
+}
+function micheleWordSignals(chapter,limit=5){
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'');
+  const text=String(chapter?.currentText||'');
+  const stop=new Set('about after again all also and are because been before being between chapter could does every from have into just like more much only other over really should some that their there these they this through under very what when where which while with without would your you were was the then than its her she his him not but for'.split(' '));
+  const counts=new Map();
+  const titleWords=new Set(title.toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[]);
+  for(const word of (title+' '+text).toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[]){
+    const clean=word.replace(/^'+|'+$/g,'');
+    if(clean.length<4||stop.has(clean)) continue;
+    counts.set(clean,(counts.get(clean)||0)+(titleWords.has(clean)?8:1));
+  }
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([word])=>word);
+}
+function micheleChapterSpecificSignals(chapter,limit=8){
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const title=sanitizeMicheleChapterTitle(chapter?.chapterTitle||chapter?.chapter_title||'',chapter?.chapterNumber||chapter?.chapter_number);
+  const candidates=[];
+  (text.match(/[“"][^”"]{4,70}[”"]/g)||[]).forEach(q=>candidates.push(q.replace(/[“”"]/g,'').trim()));
+  const phrasePatterns=[
+    /\belite dating service\b/i,
+    /\bpolished website\b/i,
+    /\bglowing testimonials\b/i,
+    /\bprofessional matchmaker\b/i,
+    /\bresume of heartbreaks\b/i,
+    /\bgrown-up fairy tale\b/i,
+    /\bintake process\b/i,
+    /\bnoisy bars\b/i,
+    /\bwatered-down cocktails\b/i,
+    /\bmetaphorical\b[^.]{0,45}\bhorse\b/i,
+    /\bback of their\b[^.]{0,45}\bhorse\b/i,
+    /\bcommitment\b/i,
+    /\bsoulmates?\b/i
+  ];
+  phrasePatterns.forEach(re=>{const m=text.match(re);if(m)candidates.push(m[0]);});
+  const titleWords=title.toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[];
+  if(titleWords.length)candidates.push(title);
+  micheleWordSignals(chapter,10).forEach(w=>candidates.push(w));
+  const out=[];
+  candidates.forEach(v=>{
+    const clean=String(v||'').replace(/\s+/g,' ').trim();
+    if(clean.length>=4&&!out.some(x=>x.toLowerCase()===clean.toLowerCase())) out.push(clean);
+  });
+  return out.slice(0,limit);
+}
+function micheleQuestionSafeSignal(value){
+  let text=String(value||'').replace(/[“”"]/g,'').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  if(/[.!?]/.test(text)){
+    const parts=text.split(/[.!?]/).map(p=>p.trim()).filter(Boolean);
+    text=parts.sort((a,b)=>b.length-a.length)[0]||text;
+  }
+  text=text.replace(/^(we|i|you|they)\s+/i,'').trim();
+  if(text.length>42) text=text.slice(0,42).replace(/\s+\S*$/,'').trim();
+  return text;
+}
+function micheleChapterEditorialSnapshot(chapter){
+  const label=micheleChapterLabel(chapter);
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const words=text.split(/\s+/).filter(Boolean).length;
+  const title=sanitizeMicheleChapterTitle(chapter?.chapterTitle||chapter?.chapter_title||'this chapter',chapter?.chapterNumber||chapter?.chapter_number);
+  const signals=micheleChapterSpecificSignals(chapter,8);
+  const main=signals[0]||title||'the central scene';
+  const second=signals[1]||signals[2]||'the emotional turn';
+  const questionMain=micheleQuestionSafeSignal(main)||'this moment';
+  const hasHumor=/\b(funny|laugh|shit|ridiculous|absurd|joke|trick|wild|you can.t make this|universe)\b/i.test(text+' '+title);
+  const hasBody=/\b(body|pain|knee|thigh|heart|breath|floor|ice|shoe|sneaker|scarf|doctor|hospital)\b/i.test(text+' '+title);
+  const hasSpiritual=/\b(god|universe|faith|miracle|spirit|perfectly timed|divine)\b/i.test(text+' '+title);
+  const hasDialogue=/["“”]/.test(text)||/\b(said|asked|told|called)\b/i.test(text);
+  const chapterSummary=`${label} is circling the promise of ${main}${second&&second!==main?` and the deeper ache underneath ${second}`:''}. The edit should keep the scene funny and specific while clarifying what Michele was really hoping would be solved.`;
+  const strengths=[
+    `The ${main} setup gives the reader a clear, memorable doorway into the chapter.`,
+    hasHumor?`Lines around ${second} give Michele room to be funny before the vulnerability appears.`:`The voice can stay conversational and self-aware without becoming over-polished.`,
+    hasDialogue?'The quoted language gives the scene texture and lets the reader hear the promise being sold.':`The chapter has a clear emotional thread VAL can deepen around ${second}.`
+  ];
+  const opportunities=[
+    hasDialogue?`Use the service’s own language, especially ${second}, to sharpen what Michele wanted to believe.`:`Add one or two grounded beats around ${main} so the reader can see the moment before reflection.`,
+    `Clarify the turn from ${main} to the private longing underneath it so the emotional meaning feels earned.`,
+    words>2500?'Break the revision into cleaner scene-to-reflection movements so the chapter does not feel overstuffed.':`Strengthen the transition from the fairy-tale promise into what Michele now understands.`
+  ];
+  const question=hasBody
+    ? `What did your body know in this moment before your mind caught up?`
+    : hasSpiritual
+      ? `Where should the reader feel the ${questionMain} mystery without being told what to believe?`
+      : `What did the promise of ${questionMain} make you want to believe was finally possible?`;
+  return {chapterSummary, strengths, opportunities, recommends:[
+    `Preserve Michele’s natural voice while making ${main} feel more immediate on the page.`,
+    `Layer humor, scene, emotional truth, reader understanding, and transitions together instead of choosing only one lane.`,
+    `Use Michele’s answer to sharpen the chapter’s emotional movement without over-polishing it.`
+  ], question};
+}
+function micheleChapterShortSummary(chapter){
+  return micheleChapterEditorialSnapshot(chapter).chapterSummary;
+}
+function micheleDefaultStrengths(chapter){
+  return micheleChapterEditorialSnapshot(chapter).strengths;
+}
+function micheleDefaultOpportunities(chapter){
+  return micheleChapterEditorialSnapshot(chapter).opportunities;
 }
 function micheleChapterSpecificQuestion(chapter){
-  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
-  return `I’m going to help “${title}” do five things at once: make the reader laugh, place them inside the scene, reveal the emotional truth underneath it, make the insight clear without preaching, and smooth the bridge from story to meaning. What detail from this moment still feels impossible to forget?`;
+  return micheleNextFallbackQuestion(chapter,'',[]);
 }
 function micheleLayeredEditorialFrameworkText(){
   return [
@@ -8749,9 +10340,9 @@ function micheleLayeredEditorialFrameworkText(){
 }
 function micheleChapterContextSummary(chapter){
   const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
-  const firstSentence=(text.match(/^[^.!?]{30,260}[.!?]/)||[text.slice(0,220)])[0]||'';
   const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
-  return `VAL has read “${title}.” The chapter already has lived-scene material to work from${firstSentence?`, beginning with: “${firstSentence.slice(0,220)}”`:'.'} The next conversation should deepen the existing material instead of asking Michele to explain what is already on the page.`;
+  const words=text.split(/\s+/).filter(Boolean).length;
+  return `VAL has read “${title}”${words?` (${words} words)`:''}. Refer to the chapter briefly, then ask one useful question. Do not quote or read the manuscript aloud before the conversation begins.`;
 }
 function micheleInformedChapterQuestion(chapter,userMessage=''){
   const msg=String(userMessage||'').toLowerCase();
@@ -8788,13 +10379,13 @@ function micheleFindChapterForMessage(message,chapters=[],fallbackChapter=null){
   return fallbackChapter||list[0]||null;
 }
 function micheleEditorialMode(message,explicitMode=''){
-  const mode=String(explicitMode||'').toLowerCase().trim();
-  if(['interview','editor','proofreading','proofread','overview'].includes(mode)) return mode==='proofread'?'proofreading':mode;
   const msg=String(message||'').toLowerCase();
   if(/\b(proofread|spell|spelling|grammar|punctuation|typo|technical)\b/.test(msg)) return 'proofreading';
   if(/\b(overview|summary|summarize|recap|what happens|key takeaways)\b/.test(msg)) return 'overview';
+  if(/\b(read|thoughts?|what do you think|your take|reaction|review|edit|editor|developmental|confusing|flow|arc|strengths|opportunities)\b/.test(msg)) return 'editor';
   if(/\b(ask me|questions|question me|interview|voice conversation|draw out|pull out)\b/.test(msg)) return 'interview';
-  if(/\b(read|thoughts|review|edit|editor|developmental|confusing|flow|arc|strengths|opportunities)\b/.test(msg)) return 'editor';
+  const mode=String(explicitMode||'').toLowerCase().trim();
+  if(['interview','editor','proofreading','proofread','overview'].includes(mode)) return mode==='proofread'?'proofreading':mode;
   return 'interview';
 }
 function micheleModeSections(mode){
@@ -8823,7 +10414,24 @@ function sanitizeMicheleEditorReply(text){
     .replace(/\n{3,}/g,'\n\n');
   return out.trim();
 }
-function micheleFastConversationReply(chapter,userMessage,{mode='interview',lastCompletedChapter=null}={}){
+function micheleChapterExcerpt(text,offset=0,len=260){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(!clean) return '';
+  const start=Math.max(0,Math.min(clean.length,offset));
+  const chunk=clean.slice(start,start+len);
+  return chunk.replace(/^\S{0,30}\s/,'').trim();
+}
+function micheleDeterministicChapterThoughts(chapter,userMessage=''){
+  const label=micheleChapterLabel(chapter);
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const asksProof=/proofread|spell|grammar|punctuation|typo/i.test(userMessage);
+  if(asksProof){
+    return `${label}\n\nProofreading notes\nI would preserve your conversational rhythm first, then clean only what distracts the reader: repeated filler, accidental tense shifts, punctuation that makes a sentence hard to follow, and any line breaks that chop up the joke or emotion.\n\nWhat I would not do\nI would not over-polish this into formal memoir voice. The power is in how spoken and alive it feels.\n\nNext useful question\nIs there any sentence in this chapter that still sounds like “writer voice” instead of you talking?`;
+  }
+  const lengthNote=text.length>9000?'There is enough material here that I would work in sections, not try to solve the whole chapter in one sweep.':'There is enough material here to make a meaningful pass without making you explain the whole story again.';
+  return `${label}\n\nMy thoughts\nThis chapter should not be treated like raw material anymore. It already has a living pulse. The job now is to make the reader feel guided through it without sanding off your humor, bite, or emotional edge.\n\nWhat is working\nThe chapter has lived-scene energy. I would keep the reader close to the physical moment first, then let the deeper meaning arrive after they are already inside it.\n\nWhere I would deepen it\nI would look for the places where the story moves quickly past the body-level truth: what you knew, what you ignored, what felt funny at the time, and what it cost later.\n\nThe editorial move\nLayer humor, scene, emotional truth, reader understanding, and transitions at the same time. The reader should laugh or lean in first, then realize the deeper truth has been landing the whole time.\n\nWhat I would watch\n${lengthNote}\n\nNext useful question\nWhat is the part of this chapter you most want the reader to still be thinking about after they close the book?`;
+}
+function micheleFastConversationReply(chapter,userMessage,{mode='interview',lastCompletedChapter=null,conversation=[]}={}){
   const msg=String(userMessage||'').toLowerCase();
   const label=micheleChapterLabel(chapter);
   const lastLabel=lastCompletedChapter?micheleChapterLabel(lastCompletedChapter):'No chapter has been completed in this workflow yet';
@@ -8838,10 +10446,24 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
   const unsure=/not sure|unsure|don't know|confused|stuck|maybe/.test(msg);
   const ready=/ready|go ahead|rewrite|do it|yes|that feels right/.test(msg)&&!unsure;
   if(mode==='overview'||(asksRead&&/overview|summary|thoughts|read/.test(msg))){
+    if(/thoughts|what do you think|your take|reaction|review|edit/.test(msg)){
+      return {
+        reply:micheleDeterministicChapterThoughts(chapter,userMessage),
+        readyToRewrite:false,
+        suggestedInstruction:`Use the editor's chapter thoughts for ${label}: preserve Michele’s voice while strengthening scene, emotional truth, reader clarity, humor, and transitions.`
+      };
+    }
     return {
       reply:`${label}\n\nOverview\nThis chapter is ready for a focused read. I can give you the story summary, emotional arc, themes, lessons, and places where the reader may need more grounding.\n\nNext question\nDo you want the overview to stay big-picture, or should I also point out where the chapter may need more scene, humor, or connective tissue?`,
       readyToRewrite:false,
       suggestedInstruction:`Review ${label} for story overview, emotional arc, reader clarity, and proofreading issues before rewriting.`
+    };
+  }
+  if(mode==='editor'||/thoughts|what do you think|your take|reaction|review|edit/.test(msg)){
+    return {
+      reply:micheleDeterministicChapterThoughts(chapter,userMessage),
+      readyToRewrite:false,
+      suggestedInstruction:`Use the editor's chapter thoughts for ${label}: preserve Michele’s voice while strengthening scene, emotional truth, reader clarity, humor, and transitions.`
     };
   }
   if(mode==='proofreading'){
@@ -8852,9 +10474,9 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
     };
   }
   let focus='layer humor, scene building, emotional truth, reader understanding, and transitions together while protecting Michele’s voice';
-  let question=micheleInformedChapterQuestion(chapter,userMessage);
-  if(wantsAll||wantsWarm||wantsEmotion||wantsStructure||wantsHumor){focus='apply all five editorial layers together: humor, scene building, emotional truth, reader understanding, and transitions';question=micheleInformedChapterQuestion(chapter,userMessage);}
-  else if(asksQuestions){focus='interview Michele from the actual chapter content, one useful question at a time, while applying all five editorial layers by default';question=micheleInformedChapterQuestion(chapter,userMessage);}
+  let question=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+  if(wantsAll||wantsWarm||wantsEmotion||wantsStructure||wantsHumor){focus='apply all five editorial layers together: humor, scene building, emotional truth, reader understanding, and transitions';question=micheleNextFallbackQuestion(chapter,userMessage,conversation);}
+  else if(asksQuestions){focus='interview Michele from the actual chapter content, one useful question at a time, while applying all five editorial layers by default';question=micheleNextFallbackQuestion(chapter,userMessage,conversation);}
   else if(asksNext){focus='help you choose the next editorial target from the current chapter context';question=`${lastLabel}. We are currently on ${label}. What part of the book do you want to work on next: this chapter, the next chapter, chapter transitions, voice consistency, emotional arc, humor/levity, or another thread?`;}
   else if(unsure){focus='use the chapter itself to find the smallest useful next question without making Michele choose an editorial lane';question=micheleInformedChapterQuestion(chapter,userMessage);}
   return {
@@ -8863,6 +10485,89 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
     suggestedInstruction:`Rewrite ${label} to ${focus}. Preserve Michele’s memoir voice, humor, directness, and factual sequence. Do not sound generic or overly polished.`
   };
 }
+function micheleFallbackQuestionBank(chapter,userMessage=''){
+  const text=String(chapter?.currentText||'').toLowerCase();
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'').toLowerCase();
+  const num=Number(chapter?.chapterNumber??chapter?.chapter_number);
+  const msg=String(userMessage||'').toLowerCase();
+  let bank=[
+    'What detail from that moment still feels impossible to forget?',
+    'What did you know in your body before you were ready to admit it in your mind?',
+    'What part of this scene should feel funny before it starts to hurt?',
+    'What does the reader need to understand here that you never understood then?',
+    'Where does this chapter need more of your real voice, not the cleaned-up version?',
+    'What sentence or moment in this chapter still feels too polite?',
+    'What happened right before this scene that would help the reader feel more grounded?',
+    'What happened right after this moment that the reader needs to feel the cost of it?',
+    'What is the line you would say out loud to a friend if you were telling this story over coffee?'
+  ];
+  const chapterSpecific=[];
+  if(num===0||/\bprologue\b/.test(title)) chapterSpecific.push('What promise should the prologue make to the reader about the kind of story they are entering?');
+  if(/sneaker|shoe|universe|trick/.test(title+text)) chapterSpecific.push('What tiny physical detail from that moment makes the whole thing feel real again?');
+  if(/scarf|ice|accident/.test(title+text)) chapterSpecific.push('Where should the reader first feel that something is off, even before you say it plainly?');
+  if(/mother|mom|father|dad|family|child|girl/.test(title+text)) chapterSpecific.push('What did younger you need someone in that scene to understand?');
+  if(/hospital|doctor|body|pain|sick|diagnos|surgery/.test(title+text)) chapterSpecific.push('What did your body understand before the room caught up?');
+  if(/love|date|marriage|husband|boyfriend|relationship/.test(title+text)) chapterSpecific.push('What part of the relationship should feel charming before the truth underneath it appears?');
+  if(/god|universe|faith|miracle|spirit/.test(title+text)) chapterSpecific.push('Where should the reader feel the mystery without being told what to believe?');
+  if(chapterSpecific.length){
+    const seed=Math.abs(String(title||num||text.slice(0,40)).split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0));
+    const rotated=chapterSpecific.slice(seed%chapterSpecific.length).concat(chapterSpecific.slice(0,seed%chapterSpecific.length));
+    bank=rotated.concat(bank);
+  }else{
+    const seed=Math.abs(String(title||num||text.slice(0,40)).split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0));
+    bank=bank.slice(seed%bank.length).concat(bank.slice(0,seed%bank.length));
+  }
+  if(/body|felt|feel|feeling|emotion|heart|truth/.test(msg)) return [bank[1],bank[4],bank[7],...bank];
+  if(/funny|humor|laugh|joke/.test(msg)) return [bank[2],bank[8],bank[5],...bank];
+  if(/reader|lesson|understand|meaning/.test(msg)) return [bank[3],bank[7],bank[0],...bank];
+  if(/detail|scene|sensory|see|remember/.test(msg)||/floor|shoe|sneaker|scarf|ice|accident|universe/.test(text)) return [bank[0],bank[6],bank[1],...bank];
+  return bank;
+}
+function micheleNextFallbackQuestion(chapter,userMessage='',conversation=[]){
+  const used=(Array.isArray(conversation)?conversation:[])
+    .map(t=>String(t?.content||'').replace(/\s+/g,' ').trim().toLowerCase())
+    .filter(Boolean);
+  const questions=micheleFallbackQuestionBank(chapter,userMessage);
+  return questions.find(q=>!used.some(u=>u.includes(q.toLowerCase()))) || 'What is the next thing this chapter needs to tell the truth more cleanly?';
+}
+function micheleMessageRequestsEditorialAnswer(message=''){
+  return /\b(read|thoughts?|what do you think|your take|reaction|overview|summary|summarize|review|proofread|spell|grammar|edit|editor|developmental|confusing|flow|arc|strengths|opportunities|what next|next chapter|work on next|which chapter|chapter transitions|transition)\b/i.test(String(message||''));
+}
+function micheleConversationTextLooksLikeManuscript(reply,chapter){
+  const clean=String(reply||'').replace(/\s+/g,' ').trim();
+  if(clean.length>1800) return true;
+  const chapterText=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  if(!chapterText||clean.length<500) return false;
+  const sample=clean.slice(0,260);
+  return sample.length>120&&chapterText.includes(sample);
+}
+function micheleSummaryFieldUnsafe(value,chapter){
+  const text=String(Array.isArray(value)?value.join(' '):value||'').replace(/\s+/g,' ').trim();
+  if(!text) return true;
+  if(text.length>700) return true;
+  if(micheleConversationTextLooksLikeManuscript(text,chapter)) return true;
+  const chapterText=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  if(chapterText&&text.length>80&&chapterText.includes(text.slice(0,80))) return true;
+  return false;
+}
+function micheleBulletsAreSpecific(items,chapter){
+  const list=compactMicheleBullets(items);
+  if(list.length!==3) return false;
+  const signals=micheleChapterSpecificSignals(chapter,10).map(s=>String(s).toLowerCase());
+  const joined=list.join(' ').toLowerCase();
+  const generic=/\b(story material|emotional truth|reader understanding|scene building|transitions|voice|meaning|body-level|body moment|physical details|concrete anchor)\b/g;
+  const genericHits=(joined.match(generic)||[]).length;
+  const signalHits=signals.filter(s=>s&&joined.includes(s)).length;
+  return signalHits>0 && genericHits<5;
+}
+function micheleReplyRepeatsPriorQuestion(reply,conversation=[]){
+  const clean=String(reply||'').replace(/\s+/g,' ').trim().toLowerCase();
+  if(!clean) return false;
+  return (Array.isArray(conversation)?conversation:[])
+    .filter(t=>t&&t.role==='assistant')
+    .map(t=>String(t.content||'').replace(/\s+/g,' ').trim().toLowerCase())
+    .some(prev=>prev && (prev===clean || prev.includes(clean) || clean.includes(prev)));
+}
 function micheleConversationTurns(conversation=[]){
   return (Array.isArray(conversation)?conversation:[])
     .filter(t=>t&&['user','assistant'].includes(t.role)&&String(t.content||'').trim())
@@ -8870,9 +10575,24 @@ function micheleConversationTurns(conversation=[]){
     .slice(-10)
     .map(t=>({role:t.role,content:String(t.content||'').slice(0,1200)}));
 }
-async function micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter=null,mode='interview',notes=[],voiceProfile=null}){
+function micheleVoiceSizedReply(text){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(clean.length<=360) return clean;
+  const sentences=clean.match(/[^.!?]+[.!?]+/g)||[];
+  return (sentences.slice(0,2).join(' ')||clean.slice(0,340)).trim();
+}
+async function micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter=null,mode='interview',notes=[],voiceProfile=null,voiceMode=false}){
   const selectedMode=micheleEditorialMode(userMessage,mode);
-  const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter});
+  const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter,conversation});
+  if(selectedMode==='interview'&&!micheleMessageRequestsEditorialAnswer(userMessage)){
+    const question=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    return {
+      reply:question,
+      readyToRewrite:false,
+      suggestedInstruction:`Michele answered: ${String(userMessage||'').trim()}. Use this answer as rewrite direction for ${micheleChapterLabel(chapter)} while preserving her voice and applying humor, scene, emotional truth, reader clarity, and transitions together.`,
+      mode:selectedMode
+    };
+  }
   try{
     const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.55:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
       VAL_SYSTEM_PROMPT,
@@ -8887,6 +10607,7 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
       'Before asking Michele a question, use the selected chapter content. Do not ask a question already answered by the chapter.',
       'If mode is Interview, ask one strong chapter-specific question at a time. No list of homework. Voice-first, conversational.',
       'In Interview mode, reply with ONLY the next question or a very short chapter-choice question. Do not include chapter labels, status updates, “Direction captured,” “Use this as the rewrite direction,” or “Nothing has changed.”',
+      'Never return rewritten manuscript prose in this conversation route. Rewriting happens only through the separate write-chapter action.',
       'If mode is Editor, return sections: Overview, Strengths, Opportunities, Emotional Impact, Reader Confusion Risks, Editorial Recommendations, Proofreading Notes.',
       'If mode is Proofreading, return sections: Spelling Errors, Grammar Issues, Punctuation Issues, Repetition, Awkward Phrasing, Suggested Corrections.',
       'If mode is Overview, return sections: Summary, Major Events, Emotional Arc, Themes, Lessons, Key Takeaways. Do not give editing suggestions unless Michele asked for thoughts or edits.',
@@ -8908,10 +10629,16 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
       authorVoiceProfile:voiceProfile||null
     })}),selectedMode==='interview'?10000:18000);
     const parsed=JSON.parse(raw);
-    const reply=sanitizeMicheleEditorReply(parsed.reply||'');
+    let reply=sanitizeMicheleEditorReply(parsed.reply||'');
+    if(micheleReplyRepeatsPriorQuestion(reply,conversation)){
+      reply=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    }
+    if(micheleConversationTextLooksLikeManuscript(reply,chapter)){
+      reply=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    }
     if(!reply) return fallback;
     return {
-      reply,
+      reply:voiceMode?micheleVoiceSizedReply(reply):reply,
       readyToRewrite:!!parsed.readyToRewrite,
       suggestedInstruction:String(parsed.suggestedInstruction||fallback.suggestedInstruction||userMessage).trim(),
       mode:selectedMode
@@ -8921,35 +10648,43 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
   }
 }
 async function micheleGentleSummary({chapter,notes,voiceProfile}){
-  const fallback={
-    noticed:[
-      micheleChapterContextSummary(chapter),
-      `The next pass should layer humor, scene building, emotional truth, reader understanding, and transitions together instead of making Michele choose one lane.`,
-      `VAL should ask from the page itself, not from a generic writing prompt.`
-    ],
-    recommends:[
-      `Use the chapter’s existing material as the starting point and deepen what is already alive on the page.`,
-      `When Michele answers, create a revised draft that preserves her edge, humor, and voice while making the scene easier to inhabit.`,
-      `Show the revised version for approval before writing to the fresh manuscript.`
-    ],
-    question:micheleChapterSpecificQuestion(chapter)
-  };
+  const fallback=micheleChapterEditorialSnapshot(chapter);
   try{
     const raw=await callValModel({json:true,temperature:0.25,maxTokens:1100,system:[VAL_SYSTEM_PROMPT,[
-      'Return strict JSON only with keys noticed, recommends, question.',
+      'Return strict JSON only with keys chapterSummary, strengths, opportunities, recommends, question.',
       'This is Michele’s calm book companion. It should feel emotionally intelligent, specific, and useful — not generic.',
-      'noticed must contain 2-3 substantial but gentle bullets, each 18-40 words, about what the chapter/editor notes reveal.',
+      'chapterSummary must be 1-2 short sentences, under 45 words. Do not quote the manuscript. Do not include full paragraphs from the chapter.',
+      'strengths must contain exactly 3 bullets, each 8-24 words, naming what is already working.',
+      'opportunities must contain exactly 3 bullets, each 8-24 words, naming what could be improved.',
       'recommends must contain 2-3 concrete rewrite directions, each 18-40 words, focused on applying humor, scene building, emotional truth, reader understanding, and transitions together.',
       'question must be one specific, easy-to-answer question tied to this chapter. Do not use the vague phrase "What feels right to you?" by itself.',
+      'question must be 8-28 words. It must not quote manuscript text. It must not summarize or read the chapter aloud.',
+      'Never return the whole chapter text in any field. Never quote more than 10 words from the chapter.',
+      'For voice startup, do not begin by reading the chapter. Say only one intuitive question.',
       'Do not ask Michele to choose between humor, sensory scene building, emotional truth, transitions, or reader takeaway. Assume the chapter needs all of them.',
       'Ask one informed question from the actual chapter content. Do not ask Michele to explain what the chapter already says.',
       'Do not overwhelm Michele. Do not give homework. Do not merely suggest; prepare for VAL to rewrite after Michele answers.',
       micheleLayeredEditorialFrameworkText(),
       'If Master Edits 1 notes are present, weave in the most applicable point without naming a long process.'
-    ].join('\n')].join('\n'),user:[`Chapter: ${chapter.chapterTitle}`,`Current text excerpt:\n${String(chapter.currentText||'').slice(0,9000)}`,notes.length?`Editor notes:\n${notes.map(n=>n.note_text||n.noteText).join('\n')}`:'',voiceProfile?`Author voice profile:\n${JSON.stringify(voiceProfile).slice(0,4000)}`:''].filter(Boolean).join('\n\n')});
+    ].join('\n')].join('\n'),user:[
+      `Chapter: ${chapter.chapterTitle}`,
+      `Safe chapter signals: ${micheleWordSignals(chapter,10).join(', ')}`,
+      `Structural context: ${micheleChapterContextSummary(chapter)}`,
+      notes.length?`Editor notes:\n${notes.map(n=>n.note_text||n.noteText).join('\n')}`:'',
+      voiceProfile?`Author voice profile:\n${JSON.stringify(voiceProfile).slice(0,3000)}`:''
+    ].filter(Boolean).join('\n\n')});
     const parsed=JSON.parse(raw);
     const question=String(parsed.question||'').trim();
-    return {noticed:compactMicheleBullets(parsed.noticed),recommends:compactMicheleBullets(parsed.recommends),question:/what feels right to you\??$/i.test(question)?micheleChapterSpecificQuestion(chapter):(question||micheleChapterSpecificQuestion(chapter))};
+    const chapterSummary=String(parsed.chapterSummary||'').replace(/\s+/g,' ').trim();
+    const strengths=compactMicheleBullets(parsed.strengths);
+    const opportunities=compactMicheleBullets(parsed.opportunities);
+    return {
+      chapterSummary:!micheleSummaryFieldUnsafe(chapterSummary,chapter)?chapterSummary:fallback.chapterSummary,
+      strengths:micheleBulletsAreSpecific(strengths,chapter)?strengths:fallback.strengths,
+      opportunities:micheleBulletsAreSpecific(opportunities,chapter)?opportunities:fallback.opportunities,
+      recommends:compactMicheleBullets(parsed.recommends),
+      question:/what feels right to you\??$/i.test(question)||micheleSummaryFieldUnsafe(question,chapter)?fallback.question:(question||fallback.question)
+    };
   }catch(e){return fallback;}
 }
 async function rewriteMicheleChapter({chapter,response,notes,voiceProfile}){
@@ -9002,6 +10737,28 @@ function micheleChapterHeadingText(chapter){
     return title&&title!=='Prologue'?`Prologue: ${title}`:'Prologue';
   }
   return String(chapter?.googleDocSectionMarker||`Chapter #${chapter?.chapterNumber}: ${chapter?.chapterTitle||''}`).trim();
+}
+function normalizeMicheleVerificationText(value){
+  return String(value||'')
+    .replace(/\u00a0/g,' ')
+    .replace(/[“”]/g,'"')
+    .replace(/[‘’]/g,"'")
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function micheleOutputHeadingCandidates(chapter){
+  const num=Number(chapter?.chapterNumber);
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'').trim();
+  const marker=String(chapter?.googleDocSectionMarker||chapter?.google_doc_section_marker||'').trim();
+  const candidates=[
+    micheleChapterHeadingText(chapter),
+    marker,
+    num===0?'Prologue':'',
+    num===0&&title&&title!=='Prologue'?`Prologue: ${title}`:'',
+    Number.isFinite(num)&&num>0?`Chapter #${num}${title?`: ${title}`:''}`:'',
+    Number.isFinite(num)&&num>0?`Chapter ${num}${title?`: ${title}`:''}`:''
+  ];
+  return [...new Set(candidates.map(normalizeMicheleVerificationText).filter(Boolean))];
 }
 function micheleForbiddenManuscriptContent(text){
   const body=String(text||'');
@@ -9083,15 +10840,25 @@ async function replaceMicheleOutputChapterOnly({documentId,chapter,fullText,plac
   return {mode:writeMode,currentDocWords,previousChapterWords:micheleWordCount(previousChapterText),editedChapterWords:proposedWords,expectedDocWords:expectedWords};
 }
 async function verifyMicheleOutputWrite({documentId,chapter,fullText}){
-  const doc=await readGoogleDocRaw(documentId);
-  const outputText=googleDocExtractedText(doc);
-  const heading=String(chapter.googleDocSectionMarker||`Chapter #${chapter.chapterNumber}: ${chapter.chapterTitle||''}`).trim();
-  const sample=String(fullText||'').replace(/\s+/g,' ').trim().slice(0,180);
-  const haystack=outputText.replace(/\s+/g,' ');
-  if(!haystack.includes(heading.replace(/\s+/g,' ')) || (sample&& !haystack.includes(sample))){
-    throw new Error('The rewritten chapter was not confirmed in the fresh output document. Original manuscript was not edited.');
+  const headingCandidates=micheleOutputHeadingCandidates(chapter);
+  const sample=normalizeMicheleVerificationText(fullText).slice(0,120);
+  let lastDoc=null,lastHeadingFound=false,lastSampleFound=false;
+  for(let attempt=0;attempt<3;attempt++){
+    const doc=await readGoogleDocRaw(documentId);
+    lastDoc=doc;
+    const outputText=googleDocExtractedText(doc);
+    const haystack=normalizeMicheleVerificationText(outputText);
+    lastHeadingFound=headingCandidates.some(heading=>heading&&haystack.includes(heading));
+    lastSampleFound=!sample || haystack.includes(sample);
+    if(lastHeadingFound&&lastSampleFound){
+      return {title:doc.title||'Fresh manuscript output',textLength:outputText.length,headingVerified:true,contentVerified:true};
+    }
+    await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));
   }
-  return {title:doc.title||'Fresh manuscript output',textLength:outputText.length};
+  if(!lastHeadingFound || !lastSampleFound){
+    throw new Error(`The rewritten chapter was not confirmed in the fresh output document. Original manuscript was not edited. Verification details: heading ${lastHeadingFound?'found':'missing'}, content sample ${lastSampleFound?'found':'missing'}.`);
+  }
+  return {title:lastDoc?.title||'Fresh manuscript output',textLength:googleDocExtractedText(lastDoc).length};
 }
 async function writeMicheleChapterResult({synced,chapter,fullText,placement=''}){
   const readingId=bookProjectReadingDocId(synced.project);
@@ -9126,7 +10893,9 @@ async function micheleBookContinueState(){
   const lastCompleted=await latestMicheleCompletedChapter(synced.project,synced.chapters);
   const [notes,voiceProfile]=await Promise.all([listMicheleEditorNotes(chapter.id,chapter),getMicheleVoiceProfile(projectId)]);
   const gentle=await micheleGentleSummary({chapter,notes,voiceProfile});
-  return {ok:true,project:{id:projectId,title:synced.project.title||synced.project.title,masterDocId:bookProjectMasterDocId(synced.project),readingCopyDocId:bookProjectReadingDocId(synced.project)},chapter,lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null,chapters:synced.chapters.map(ch=>({id:ch.id,chapterNumber:ch.chapterNumber,chapterTitle:ch.chapterTitle,status:ch.status,lastSyncedAt:ch.lastSyncedAt})),summary:gentle,question:'What would you like to work on next?'};
+  const session=await getOrCreateMicheleBookSession({project:synced.project,chapter,mode:'interview'});
+  const turns=await listMicheleBookSessionTurns(session.id,16);
+  return {ok:true,project:{id:projectId,title:synced.project.title||synced.project.title,masterDocId:bookProjectMasterDocId(synced.project),readingCopyDocId:bookProjectReadingDocId(synced.project)},chapter:safeMicheleChapter(chapter),lastCompletedChapter:lastCompleted?safeMicheleChapter(lastCompleted):null,chapters:synced.chapters.map(safeMicheleChapter),summary:gentle,question:'What would you like to work on next?',session:publicBookConversationSession(session,turns)};
 }
 async function getMicheleStoredChapterForConversation(chapterId=''){
   await valDbReady;
@@ -9156,7 +10925,7 @@ async function listMicheleStoredChaptersForConversation(project){
   }
   return (valStore().bookChapters||[]).filter(ch=>ch.bookProjectId===projectId).sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999)).map(normalizeBookChapter);
 }
-async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
+async function micheleBookConverse({chapterId,message,conversation=[],mode='',voiceMode=false}){
   const userMessage=String(message||'').trim();
   if(!userMessage) throw new Error('Missing Michele message.');
   const project=await ensureMicheleBookProject().catch(()=>null);
@@ -9169,7 +10938,7 @@ async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
     listMicheleEditorNotes(chapter.id,chapter).catch(()=>[]),
     getMicheleVoiceProfile(bookProjectId(project)).catch(()=>null)
   ]):[[],null];
-  const parsed=await micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter:lastCompleted,mode,notes,voiceProfile});
+  const parsed=await micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter:lastCompleted,mode,notes,voiceProfile,voiceMode});
   await saveMemoryItem({kind:'michele_chapter_analysis',summary:`${parsed.mode||micheleEditorialMode(userMessage,mode)} conversation for ${micheleChapterLabel(chapter)}`,rawText:String(parsed.reply||'').slice(0,6000),importance:3,metadata:{source:'michele_book_converse',chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode:parsed.mode||micheleEditorialMode(userMessage,mode)}}).catch(()=>{});
   return {
     ok:true,
@@ -9179,6 +10948,60 @@ async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
     mode:parsed.mode||micheleEditorialMode(userMessage,mode),
     chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},
     lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null
+  };
+}
+async function micheleBookSessionTurn({sessionId='',chapterId='',message='',mode='interview',voiceMode=false,inputType='text'}){
+  const userMessage=String(message||'').trim();
+  if(!userMessage) throw new Error('Missing Michele message.');
+  const project=await ensureMicheleBookProject();
+  let storedChapters=await listMicheleStoredChaptersForConversation(project).catch(()=>[]);
+  if(!storedChapters.length) storedChapters=(await syncMicheleBookFromDocs()).chapters;
+  const fallbackChapter=await getMicheleStoredChapterForConversation(chapterId);
+  const chapter=micheleFindChapterForMessage(userMessage,storedChapters,fallbackChapter)||fallbackChapter||storedChapters[0];
+  if(!chapter) throw new Error('No current chapter found.');
+  const lastCompleted=await latestMicheleCompletedChapter(project,storedChapters).catch(()=>null);
+  let session=null;
+  if(sessionId){
+    if(pgPool){const r=await dbQuery("select * from book_conversation_sessions where id=$1 and tenant_id=$2 and user_id=$3 and status='active' limit 1",[sessionId,tenantId(),currentUserId()]);session=normalizeBookConversationSession(r.rows[0]);}
+    else session=normalizeBookConversationSession((valStore().bookConversationSessions||[]).find(s=>s.id===sessionId&&s.tenantId===tenantId()&&s.userId===currentUserId()&&s.status==='active'));
+  }
+  if(!session||session.chapterId!==chapter.id) session=await getOrCreateMicheleBookSession({project,chapter,mode:mode||'interview'});
+  await appendMicheleBookTurn({sessionId:session.id,role:'user',content:userMessage,inputType:inputType||(voiceMode?'voice':'text'),metadata:{chapterId:chapter.id,mode}});
+  const turnsBeforeAssistant=await listMicheleBookSessionTurns(session.id,24);
+  const [notes,voiceProfile]=await Promise.all([
+    listMicheleEditorNotes(chapter.id,chapter).catch(()=>[]),
+    getMicheleVoiceProfile(bookProjectId(project)).catch(()=>null)
+  ]);
+  const planned=await michelePlanBookConversationTurn({chapter,userMessage,session,turns:turnsBeforeAssistant,lastCompletedChapter:lastCompleted,mode:mode||session.mode,voiceMode,notes,voiceProfile});
+  const nextSession=await updateMicheleBookSessionState(session,{
+    mode:planned.mode||mode||session.mode,
+    currentGoal:planned.currentGoal,
+    lastQuestion:/\?\s*$/.test(planned.reply)?planned.reply:session.lastQuestion,
+    questionsAsked:/\?\s*$/.test(planned.reply)?[planned.reply]:[],
+    storyBeats:planned.storyBeats,
+    emotionalThreads:planned.emotionalThreads,
+    sceneDetails:planned.sceneDetails,
+    humorThreads:planned.humorThreads,
+    readerTakeaways:planned.readerTakeaways,
+    rewriteDirection:planned.rewriteDirection,
+    readinessScore:planned.readinessScore,
+    metadata:{editorialMove:planned.editorialMove||'',readyToRewrite:!!planned.readyToRewrite}
+  });
+  await appendMicheleBookTurn({sessionId:session.id,role:'assistant',content:planned.reply,inputType:'val_voice_or_text',metadata:{chapterId:chapter.id,mode:planned.mode,readinessScore:planned.readinessScore,editorialMove:planned.editorialMove||''}});
+  const turns=await listMicheleBookSessionTurns(session.id,24);
+  await saveMemoryItem({kind:'michele_book_conversation_turn',summary:`Conversation turn for ${micheleChapterLabel(chapter)}`,rawText:`Michele: ${userMessage}\nVAL: ${planned.reply}`.slice(0,6000),importance:3,metadata:{source:'michele_book_session_turn',sessionId:session.id,chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode:planned.mode}}).catch(()=>{});
+  return {
+    ok:true,
+    sessionId:session.id,
+    reply:planned.reply,
+    readyToRewrite:!!planned.readyToRewrite,
+    readyToWrite:!!planned.readyToRewrite,
+    editorialMove:planned.editorialMove||'',
+    suggestedInstruction:nextSession.rewriteDirection||planned.rewriteDirection||userMessage,
+    mode:planned.mode||mode,
+    chapter:safeMicheleChapter(chapter),
+    lastCompletedChapter:lastCompleted?safeMicheleChapter(lastCompleted):null,
+    session:publicBookConversationSession(nextSession,turns)
   };
 }
 async function micheleBookDraftResponse({chapterId,response}){
@@ -9200,7 +11023,14 @@ async function micheleBookDraftResponse({chapterId,response}){
     throw e;
   }
 }
-async function micheleBookApplyResponse({chapterId,response,placement='',rewriteJobId=''}){
+async function micheleBookApplyResponse({chapterId,response,placement='',rewriteJobId='',sessionId=''}){
+  if(!String(response||'').trim()&&!rewriteJobId&&sessionId){
+    const session=pgPool
+      ? normalizeBookConversationSession((await dbQuery('select * from book_conversation_sessions where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[sessionId,tenantId(),currentUserId()])).rows[0])
+      : normalizeBookConversationSession((valStore().bookConversationSessions||[]).find(s=>s.id===sessionId&&s.tenantId===tenantId()&&s.userId===currentUserId()));
+    const turns=session?await listMicheleBookSessionTurns(session.id,20):[];
+    response=micheleConversationStateInstruction(session,turns);
+  }
   if(!String(response||'').trim()&&!rewriteJobId) throw new Error('Missing Michele response.');
   const synced=await syncMicheleBookFromDocs();
   const projectId=bookProjectId(synced.project);
@@ -9336,15 +11166,19 @@ app.get('/api/michele/book/continue',async(req,res)=>{
   catch(e){await auditLog({req,action:'michele_book_continue_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/converse',async(req,res)=>{
-  try{res.json(await micheleBookConverse({chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',conversation:req.body.conversation||[],mode:req.body.mode||''}));}
+  try{res.json(await micheleBookConverse({chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',conversation:req.body.conversation||[],mode:req.body.mode||'',voiceMode:!!req.body.voiceMode}));}
   catch(e){await auditLog({req,action:'michele_book_conversation_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/session/turn',async(req,res)=>{
+  try{res.json(await micheleBookSessionTurn({sessionId:req.body.sessionId||'',chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',mode:req.body.mode||'',voiceMode:!!req.body.voiceMode,inputType:req.body.inputType||''}));}
+  catch(e){await auditLog({req,action:'michele_book_session_turn_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/draft',async(req,res)=>{
   try{res.json(await micheleBookDraftResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||''}));}
   catch(e){await auditLog({req,action:'michele_book_draft_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/respond',async(req,res)=>{
-  try{res.json(await micheleBookApplyResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||'',placement:req.body.placement||'',rewriteJobId:req.body.rewriteJobId||''}));}
+  try{res.json(await micheleBookApplyResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||'',placement:req.body.placement||'',rewriteJobId:req.body.rewriteJobId||'',sessionId:req.body.sessionId||''}));}
   catch(e){await auditLog({req,action:'michele_book_rewrite_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 async function latestMicheleSnapshot(chapterId=''){
@@ -9366,8 +11200,9 @@ async function micheleAdminState(){
   catch(e){chapterSyncError=e.message||String(e);}
   const latest=await latestMicheleSnapshot();
   const google=await getGoogleConnectionStatus(REQUIRED_GOOGLE_DOC_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:REQUIRED_GOOGLE_DOC_SCOPES}));
+  const openAiRuntimeConfigured=!!(await resolveOpenAIKey().catch(()=>''));
   const cfg={...micheleBookConfig(),masterDocId:bookProjectMasterDocId(project),readingCopyDocId:bookProjectReadingDocId(project)};
-  return {ok:true,config:cfg,project:{id:bookProjectId(project),title:project.title||cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,masterDocUrl:googleDocUrl(cfg.masterDocId),readingCopyDocUrl:googleDocUrl(cfg.readingCopyDocId)},googleDocs:{connected:!!google.connected,missingScopes:google.missingScopes||[],error:google.error||'',chapterSyncError},chapters,latestSnapshot:latest};
+  return {ok:true,config:cfg,project:{id:bookProjectId(project),title:project.title||cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,masterDocUrl:googleDocUrl(cfg.masterDocId),readingCopyDocUrl:googleDocUrl(cfg.readingCopyDocId)},googleDocs:{connected:!!google.connected,missingScopes:google.missingScopes||[],error:google.error||'',chapterSyncError},ai:{openAiRuntimeConfigured,platformFallbackAllowed:platformKeyFallbackAllowed('openai'),tenantOpenAiKeyRequired:/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))},chapters,latestSnapshot:latest};
 }
 app.get('/api/michele/book/admin',requirePermission('settings:manage'),async(req,res)=>{try{res.json(await micheleAdminState());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/michele/book/admin/config',requirePermission('settings:manage'),async(req,res)=>{
@@ -9463,6 +11298,94 @@ async function saveMemoryItem(payload){
 }
 const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
 const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
+const EVIDENCE_OBSERVATION_TYPES=['promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'];
+const PRESENCE_MODE_CONTRACT={
+  coreRule:'VAL may be proactive with evidence-backed insight, but conservative with consequences.',
+  proactiveMaySay:[
+    'Careful, this sounds like scope drift.',
+    'You promised something similar last week.',
+    'This connects to an existing project.',
+    'You have a draft ready for this.',
+    'This person has not replied since the pricing conversation.'
+  ],
+  privateActionsWithoutConfirmation:['save_evidence','extract_observations','update_memory','update_relationship_timeline','create_draft','prepare_meeting_brief','suggest_task','classify_urgency','mark_possible_follow_up'],
+  confirmationRequired:['send_email','send_text','invite_attendee','book_meeting_with_attendee','delete_information','move_crm_stage','spend_money','publish_content','share_transcript','change_user_settings'],
+  handsFreeCommands:['send_email_about','draft_for_person','schedule_meeting_with_person','remind_me','make_task','add_to_project','what_am_i_missing','what_are_you_noticing','prepare_meeting','read_briefing','summarize_conversation','follow_up_next_week','remember_this','ignore_that'],
+  meetingWarnings:['scope_drift','unanswered_question','missed_buying_signal','repeated_objection','relationship_tension','decision_avoidance','timeline_risk','budget_risk','promise_made','unclear_owner','similar_past_project_warning','alignment_issue'],
+  evidenceFields:['raw_transcript','summary','participants','topics','projects_mentioned','people_mentioned','decisions','commitments','promises','questions','risks','ideas','emotional_context','follow_ups','ignored_noise_sections'],
+  actionRules:{
+    createWhen:['clear_owner','clear_desired_outcome','clear_next_step'],
+    draftWhen:['message_should_be_written','proposal_should_be_prepared','meeting_brief_needed','response_likely_needed'],
+    ignoreWhen:['rambling_with_no_intent','duplicate_item','low_confidence_extraction','already_completed','pure_emotional_release_without_reflection_request']
+  }
+};
+function presenceModeEnabledFromRequest(req){
+  const channel=String(req?.body?.channel||req?.body?.mode||req?.body?.presenceMode||'').toLowerCase();
+  return !!req?.body?.presenceMode||['voice','driving','meeting','presence','thinking_together'].includes(channel);
+}
+function presenceIntentAction(text){
+  const s=String(text||'').toLowerCase();
+  if(/\b(send|email|mail)\b/.test(s)&&/\b(email|mail|message|note)\b/.test(s))return 'send_email';
+  if(/\b(text|sms)\b/.test(s)&&/\b(send|message)\b/.test(s))return 'send_text';
+  if(/\b(invite|add)\b[\s\S]{0,40}\b(attendee|guest|them|him|her|greg|nick|michele)\b/.test(s))return 'invite_attendee';
+  if(/\b(book|schedule|set up)\b[\s\S]{0,70}\b(meeting|appointment|call)\b/.test(s)&&/\bwith\b/.test(s))return 'book_meeting_with_attendee';
+  if(/\b(delete|remove|erase)\b/.test(s))return 'delete_information';
+  if(/\b(move|advance|change)\b[\s\S]{0,45}\b(crm|pipeline|stage|opportunity)\b/.test(s))return 'move_crm_stage';
+  if(/\b(pay|buy|purchase|spend|charge)\b/.test(s))return 'spend_money';
+  if(/\b(publish|post|launch)\b/.test(s))return 'publish_content';
+  if(/\b(share|forward)\b[\s\S]{0,50}\b(transcript|recording|notes)\b/.test(s))return 'share_transcript';
+  if(/\b(change|update|turn on|enable|disable)\b[\s\S]{0,45}\b(setting|settings|trusted send|permission)\b/.test(s))return 'change_user_settings';
+  if(/\b(draft|write|compose)\b/.test(s))return 'create_draft';
+  if(/\b(remember this|save this|note this)\b/.test(s))return 'update_memory';
+  if(/\b(remind me|follow up|make this a task|add this to (the )?project|prepare me|summarize this|read me|what am i missing|what are you noticing)\b/.test(s))return 'prepare';
+  if(/\b(ignore that|never mind|disregard)\b/.test(s))return 'ignore';
+  if(/\b(scope drift|buying signal|unclear owner|timeline risk|budget risk|relationship tension|decision avoidance|objection)\b/.test(s))return 'notice';
+  return 'notice';
+}
+function classifyPresenceIntent(text,context={}){
+  const command=String(text||'').replace(/\s+/g,' ').trim();
+  const action=presenceIntentAction(command);
+  const requiresConfirmation=PRESENCE_MODE_CONTRACT.confirmationRequired.includes(action);
+  const privateAllowed=PRESENCE_MODE_CONTRACT.privateActionsWithoutConfirmation.includes(action)||['create_draft','prepare','notice','ignore','update_memory'].includes(action);
+  let intent='notice';
+  if(requiresConfirmation)intent='confirm_required';
+  else if(action==='ignore')intent='ignore';
+  else if(privateAllowed)intent='prepare';
+  const evidenceBacked=!!(context.evidenceItemId||context.sourceId||context.transcriptId||context.currentSession||command);
+  return {
+    ok:true,
+    mode:'presence',
+    intent,
+    action,
+    command,
+    evidenceBacked,
+    mayProactivelySay:intent==='notice'||intent==='prepare',
+    mayActWithoutConfirmation:privateAllowed&&!requiresConfirmation,
+    requiresConfirmation,
+    confirmationReason:requiresConfirmation?'This command could affect someone else, change external systems, or create an irreversible consequence. VAL can prepare it, but the human approves it.':'',
+    allowedPrivatePreparations:requiresConfirmation?['create_draft','prepare_meeting_brief','suggest_task','classify_urgency','mark_possible_follow_up']:[],
+    contractRule:PRESENCE_MODE_CONTRACT.coreRule
+  };
+}
+function presenceContractPrompt(){
+  return [
+    'Presence Mode Contract:',
+    PRESENCE_MODE_CONTRACT.coreRule,
+    'You may proactively mention useful, timely, evidence-backed observations. No vague coaching, generic encouragement, or fake insight.',
+    'You may perform only private preparation without approval: '+PRESENCE_MODE_CONTRACT.privateActionsWithoutConfirmation.join(', ')+'.',
+    'You must ask before external or risky actions: '+PRESENCE_MODE_CONTRACT.confirmationRequired.join(', ')+'.',
+    'Meeting warnings must be short and calm: '+PRESENCE_MODE_CONTRACT.meetingWarnings.join(', ')+'.'
+  ].join('\n');
+}
+function presenceSessionPayload(body={}){
+  const mode=String(body.mode||body.channel||body.presenceMode||'voice').toLowerCase().replace(/[^a-z0-9_ -]+/g,'_').replace(/\s+/g,'_')||'voice';
+  const transcript=String(body.rawTranscript||body.transcript||body.text||body.content||'').trim();
+  const id=String(body.id||body.sessionId||body.sourceId||uuid('presence'));
+  const title=valTitleCandidate(body.title)||`Presence Mode ${mode.replace(/_/g,' ')} session`;
+  const participants=Array.isArray(body.participants)?body.participants:Array.isArray(body.attendees)?body.attendees:[];
+  const metadata={...(body.metadata&&typeof body.metadata==='object'?body.metadata:{}),presenceMode:mode,contractVersion:'presence_mode_contract_v1',channel:body.channel||mode};
+  return {id,mode,transcript,title,participants,metadata,occurredAt:body.occurredAt||body.timestamp||body.createdAt||null,process:body.process!==false};
+}
 function transcriptFileArray(store,key){if(!Array.isArray(store[key]))store[key]=[];return store[key];}
 function transcriptDemoArray(key){const state=requestContext.getStore()?.demoState;if(!state)return null;if(!Array.isArray(state[key]))state[key]=[];return state[key];}
 function valTitleCandidate(value){
@@ -9474,9 +11397,25 @@ function valTitleCandidate(value){
     'zoom transcript','recording transcript','meeting notes','call notes','transcript notes'
   ];
   if(generic.includes(low))return '';
-  if(/^(prepare me for|summarize this past meeting|meeting prep|webhook|processed|untitled)(\b|:)/i.test(title))return '';
+  if(/^(prepare me for|summarize this past meeting|meeting prep|good morning|here'?s your situation|your situation for|daily briefing|webhook|processed|untitled)(\b|:)/i.test(title))return '';
   if(/^(transcript|meeting|call|zoom|recording)\s*#?\d*$/i.test(title))return '';
   return title.slice(0,180);
+}
+function transcriptTopicTitleFromText(rawText=''){
+  const text=String(rawText||'').replace(/\s+/g,' ').trim();
+  if(!text)return '';
+  const patterns=[
+    /\b(?:about|regarding|re:|for)\s+([A-Z][A-Za-z0-9&' -]{2,70})(?:[.?!,;:]|\s+(?:with|because|today|tomorrow|next|using)\b)/,
+    /\b([A-Z][A-Za-z0-9&' -]{2,70})\s+(?:project|proposal|meeting|call|launch|rollout|renewal|follow-up|follow up)\b/i
+  ];
+  for(const pattern of patterns){
+    const match=text.match(pattern);
+    const candidate=valTitleCandidate(match&&match[1]);
+    if(candidate&&!/^(this|that|upcoming|attendee|meeting|conversation|transcript)$/i.test(candidate))return candidate.split(/\s+/).slice(0,8).join(' ');
+  }
+  const words=(text.match(/\b[A-Z][A-Za-z0-9&']{2,}\b/g)||[]).filter(w=>!/^(VAL|URL|API|GHL|CRM|Google|Zoom|Good|Morning|Afternoon|Evening|Today|Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/i.test(w));
+  const unique=[...new Set(words)].slice(0,4);
+  return unique.length>=2?unique.join(' '):'';
 }
 function transcriptDateLabel(value){
   const d=value?new Date(value):null;
@@ -9500,7 +11439,9 @@ function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const company=valTitleCandidate(payload.companyName||payload.company||meta.companyName||meta.company||sourceMeta.companyName||sourceMeta.company);
   const date=transcriptDateLabel(payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||payload.receivedAt||meta.timestamp||meta.createdAt);
   if(contact||company)return [contact||company,contact&&company?company:'',date].filter(Boolean).join(' · ');
-  const speakers=[...String(rawText||payload.transcript||'').matchAll(/^\s*([^:\n]{2,50}):\s*.+$/gm)].map(m=>m[1].trim()).filter(n=>!/^https?|meeting|transcript|speaker$/i.test(n));
+  const topic=transcriptTopicTitleFromText(rawText||payload.transcript||'');
+  if(topic)return topic+(date?' · '+date:'');
+  const speakers=[...String(rawText||payload.transcript||'').matchAll(/^\s*([^:\n]{2,50}):\s*.+$/gm)].map(m=>m[1].trim()).filter(n=>!/^https?|meeting|transcript|speaker|user|time|date|summary|system|assistant$/i.test(n));
   const unique=[...new Set(speakers)].slice(0,3);
   if(unique.length)return unique.join('/')+(date?' · '+date:'');
   return 'Untitled Transcript';
@@ -9515,10 +11456,11 @@ function contextualTaskTitle(contextTitle,taskTitle){
 async function saveTranscriptIndexRaw(payload,id){
   const rawTranscript=payload.transcript||payload.rawText||payload.text||'';
   const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:transcriptDisplayTitleFromPayload(payload,rawTranscript),meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript,processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
-  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}return row;}
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}await saveEvidenceItem({sourceType:'transcript',sourceId:id,sourceUrl:payload.sourceUrl||payload.url||'',occurredAt:row.meetingDatetime||row.createdAt,capturedAt:row.createdAt,title:row.meetingTitle,rawText:row.rawTranscript,summary:'',participantsJson:payload.attendees||payload.metadata?.attendees||[],entitiesJson:{calendarEventId:row.calendarEventId||'',meetingTitle:row.meetingTitle||''},confidence:1,status:'captured',metadataJson:{source:row.source,calendarEventId:row.calendarEventId||'',legacyTranscriptId:id}}).catch(()=>{});return row;}
   await valDbReady;
   if(pgPool){await dbQuery(`insert into transcripts (transcript_id,user_id,tenant_id,source,meeting_title,meeting_datetime,calendar_event_id,raw_transcript,processing_status,summary_status,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,'received','pending',coalesce($9::timestamptz,now()),now()) on conflict (transcript_id) do update set source=excluded.source,meeting_title=excluded.meeting_title,meeting_datetime=coalesce(excluded.meeting_datetime,transcripts.meeting_datetime),calendar_event_id=coalesce(nullif(excluded.calendar_event_id,''),transcripts.calendar_event_id),raw_transcript=excluded.raw_transcript,updated_at=now()`,[id,VAL_USER_ID,CLIENT_CONFIG.clientSlug||'default',row.source,row.meetingTitle,row.meetingDatetime,row.calendarEventId,row.rawTranscript,row.createdAt]);}
   else{const store=valStore(),rows=transcriptFileArray(store,'transcriptIndex'),i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);saveValStore(store);}
+  await saveEvidenceItem({sourceType:'transcript',sourceId:id,sourceUrl:payload.sourceUrl||payload.url||'',occurredAt:row.meetingDatetime||row.createdAt,capturedAt:row.createdAt,title:row.meetingTitle,rawText:row.rawTranscript,summary:'',participantsJson:payload.attendees||payload.metadata?.attendees||[],entitiesJson:{calendarEventId:row.calendarEventId||'',meetingTitle:row.meetingTitle||''},confidence:1,status:'captured',metadataJson:{source:row.source,calendarEventId:row.calendarEventId||'',legacyTranscriptId:id}}).catch(()=>{});
   return row;
 }
 async function updateTranscriptIndexStatus(id,updates={}){
@@ -9533,6 +11475,654 @@ async function logTranscriptAction(transcriptId,actionType,targetRecordId,status
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptActionLog');if(rows)rows.push(row);return row;}
   await valDbReady;if(pgPool)await dbQuery('insert into transcript_action_log (action_id,transcript_id,action_type,target_record_id,status,error_message,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.actionId,transcriptId,actionType,row.targetRecordId,status,row.errorMessage||null]);else{const store=valStore();transcriptFileArray(store,'transcriptActionLog').push(row);saveValStore(store);}return row;
 }
+function normalizeEvidenceObservationType(type){
+  const clean=String(type||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  return EVIDENCE_OBSERVATION_TYPES.includes(clean)?clean:'idea';
+}
+async function saveEvidenceItem(payload={}){
+  const row={
+    id:payload.id||uuid('evi'),
+    tenantId:payload.tenantId||tenantId(),
+    sourceType:String(payload.sourceType||payload.source_type||'unknown'),
+    sourceId:String(payload.sourceId||payload.source_id||''),
+    sourceUrl:String(payload.sourceUrl||payload.source_url||''),
+    occurredAt:payload.occurredAt||payload.occurred_at||null,
+    capturedAt:payload.capturedAt||payload.captured_at||new Date().toISOString(),
+    title:String(payload.title||''),
+    rawText:String(payload.rawText||payload.raw_text||''),
+    summary:String(payload.summary||''),
+    participantsJson:Array.isArray(payload.participantsJson)?payload.participantsJson:(Array.isArray(payload.participants_json)?payload.participants_json:[]),
+    entitiesJson:payload.entitiesJson&&typeof payload.entitiesJson==='object'?payload.entitiesJson:(payload.entities_json&&typeof payload.entities_json==='object'?payload.entities_json:{}),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    status:String(payload.status||'captured'),
+    metadataJson:payload.metadataJson&&typeof payload.metadataJson==='object'?payload.metadataJson:(payload.metadata_json&&typeof payload.metadata_json==='object'?payload.metadata_json:{}),
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.sourceId) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceItems');
+    if(rows){
+      const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId);
+      if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+      else rows.push(row);
+      return i>=0?rows[i]:row;
+    }
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into evidence_items (id,tenant_id,source_type,source_id,source_url,occurred_at,captured_at,title,raw_text,summary,participants_json,entities_json,confidence,status,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now(),now())
+      on conflict (tenant_id,source_type,source_id) do update set source_url=excluded.source_url, occurred_at=coalesce(excluded.occurred_at,evidence_items.occurred_at), captured_at=excluded.captured_at, title=excluded.title, raw_text=excluded.raw_text, summary=excluded.summary, participants_json=excluded.participants_json, entities_json=excluded.entities_json, confidence=excluded.confidence, status=excluded.status, metadata_json=excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.sourceType,row.sourceId,row.sourceUrl||null,row.occurredAt,row.capturedAt,row.title||null,row.rawText,row.summary||null,JSON.stringify(row.participantsJson),JSON.stringify(row.entitiesJson),row.confidence,row.status,JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore(),rows=transcriptFileArray(store,'evidenceItems'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId);
+  if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+  else rows.push(row);
+  saveValStore(store);
+  return i>=0?rows[i]:row;
+}
+async function saveEvidenceObservation(payload={}){
+  const type=normalizeEvidenceObservationType(payload.observationType||payload.observation_type);
+  const row={
+    id:payload.id||uuid('obs'),
+    tenantId:payload.tenantId||tenantId(),
+    evidenceItemId:String(payload.evidenceItemId||payload.evidence_item_id||''),
+    observationType:type,
+    personId:String(payload.personId||payload.person_id||''),
+    organizationId:String(payload.organizationId||payload.organization_id||''),
+    projectId:String(payload.projectId||payload.project_id||''),
+    content:String(payload.content||'').trim(),
+    exactQuote:String(payload.exactQuote||payload.exact_quote||''),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    status:String(payload.status||'observed'),
+    dueAt:payload.dueAt||payload.due_at||null,
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.evidenceItemId||!row.content) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceObservations');
+    if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into evidence_observations (id,tenant_id,evidence_item_id,observation_type,person_id,organization_id,project_id,content,exact_quote,confidence,status,due_at,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())`,[row.id,row.tenantId,row.evidenceItemId,row.observationType,row.personId||null,row.organizationId||null,row.projectId||null,row.content,row.exactQuote||null,row.confidence,row.status,row.dueAt]);
+  }else{
+    const store=valStore();
+    transcriptFileArray(store,'evidenceObservations').push(row);
+    saveValStore(store);
+  }
+  return row;
+}
+async function clearEvidenceObservationsForItem(evidenceItemId){
+  if(!evidenceItemId) return;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceObservations')||[];
+    for(let i=rows.length-1;i>=0;i--)if(rows[i].evidenceItemId===evidenceItemId)rows.splice(i,1);
+    return;
+  }
+  await valDbReady;
+  if(pgPool){await dbQuery('delete from evidence_observations where tenant_id=$1 and evidence_item_id=$2',[tenantId(),evidenceItemId]);return;}
+  const store=valStore();store.evidenceObservations=transcriptFileArray(store,'evidenceObservations').filter(row=>row.evidenceItemId!==evidenceItemId);saveValStore(store);
+}
+async function evidenceItemForSource(sourceType,sourceId){
+  if(!sourceId)return null;
+  if(DEMO_MODE)return (transcriptDemoArray('evidenceItems')||[]).find(row=>row.tenantId===tenantId()&&row.sourceType===sourceType&&row.sourceId===sourceId)||null;
+  await valDbReady;
+  if(pgPool){const r=await dbQuery('select * from evidence_items where tenant_id=$1 and source_type=$2 and source_id=$3 limit 1',[tenantId(),sourceType,sourceId]);return transcriptPgRow(r.rows[0]);}
+  return transcriptFileArray(valStore(),'evidenceItems').find(row=>row.tenantId===tenantId()&&row.sourceType===sourceType&&row.sourceId===sourceId)||null;
+}
+function evidenceJsonValue(value,fallback){
+  if(value===null||value===undefined)return fallback;
+  if(typeof value==='string')try{return JSON.parse(value);}catch(e){return fallback;}
+  return value;
+}
+function relationshipObservationIsNoise(observation={}){
+  return ['spam','newsletter','receipt'].includes(String(observation.observationType||observation.observation_type||'').toLowerCase());
+}
+function relationshipProfileKeyForTarget(target={}){
+  if(target.profileType==='person')return target.personId?`person:${target.personId}`:personKey(target.displayName||target.name,target.email);
+  if(target.profileType==='organization')return target.organizationId?`organization:${target.organizationId}`:`organization:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
+  if(target.profileType==='project')return target.projectId?`project:${target.projectId}`:`project:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
+  return '';
+}
+function relationshipTargetsForObservation(evidenceItem={},observation={}){
+  if(relationshipObservationIsNoise(observation))return [];
+  const targets=[],seen=new Set(),owner=relationshipOwnerIdentity();
+  const participants=evidenceJsonValue(evidenceItem.participantsJson||evidenceItem.participants_json,[]);
+  const entities=evidenceJsonValue(evidenceItem.entitiesJson||evidenceItem.entities_json,{})||{};
+  const add=target=>{
+    const clean={...target,profileType:target.profileType||'person'};
+    clean.displayName=clean.displayName||clean.name||clean.email||clean.personId||clean.organizationId||clean.projectId||'Unknown';
+    clean.profileKey=relationshipProfileKeyForTarget(clean);
+    if(!clean.profileKey||seen.has(`${clean.profileType}:${clean.profileKey}`))return;
+    if(clean.profileType==='person'&&isOwnerRelationship({name:clean.displayName,email:clean.email},owner))return;
+    if(clean.profileType==='person'&&/^(no.?reply|notifications?|mailer-daemon)@/i.test(clean.email||''))return;
+    seen.add(`${clean.profileType}:${clean.profileKey}`);
+    targets.push(clean);
+  };
+  if(observation.personId||observation.person_id)add({profileType:'person',personId:observation.personId||observation.person_id,displayName:observation.personName||observation.person_name||observation.personId||observation.person_id});
+  if(observation.organizationId||observation.organization_id)add({profileType:'organization',organizationId:observation.organizationId||observation.organization_id,displayName:observation.organizationName||observation.organization_name||observation.organizationId||observation.organization_id});
+  if(observation.projectId||observation.project_id)add({profileType:'project',projectId:observation.projectId||observation.project_id,displayName:observation.projectName||observation.project_name||observation.projectId||observation.project_id});
+  for(const p of Array.isArray(participants)?participants:[]){
+    const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',p.email||p.matchedEmail||'');
+    const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
+    if(name||email)add({profileType:'person',personId:p.personId||p.contactId||p.matchedContactId||'',displayName:name||email,email,metadata:{participantRole:p.role||'',source:'evidence_participant'}});
+    const company=p.company||p.matchedCompany||p.organization||p.organizationName||'';
+    if(company)add({profileType:'organization',displayName:company,metadata:{source:'evidence_participant'}});
+  }
+  const org=entities.organization||entities.company||entities.organizationName||entities.companyName||entities.from?.company||'';
+  if(entities.organizationId||entities.organization_id||org)add({profileType:'organization',organizationId:entities.organizationId||entities.organization_id||'',displayName:org||entities.organizationId||entities.organization_id});
+  const project=entities.project||entities.projectName||entities.project_name||'';
+  if(entities.projectId||entities.project_id||project)add({profileType:'project',projectId:entities.projectId||entities.project_id||'',displayName:project||entities.projectId||entities.project_id});
+  return targets;
+}
+function relationshipObservationBucket(type){
+  if(['promise','commitment','task','deadline','follow_up','reply_needed','meeting_request','document_request','pricing_question'].includes(type))return 'openLoops';
+  if(type==='risk')return 'risks';
+  if(type==='opportunity')return 'opportunities';
+  if(type==='preference'||type==='need')return 'preferences';
+  if(type==='emotional_context')return 'emotionalContext';
+  if(type==='relationship_signal')return 'relationshipSignals';
+  return '';
+}
+async function saveRelationshipProfile(target={}){
+  const now=new Date().toISOString();
+  const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
+  if(!row.profileType||!row.profileKey)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles');if(!rows)return row;
+    const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
+    if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
+    else rows.push(row);
+    return i>=0?rows[i]:row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into relationship_profiles (id,tenant_id,profile_type,profile_key,person_id,organization_id,project_id,display_name,summary,relationship_status,confidence,last_observed_at,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
+      on conflict (tenant_id,profile_type,profile_key) do update set person_id=coalesce(nullif(excluded.person_id,''),relationship_profiles.person_id), organization_id=coalesce(nullif(excluded.organization_id,''),relationship_profiles.organization_id), project_id=coalesce(nullif(excluded.project_id,''),relationship_profiles.project_id), display_name=coalesce(nullif(excluded.display_name,''),relationship_profiles.display_name), metadata_json=relationship_profiles.metadata_json||excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.profileType,row.profileKey,row.personId,row.organizationId,row.projectId,row.displayName,row.summary,row.relationshipStatus,row.confidence,row.lastObservedAt,JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore(),rows=transcriptFileArray(store,'relationshipProfiles'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
+  if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
+  else rows.push(row);
+  saveValStore(store);
+  return i>=0?rows[i]:row;
+}
+async function relationshipTimelineRows(profileType,profileKey){
+  if(DEMO_MODE)return (transcriptDemoArray('relationshipTimelineEvents')||[]).filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from relationship_timeline_events where tenant_id=$1 and profile_type=$2 and profile_key=$3 order by coalesce(occurred_at,created_at) desc',[tenantId(),profileType,profileKey]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'relationshipTimelineEvents').filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
+}
+async function recalculateRelationshipProfile(profileType,profileKey){
+  const rows=(await relationshipTimelineRows(profileType,profileKey)).sort((a,b)=>interactionDate(b.occurredAt||b.createdAt)-interactionDate(a.occurredAt||a.createdAt));
+  const storeForProfile=(!DEMO_MODE&&!pgPool)?valStore():null;
+  const profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  const buckets={openLoops:[],risks:[],opportunities:[],preferences:[],emotionalContext:[],relationshipSignals:[]};
+  for(const event of rows){
+    const bucket=relationshipObservationBucket(event.observationType);
+    if(bucket)buckets[bucket].push({content:event.content,exactQuote:event.exactQuote||'',confidence:event.confidence||0,dueAt:event.dueAt||'',occurredAt:event.occurredAt||event.createdAt||'',observationType:event.observationType});
+  }
+  const payload={summary:rows[0]?.content?`Latest observation: ${String(rows[0].content).slice(0,220)}`:'',relationshipStatus:rows.length?'observed':'quiet',confidence:rows.reduce((m,r)=>Math.max(m,Number(r.confidence)||0),0),lastObservedAt:rows[0]?.occurredAt||rows[0]?.createdAt||null,observationCount:rows.length,openLoopCount:buckets.openLoops.length,promiseCount:rows.filter(r=>['promise','commitment'].includes(r.observationType)).length,riskCount:buckets.risks.length,opportunityCount:buckets.opportunities.length,preferenceCount:buckets.preferences.length,emotionalContextJson:buckets.emotionalContext.slice(0,12),relationshipSignalsJson:buckets.relationshipSignals.slice(0,12),risksJson:buckets.risks.slice(0,12),opportunitiesJson:buckets.opportunities.slice(0,12),preferencesJson:buckets.preferences.slice(0,12),openLoopsJson:buckets.openLoops.slice(0,12)};
+  if(DEMO_MODE||!pgPool){
+    if(profile)Object.assign(profile,payload,{updatedAt:new Date().toISOString()});
+    if(storeForProfile)saveValStore(storeForProfile);
+    return profile||payload;
+  }
+  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey]);
+  return transcriptPgRow(r.rows[0]);
+}
+async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
+  const profile=await saveRelationshipProfile({...target,confidence:observation.confidence||0,metadataJson:{source:'relationship_engine',targetMetadata:target.metadata||{}}});
+  if(!profile?.id)return null;
+  const row={id:uuid('reltime'),tenantId:tenantId(),profileType:target.profileType,profileKey:target.profileKey,profileId:profile.id,evidenceItemId:observation.evidenceItemId||observation.evidence_item_id||evidenceItem.id,observationId:observation.id,observationType:observation.observationType||observation.observation_type,content:observation.content||'',exactQuote:observation.exactQuote||observation.exact_quote||'',confidence:Math.max(0,Math.min(1,Number(observation.confidence)||0)),status:observation.status||'observed',occurredAt:evidenceItem.occurredAt||evidenceItem.occurred_at||evidenceItem.capturedAt||evidenceItem.captured_at||new Date().toISOString(),dueAt:observation.dueAt||observation.due_at||null,metadataJson:{sourceType:evidenceItem.sourceType||evidenceItem.source_type||'',sourceId:evidenceItem.sourceId||evidenceItem.source_id||'',evidenceTitle:evidenceItem.title||''}};
+  if(!row.observationId||!row.content)return null;
+  if(DEMO_MODE){const rows=transcriptDemoArray('relationshipTimelineEvents');if(rows&&!rows.some(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey&&x.evidenceItemId===row.evidenceItemId&&x.observationType===row.observationType&&x.content===row.content))rows.push(row);return row;}
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into relationship_timeline_events (id,tenant_id,profile_type,profile_key,profile_id,evidence_item_id,observation_id,observation_type,content,exact_quote,confidence,status,occurred_at,due_at,metadata_json,created_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+      on conflict (tenant_id,profile_type,profile_key,evidence_item_id,observation_type,content) do update set observation_id=excluded.observation_id, exact_quote=excluded.exact_quote, confidence=excluded.confidence, status=excluded.status, occurred_at=excluded.occurred_at, due_at=excluded.due_at, metadata_json=excluded.metadata_json`,[row.id,row.tenantId,row.profileType,row.profileKey,row.profileId,row.evidenceItemId,row.observationId,row.observationType,row.content,row.exactQuote||null,row.confidence,row.status,row.occurredAt,row.dueAt,JSON.stringify(row.metadataJson)]);
+  }else{
+    const store=valStore(),rows=transcriptFileArray(store,'relationshipTimelineEvents'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey&&x.evidenceItemId===row.evidenceItemId&&x.observationType===row.observationType&&x.content===row.content);
+    if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id};else rows.push(row);saveValStore(store);
+  }
+  return row;
+}
+async function clearRelationshipTimelineForEvidence(evidenceItemId){
+  if(!evidenceItemId)return [];
+  const touched=[];
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipTimelineEvents')||[];
+    for(let i=rows.length-1;i>=0;i--)if(rows[i].evidenceItemId===evidenceItemId){touched.push([rows[i].profileType,rows[i].profileKey]);rows.splice(i,1);}
+  }else{
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('delete from relationship_timeline_events where tenant_id=$1 and evidence_item_id=$2 returning profile_type,profile_key',[tenantId(),evidenceItemId]);
+      touched.push(...r.rows.map(row=>[row.profile_type,row.profile_key]));
+    }else{
+      const store=valStore(),rows=transcriptFileArray(store,'relationshipTimelineEvents');
+      store.relationshipTimelineEvents=rows.filter(row=>{if(row.evidenceItemId===evidenceItemId){touched.push([row.profileType,row.profileKey]);return false;}return true;});
+      saveValStore(store);
+    }
+  }
+  for(const [type,key] of Array.from(new Set(touched.map(x=>x.join('|')))).map(x=>x.split('|')))await recalculateRelationshipProfile(type,key).catch(()=>null);
+  return touched;
+}
+async function runRelationshipEngineForObservations(evidenceItem,observations=[]){
+  const touched=new Set(),events=[];
+  for(const observation of observations||[]){
+    for(const target of relationshipTargetsForObservation(evidenceItem,observation)){
+      const event=await saveRelationshipTimelineEvent({target,evidenceItem,observation}).catch(()=>null);
+      if(event){events.push(event);touched.add(`${target.profileType}|${target.profileKey}`);}
+    }
+  }
+  const profiles=[];
+  for(const key of touched){const [type,profileKey]=key.split('|');const profile=await recalculateRelationshipProfile(type,profileKey).catch(()=>null);if(profile)profiles.push(profile);}
+  return {ok:true,events,profiles,eventCount:events.length,profileCount:profiles.length};
+}
+const AGENCY_MOVE_TYPES=['draft_reply','send_follow_up','schedule_meeting','prepare_meeting','send_document','answer_question','review_risk','capture_preference','nurture_relationship','close_open_loop','wait','ignore','escalate','prepare','update_project','protect_relationship'];
+function normalizeAgencyMoveType(type){
+  const clean=String(type||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  return AGENCY_MOVE_TYPES.includes(clean)?clean:'wait';
+}
+function agencyScoreDue(dueAt){
+  const t=interactionDate(dueAt);
+  if(!t)return 0;
+  const days=(t-Date.now())/(24*60*60*1000);
+  if(days<0)return 30;
+  if(days<=1)return 26;
+  if(days<=3)return 18;
+  if(days<=7)return 10;
+  return 3;
+}
+function agencyContentSubject(content='',fallback=''){
+  const text=String(content||'').replace(/\s+/g,' ').trim();
+  const clean=text
+    .replace(/^(A\s+)?(risk|opportunity|question|need|task|promise|commitment|deadline|follow.?up|relationship signal|emotional context)\s+(signal\s+)?(was\s+)?(observed|noticed|learned)\s*:\s*/i,'')
+    .replace(/\bincludes possible risk, concern, blocker, or drift language\.?$/i,'')
+    .replace(/\bincludes possible opportunity, introduction, referral, partnership, lead, client, or deal language\.?$/i,'')
+    .trim();
+  const source=clean||fallback||text;
+  return source.length>95?source.slice(0,92).replace(/\s+\S*$/,'')+'...':source;
+}
+function agencyMoveTitleForObservation(type,content,evidenceItem={}){
+  const subject=agencyContentSubject(content,evidenceItem.title||evidenceItem.summary||'this evidence');
+  const prefix={
+    risk:'Review risk',
+    opportunity:'Prepare opportunity move',
+    question:'Prepare answer',
+    need:'Support the need',
+    pricing_question:'Prepare pricing answer',
+    meeting_request:'Prepare scheduling response',
+    document_request:'Prepare document follow-up',
+    reply_needed:'Draft reply',
+    preference:'Remember preference',
+    decision:'Update project memory',
+    relationship_signal:'Nurture relationship',
+    emotional_context:'Notice emotional context',
+    idea:'Hold idea'
+  }[type]||'Review signal';
+  if(['promise','commitment','task','deadline','follow_up'].includes(type))return `Close loop: ${subject}`;
+  if(type==='spam'||type==='newsletter'||type==='receipt')return `Ignore ${type}`;
+  return `${prefix}: ${subject}`;
+}
+function agencyMovePlanForObservation(observation={},evidenceItem={}){
+  const type=String(observation.observationType||observation.observation_type||'').toLowerCase();
+  const content=String(observation.content||'').replace(/\s+/g,' ').trim();
+  const confidence=Math.max(0,Math.min(1,Number(observation.confidence)||0));
+  const dueAt=observation.dueAt||observation.due_at||null;
+  const sourceTitle=evidenceItem.title||evidenceItem.summary||'the evidence';
+  const title=agencyMoveTitleForObservation(type,content,evidenceItem);
+  const base={moveType:'wait',title,why:`VAL noticed from ${sourceTitle}: ${content}`,confidence,agencyLevel:1,status:'candidate',priorityBand:'watching',urgencyScore:agencyScoreDue(dueAt),leverageScore:0,riskScore:0,relationshipScore:0,whatChanged:content,ifIgnored:'This may simply remain context unless more evidence appears.'};
+  if(['spam','newsletter','receipt'].includes(type))return {...base,moveType:'ignore',title,why:`VAL classified this as ${type} from ${sourceTitle}.`,confidence:Math.max(confidence,0.85),status:'ignored',priorityBand:'ignored',ifIgnored:'No user attention is needed.'};
+  if(['promise','commitment','task','deadline','follow_up'].includes(type))return {...base,moveType:'close_open_loop',title,why:`A ${type} was observed from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:22,relationshipScore:16,ifIgnored:'Trust or momentum may degrade because the loop remains open.'};
+  if(type==='reply_needed')return {...base,moveType:'draft_reply',title,why:`The evidence suggests a reply is needed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:18,relationshipScore:18,ifIgnored:'The conversation may stall or the other person may feel ignored.'};
+  if(type==='pricing_question')return {...base,moveType:'answer_question',title,why:`Pricing or proposal language was observed from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:25,relationshipScore:14,ifIgnored:'A revenue or decision moment may lose momentum.'};
+  if(type==='meeting_request')return {...base,moveType:'schedule_meeting',title,why:`Scheduling or meeting language was observed from ${sourceTitle}: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:14,relationshipScore:16,ifIgnored:'The meeting path may remain unclear.'};
+  if(type==='document_request')return {...base,moveType:'send_document',title,why:`A document or attachment need was observed from ${sourceTitle}: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:18,relationshipScore:14,ifIgnored:'The other person may not receive what they need to move forward.'};
+  if(type==='risk')return {...base,moveType:'review_risk',title,why:`Risk signal from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'top_recommended',riskScore:30,relationshipScore:18,ifIgnored:'The risk may grow quietly because no one is watching it.'};
+  if(type==='opportunity')return {...base,moveType:'prepare',title,why:`Opportunity signal from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:28,relationshipScore:16,ifIgnored:'A valuable opening may cool before the user acts.'};
+  if(type==='question'||type==='need')return {...base,moveType:'answer_question',title,why:`VAL observed a ${type} from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:15,relationshipScore:12,ifIgnored:'The person may still need clarity or support.'};
+  if(type==='preference')return {...base,moveType:'capture_preference',title,why:`VAL learned a preference from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:10,ifIgnored:'Future help may be less personalized.'};
+  if(type==='relationship_signal'||type==='emotional_context')return {...base,moveType:'nurture_relationship',title,why:`VAL noticed relationship context from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:16,ifIgnored:'This should mostly enrich the relationship profile unless the pattern repeats.'};
+  if(type==='decision')return {...base,moveType:'update_project',title,why:`A decision was observed from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',leverageScore:10,ifIgnored:'Project memory may become less accurate.'};
+  if(type==='idea')return {...base,moveType:'wait',title,why:`An idea was observed from ${sourceTitle}, but not every idea deserves action: ${content}`,agencyLevel:1,priorityBand:'watching',ifIgnored:'No immediate cost unless more evidence raises its importance.'};
+  return base;
+}
+function agencyImportance(plan={}){
+  const confidence=Number(plan.confidence)||0;
+  const total=(confidence*35)+(Number(plan.urgencyScore)||0)+(Number(plan.leverageScore)||0)+(Number(plan.riskScore)||0)+(Number(plan.relationshipScore)||0);
+  return Math.max(0,Math.min(100,Math.round(total)));
+}
+function agencyPriorityBand(plan={}){
+  if(plan.moveType==='ignore'||plan.status==='ignored')return 'ignored';
+  const score=agencyImportance(plan);
+  if(score>=80)return 'top_recommended';
+  if(score>=55)return 'also_important';
+  if(plan.moveType==='wait')return 'watching';
+  return plan.priorityBand||'quiet';
+}
+async function saveAgencyMove(payload={}){
+  const moveType=normalizeAgencyMoveType(payload.moveType||payload.move_type);
+  const sourceObservationIds=Array.isArray(payload.sourceObservationIds)?payload.sourceObservationIds:(Array.isArray(payload.source_observation_ids)?payload.source_observation_ids:[]);
+  const sourceEvidenceIds=Array.isArray(payload.sourceEvidenceIds)?payload.sourceEvidenceIds:(Array.isArray(payload.source_evidence_ids)?payload.source_evidence_ids:[]);
+  const row={id:payload.id||uuid('agency'),tenantId:payload.tenantId||tenantId(),moveType,title:String(payload.title||'Agency move').slice(0,240),why:String(payload.why||'VAL noticed this may deserve agency.').slice(0,1600),confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),importanceScore:Math.max(0,Math.min(100,Number(payload.importanceScore)||0)),urgencyScore:Math.max(0,Math.min(100,Number(payload.urgencyScore)||0)),leverageScore:Math.max(0,Math.min(100,Number(payload.leverageScore)||0)),riskScore:Math.max(0,Math.min(100,Number(payload.riskScore)||0)),relationshipScore:Math.max(0,Math.min(100,Number(payload.relationshipScore)||0)),agencyLevel:Math.min(3,Math.max(1,Number(payload.agencyLevel)||1)),priorityBand:String(payload.priorityBand||'quiet'),status:String(payload.status||'candidate'),personId:String(payload.personId||payload.person_id||''),organizationId:String(payload.organizationId||payload.organization_id||''),projectId:String(payload.projectId||payload.project_id||''),dueAt:payload.dueAt||payload.due_at||null,sourceObservationIds,sourceEvidenceIds,whatChanged:String(payload.whatChanged||payload.what_changed||'').slice(0,1200),ifIgnored:String(payload.ifIgnored||payload.if_ignored||'').slice(0,1200),preparedPayloadJson:payload.preparedPayloadJson||payload.prepared_payload_json||{},metadataJson:payload.metadataJson||payload.metadata_json||payload.metadata||{},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(!row.title||!row.why)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('agencyMoves');if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into agency_moves (id,tenant_id,move_type,title,why,confidence,importance_score,urgency_score,leverage_score,risk_score,relationship_score,agency_level,priority_band,status,person_id,organization_id,project_id,due_at,source_observation_ids,source_evidence_ids,what_changed,if_ignored,prepared_payload_json,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now())
+      returning *`,[row.id,row.tenantId,row.moveType,row.title,row.why,row.confidence,row.importanceScore,row.urgencyScore,row.leverageScore,row.riskScore,row.relationshipScore,row.agencyLevel,row.priorityBand,row.status,row.personId||null,row.organizationId||null,row.projectId||null,row.dueAt,JSON.stringify(row.sourceObservationIds),JSON.stringify(row.sourceEvidenceIds),row.whatChanged||null,row.ifIgnored||null,JSON.stringify(row.preparedPayloadJson),JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore();transcriptFileArray(store,'agencyMoves').push(row);saveValStore(store);return row;
+}
+async function saveAgencyMoveSource(payload={}){
+  const row={id:payload.id||uuid('agencysrc'),tenantId:payload.tenantId||tenantId(),agencyMoveId:String(payload.agencyMoveId||payload.agency_move_id||''),evidenceItemId:String(payload.evidenceItemId||payload.evidence_item_id||''),observationId:String(payload.observationId||payload.observation_id||''),sourceRole:String(payload.sourceRole||payload.source_role||'supports'),createdAt:new Date().toISOString()};
+  if(!row.agencyMoveId||!row.evidenceItemId||!row.observationId)return null;
+  if(DEMO_MODE){const rows=transcriptDemoArray('agencyMoveSources');if(rows)rows.push(row);return row;}
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into agency_move_sources (id,tenant_id,agency_move_id,evidence_item_id,observation_id,source_role,created_at)
+      values ($1,$2,$3,$4,$5,$6,now()) on conflict do nothing`,[row.id,row.tenantId,row.agencyMoveId,row.evidenceItemId,row.observationId,row.sourceRole]);
+  }else{const store=valStore();transcriptFileArray(store,'agencyMoveSources').push(row);saveValStore(store);}
+  return row;
+}
+async function clearAgencyMovesForEvidence(evidenceItemId){
+  if(!evidenceItemId)return;
+  if(DEMO_MODE){
+    const sources=transcriptDemoArray('agencyMoveSources')||[],moveIds=sources.filter(s=>s.evidenceItemId===evidenceItemId).map(s=>s.agencyMoveId);
+    const moves=transcriptDemoArray('agencyMoves')||[];
+    for(let i=sources.length-1;i>=0;i--)if(sources[i].evidenceItemId===evidenceItemId)sources.splice(i,1);
+    for(let i=moves.length-1;i>=0;i--)if(moveIds.includes(moves[i].id))moves.splice(i,1);
+    return;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select agency_move_id from agency_move_sources where tenant_id=$1 and evidence_item_id=$2',[tenantId(),evidenceItemId]);
+    const ids=r.rows.map(row=>row.agency_move_id).filter(Boolean);
+    if(ids.length)await dbQuery('delete from agency_moves where tenant_id=$1 and id=any($2::text[])',[tenantId(),ids]);
+    return;
+  }
+  const store=valStore(),sources=transcriptFileArray(store,'agencyMoveSources'),moveIds=sources.filter(s=>s.evidenceItemId===evidenceItemId).map(s=>s.agencyMoveId);
+  store.agencyMoveSources=sources.filter(s=>s.evidenceItemId!==evidenceItemId);
+  store.agencyMoves=transcriptFileArray(store,'agencyMoves').filter(m=>!moveIds.includes(m.id));
+  saveValStore(store);
+}
+async function runAgencyEngineForObservations(evidenceItem,observations=[]){
+  const planned=[];
+  for(const observation of observations||[]){
+    const plan=agencyMovePlanForObservation(observation,evidenceItem);
+    const importanceScore=agencyImportance(plan);
+    const priorityBand=agencyPriorityBand({...plan,importanceScore});
+    planned.push({observation,plan:{...plan,importanceScore,priorityBand}});
+  }
+  planned.sort((a,b)=>(Number(b.plan.importanceScore)||0)-(Number(a.plan.importanceScore)||0));
+  let topCount=0;
+  for(const item of planned){
+    if(item.plan.priorityBand==='top_recommended'){
+      topCount++;
+      if(topCount>3)item.plan.priorityBand='also_important';
+    }
+  }
+  const moves=[];
+  for(const {observation,plan} of planned){
+    const saved=await saveAgencyMove({...plan,personId:observation.personId||observation.person_id||'',organizationId:observation.organizationId||observation.organization_id||'',projectId:observation.projectId||observation.project_id||'',dueAt:observation.dueAt||observation.due_at||null,sourceObservationIds:[observation.id].filter(Boolean),sourceEvidenceIds:[evidenceItem.id].filter(Boolean),metadataJson:{source:'agency_engine',observationType:observation.observationType||observation.observation_type||'',sourceType:evidenceItem.sourceType||evidenceItem.source_type||'',sourceId:evidenceItem.sourceId||evidenceItem.source_id||'',notHidden:topCount>3&&plan.priorityBand==='also_important'}}).catch(()=>null);
+    if(saved?.id){
+      await saveAgencyMoveSource({agencyMoveId:saved.id,evidenceItemId:evidenceItem.id,observationId:observation.id,sourceRole:'primary'}).catch(()=>null);
+      moves.push(saved);
+    }
+  }
+  moves.sort((a,b)=>(Number(b.importanceScore)||0)-(Number(a.importanceScore)||0));
+  return {ok:true,moves,count:moves.length,topRecommended:moves.filter(m=>m.priorityBand==='top_recommended').length,alsoImportant:moves.filter(m=>m.priorityBand==='also_important').length,quiet:moves.filter(m=>m.priorityBand==='quiet').length,watching:moves.filter(m=>m.priorityBand==='watching').length,ignored:moves.filter(m=>m.priorityBand==='ignored').length};
+}
+function publicAgencyMove(row={}){
+  if(!row)return null;
+  return {
+    id:row.id,
+    moveType:row.moveType||row.move_type||'wait',
+    title:row.title||'Agency move',
+    why:row.why||'VAL noticed this may matter.',
+    confidence:Number(row.confidence||0),
+    importanceScore:Number(row.importanceScore||row.importance_score||0),
+    urgencyScore:Number(row.urgencyScore||row.urgency_score||0),
+    leverageScore:Number(row.leverageScore||row.leverage_score||0),
+    riskScore:Number(row.riskScore||row.risk_score||0),
+    relationshipScore:Number(row.relationshipScore||row.relationship_score||0),
+    agencyLevel:Number(row.agencyLevel||row.agency_level||1),
+    priorityBand:row.priorityBand||row.priority_band||'quiet',
+    status:row.status||'candidate',
+    personId:row.personId||row.person_id||'',
+    organizationId:row.organizationId||row.organization_id||'',
+    projectId:row.projectId||row.project_id||'',
+    dueAt:row.dueAt||row.due_at||'',
+    sourceObservationIds:evidenceJsonValue(row.sourceObservationIds||row.source_observation_ids,[]),
+    sourceEvidenceIds:evidenceJsonValue(row.sourceEvidenceIds||row.source_evidence_ids,[]),
+    whatChanged:row.whatChanged||row.what_changed||'',
+    ifIgnored:row.ifIgnored||row.if_ignored||'',
+    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    createdAt:row.createdAt||row.created_at||'',
+    updatedAt:row.updatedAt||row.updated_at||''
+  };
+}
+async function listAgencyMoves({limit=80}={}){
+  if(DEMO_MODE)return (transcriptDemoArray('agencyMoves')||[]).map(publicAgencyMove).filter(Boolean).sort((a,b)=>(b.importanceScore-a.importanceScore)||interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select * from agency_moves where tenant_id=$1 and status not in ('dismissed','superseded','resolved_by_reality') order by case priority_band when 'top_recommended' then 1 when 'also_important' then 2 when 'watching' then 3 when 'quiet' then 4 else 5 end, importance_score desc, confidence desc, created_at desc limit $2`,[tenantId(),limit]);
+    return r.rows.map(row=>publicAgencyMove(transcriptPgRow(row))).filter(Boolean);
+  }
+  return transcriptFileArray(valStore(),'agencyMoves').map(publicAgencyMove).filter(Boolean).sort((a,b)=>(b.importanceScore-a.importanceScore)||interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+}
+function publicRelationshipProfile(row={}){
+  if(!row)return null;
+  return {
+    id:row.id,
+    profileType:row.profileType||row.profile_type||'person',
+    profileKey:row.profileKey||row.profile_key||'',
+    personId:row.personId||row.person_id||'',
+    organizationId:row.organizationId||row.organization_id||'',
+    projectId:row.projectId||row.project_id||'',
+    displayName:row.displayName||row.display_name||'Unknown',
+    summary:row.summary||'',
+    relationshipStatus:row.relationshipStatus||row.relationship_status||'observed',
+    confidence:Number(row.confidence||0),
+    lastObservedAt:row.lastObservedAt||row.last_observed_at||'',
+    observationCount:Number(row.observationCount||row.observation_count||0),
+    openLoopCount:Number(row.openLoopCount||row.open_loop_count||0),
+    promiseCount:Number(row.promiseCount||row.promise_count||0),
+    riskCount:Number(row.riskCount||row.risk_count||0),
+    opportunityCount:Number(row.opportunityCount||row.opportunity_count||0),
+    preferenceCount:Number(row.preferenceCount||row.preference_count||0),
+    emotionalContext:evidenceJsonValue(row.emotionalContextJson||row.emotional_context_json,[]),
+    relationshipSignals:evidenceJsonValue(row.relationshipSignalsJson||row.relationship_signals_json,[]),
+    risks:evidenceJsonValue(row.risksJson||row.risks_json,[]),
+    opportunities:evidenceJsonValue(row.opportunitiesJson||row.opportunities_json,[]),
+    preferences:evidenceJsonValue(row.preferencesJson||row.preferences_json,[]),
+    openLoops:evidenceJsonValue(row.openLoopsJson||row.open_loops_json,[]),
+    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    updatedAt:row.updatedAt||row.updated_at||''
+  };
+}
+async function listRelationshipProfiles({limit=80}={}){
+  if(DEMO_MODE)return (transcriptDemoArray('relationshipProfiles')||[]).map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select * from relationship_profiles where tenant_id=$1 order by (open_loop_count+risk_count+opportunity_count) desc, last_observed_at desc nulls last limit $2`,[tenantId(),limit]);
+    return r.rows.map(row=>publicRelationshipProfile(transcriptPgRow(row))).filter(Boolean);
+  }
+  return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
+}
+async function executiveBriefingCounts(){
+  if(DEMO_MODE){
+    const evidence=(transcriptDemoArray('evidenceItems')||[]).length,observations=(transcriptDemoArray('evidenceObservations')||[]).length,moves=(transcriptDemoArray('agencyMoves')||[]).length;
+    return {evidenceItems:evidence,observations,agencyMoves:moves};
+  }
+  await valDbReady;
+  if(pgPool){
+    const [e,o,a]=await Promise.all([
+      dbQuery('select count(*)::int as count from evidence_items where tenant_id=$1',[tenantId()]),
+      dbQuery('select count(*)::int as count from evidence_observations where tenant_id=$1',[tenantId()]),
+      dbQuery('select count(*)::int as count from agency_moves where tenant_id=$1',[tenantId()])
+    ]);
+    return {evidenceItems:e.rows[0]?.count||0,observations:o.rows[0]?.count||0,agencyMoves:a.rows[0]?.count||0};
+  }
+  const store=valStore();
+  return {evidenceItems:transcriptFileArray(store,'evidenceItems').length,observations:transcriptFileArray(store,'evidenceObservations').length,agencyMoves:transcriptFileArray(store,'agencyMoves').length};
+}
+function executiveThemeFromMoves(moves=[],profiles=[]){
+  const active=moves.filter(m=>!['ignored','quiet'].includes(m.priorityBand));
+  const close=active.filter(m=>['close_open_loop','send_follow_up','draft_reply','answer_question'].includes(m.moveType)).length;
+  const risk=active.filter(m=>m.moveType==='review_risk'||m.riskScore>=20).length;
+  const relationship=profiles.filter(p=>p.profileType==='person'&&(p.openLoopCount||p.riskCount||p.opportunityCount)).length;
+  const meetings=active.filter(m=>['schedule_meeting','prepare_meeting'].includes(m.moveType)).length;
+  if(close>=Math.max(risk,meetings,2))return {title:'Close Open Loops',why:`${close} relationship or commitment loops are asking for closure.`};
+  if(risk>0)return {title:'Protect Trust',why:`${risk} risk signal${risk===1?'':'s'} should be reviewed before they grow quietly.`};
+  if(relationship>0)return {title:'Relationship Velocity',why:`${relationship} people have relationship momentum, risk, or opportunity signals.`};
+  if(meetings>0)return {title:'Prepare Conversations',why:`${meetings} meeting-related move${meetings===1?'':'s'} are ready for preparation.`};
+  return {title:'Discern, Then Move',why:'VAL is watching the evidence and keeping noisy items out of your way.'};
+}
+function profileVelocity(profile={}){
+  if(profile.riskCount>0)return 'Momentum down';
+  if(profile.opportunityCount>0||profile.relationshipSignals?.length)return 'Momentum up';
+  if(profile.openLoopCount>0)return 'Waiting on closure';
+  return 'Observed';
+}
+async function buildExecutiveBriefing(){
+  const [moves,profiles,counts]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:80}),executiveBriefingCounts()]);
+  const top=moves.filter(m=>m.priorityBand==='top_recommended').slice(0,3);
+  const also=moves.filter(m=>m.priorityBand==='also_important').slice(0,8);
+  const watching=moves.filter(m=>m.priorityBand==='watching').slice(0,8);
+  const quiet=moves.filter(m=>m.priorityBand==='quiet').slice(0,8);
+  const ignored=moves.filter(m=>m.priorityBand==='ignored').slice(0,8);
+  const people=profiles.filter(p=>p.profileType==='person').slice(0,8).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoops:p.openLoops.slice(0,3),risks:p.risks.slice(0,2),opportunities:p.opportunities.slice(0,2),confidence:p.confidence,lastObservedAt:p.lastObservedAt}));
+  const projects=profiles.filter(p=>p.profileType==='project').slice(0,6).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoopCount:p.openLoopCount,riskCount:p.riskCount,opportunityCount:p.opportunityCount,lastObservedAt:p.lastObservedAt}));
+  const up=profiles.filter(p=>p.opportunityCount>0||p.relationshipSignals.length).slice(0,5).map(p=>p.displayName);
+  const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
+  const whatChanged=moves.slice(0,8).map(m=>({title:m.title,summary:m.whatChanged||m.why,priorityBand:m.priorityBand,confidence:m.confidence,createdAt:m.createdAt}));
+  const theme=executiveThemeFromMoves(moves,profiles);
+  const highest=top[0]||also[0]||watching[0]||null;
+  const valNoticed=[
+    people.length?`People are the leverage point: ${people.slice(0,3).map(p=>p.name).join(', ')} currently carry the most relationship signal.`:'',
+    down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
+    quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
+  ].filter(Boolean).slice(0,5);
+  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum:{up,down},valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored};
+}
+function executiveBriefingChatContext(briefing={}){
+  if(!briefing?.ok)return '';
+  return [
+    `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
+    briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
+    briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
+    briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
+    briefing.watching?.length?'Watching: '+briefing.watching.slice(0,5).map(m=>m.title).join('; '):''
+  ].filter(Boolean).join('\n');
+}
+function normalizeObservationCandidate(candidate={}){
+  const value=typeof candidate==='string'?{content:candidate}:candidate;
+  return {
+    observationType:normalizeEvidenceObservationType(value.observationType||value.observation_type||value.type),
+    personId:String(value.personId||value.person_id||''),
+    organizationId:String(value.organizationId||value.organization_id||''),
+    projectId:String(value.projectId||value.project_id||''),
+    content:String(value.content||value.text||value.summary||value.title||'').trim(),
+    exactQuote:String(value.exactQuote||value.exact_quote||value.quote||''),
+    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.65)),
+    status:String(value.status||'observed'),
+    dueAt:value.dueAt||value.due_at||value.dueDate||null
+  };
+}
+async function runObservationEngine(evidenceItem,options={}){
+  if(!evidenceItem?.id)return {ok:false,observations:[],count:0,error:'Missing evidence item'};
+  const replace=options.replace!==false;
+  const candidates=Array.isArray(options.candidates)?options.candidates:[];
+  if(replace){
+    await clearAgencyMovesForEvidence(evidenceItem.id).catch(()=>null);
+    await clearRelationshipTimelineForEvidence(evidenceItem.id).catch(()=>[]);
+    await clearEvidenceObservationsForItem(evidenceItem.id);
+  }
+  const observations=[];
+  for(const candidate of candidates){
+    const clean=normalizeObservationCandidate(candidate);
+    if(!clean.content)continue;
+    const saved=await saveEvidenceObservation({...clean,evidenceItemId:evidenceItem.id}).catch(()=>null);
+    if(saved)observations.push(saved);
+  }
+  const relationshipEngine=await runRelationshipEngineForObservations(evidenceItem,observations).catch(e=>({ok:false,error:e.message,events:[],profiles:[]}));
+  const agencyEngine=await runAgencyEngineForObservations(evidenceItem,observations).catch(e=>({ok:false,error:e.message,moves:[],count:0}));
+  return {ok:true,evidenceItemId:evidenceItem.id,sourceType:evidenceItem.sourceType||evidenceItem.source_type,sourceId:evidenceItem.sourceId||evidenceItem.source_id,observations,count:observations.length,relationshipEngine,agencyEngine};
+}
+async function saveEvidenceLink(payload={}){
+  const row={
+    id:payload.id||uuid('ev'),
+    tenantId:payload.tenantId||tenantId(),
+    userId:payload.userId||VAL_USER_ID,
+    sourceType:String(payload.sourceType||payload.source_type||'unknown'),
+    sourceId:String(payload.sourceId||payload.source_id||''),
+    sourceLabel:String(payload.sourceLabel||payload.source_label||''),
+    targetType:String(payload.targetType||payload.target_type||'unknown'),
+    targetId:String(payload.targetId||payload.target_id||''),
+    relationship:String(payload.relationship||'supports'),
+    summary:String(payload.summary||''),
+    quote:String(payload.quote||''),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    metadata:payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{},
+    createdAt:new Date().toISOString()
+  };
+  if(!row.sourceId||!row.targetId) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceLinks');
+    if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into val_evidence_links (id,tenant_id,user_id,source_type,source_id,source_label,target_type,target_id,relationship,summary,quote,confidence,metadata,created_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())`,[row.id,row.tenantId,row.userId,row.sourceType,row.sourceId,row.sourceLabel,row.targetType,row.targetId,row.relationship,row.summary,row.quote,row.confidence,JSON.stringify(row.metadata)]);
+  }else{
+    const store=valStore();
+    transcriptFileArray(store,'evidenceLinks').push(row);
+    saveValStore(store);
+  }
+  return row;
+}
+async function clearEvidenceLinksForTranscript(transcriptId){
+  if(!transcriptId) return;
+  if(DEMO_MODE){
+    const evidence=transcriptDemoArray('evidenceLinks')||[];
+    const taskIds=(transcriptDemoArray('transcriptTasks')||[]).filter(row=>row.transcriptId===transcriptId).map(row=>row.taskId);
+    for(let i=evidence.length-1;i>=0;i--){
+      const row=evidence[i];
+      if((row.sourceType==='transcript'&&row.sourceId===transcriptId)||(row.sourceType==='transcript_task'&&taskIds.includes(row.sourceId)))evidence.splice(i,1);
+    }
+    return;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`delete from val_evidence_links where tenant_id=$1 and user_id=$2 and ((source_type='transcript' and source_id=$3) or (source_type='transcript_task' and source_id in (select task_id from transcript_tasks where transcript_id=$3)))`,[tenantId(),VAL_USER_ID,transcriptId]);
+    return;
+  }
+  const store=valStore(),taskIds=transcriptFileArray(store,'transcriptTasks').filter(row=>row.transcriptId===transcriptId).map(row=>row.taskId);
+  store.evidenceLinks=transcriptFileArray(store,'evidenceLinks').filter(row=>!((row.sourceType==='transcript'&&row.sourceId===transcriptId)||(row.sourceType==='transcript_task'&&taskIds.includes(row.sourceId))));
+  saveValStore(store);
+}
 async function replaceTranscriptParticipants(transcriptId,participants){
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptParticipants');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(...participants);}return;}
   await valDbReady;if(pgPool){await dbQuery('delete from transcript_participants where transcript_id=$1',[transcriptId]);for(const p of participants)await dbQuery(`insert into transcript_participants (participant_id,transcript_id,speaker_name_raw,matched_contact_id,matched_contact_name,matched_email,matched_phone,matched_company,match_confidence,match_reason,needs_review,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,[p.participantId,transcriptId,p.speakerNameRaw,p.matchedContactId||null,p.matchedContactName||null,p.matchedEmail||null,p.matchedPhone||null,p.matchedCompany||null,p.matchConfidence||0,p.matchReason||'',!!p.needsReview]);}else{const store=valStore();store.transcriptParticipants=transcriptFileArray(store,'transcriptParticipants').filter(x=>x.transcriptId!==transcriptId);store.transcriptParticipants.push(...participants);saveValStore(store);}
@@ -9541,11 +12131,13 @@ async function saveTranscriptSummary(transcriptId,summary){
   const row={summaryId:uuid('tr_summary'),transcriptId,executiveSummary:summary.executiveSummary||summary.summary||'Summary unavailable.',clientSummary:summary.clientSummary||'',internalNotes:summary.internalNotes||'',keyDecisions:summary.keyDecisions||[],openQuestions:summary.openQuestions||[],relationshipUpdates:summary.relationshipUpdates||[],createdAt:new Date().toISOString()};
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptSummaries');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(row);}}
   else{await valDbReady;if(pgPool){await dbQuery('delete from transcript_summaries where transcript_id=$1',[transcriptId]);await dbQuery(`insert into transcript_summaries (summary_id,transcript_id,executive_summary,client_summary,internal_notes,key_decisions,open_questions,relationship_updates,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[row.summaryId,transcriptId,row.executiveSummary,row.clientSummary,row.internalNotes,JSON.stringify(row.keyDecisions),JSON.stringify(row.openQuestions),JSON.stringify(row.relationshipUpdates)]);}else{const store=valStore();store.transcriptSummaries=transcriptFileArray(store,'transcriptSummaries').filter(x=>x.transcriptId!==transcriptId);store.transcriptSummaries.push(row);saveValStore(store);}}
+  await saveEvidenceLink({sourceType:'transcript',sourceId:transcriptId,targetType:'transcript_summary',targetId:row.summaryId,relationship:'summarizes',summary:row.executiveSummary,confidence:1,metadata:{keyDecisionCount:row.keyDecisions.length,openQuestionCount:row.openQuestions.length,relationshipUpdateCount:row.relationshipUpdates.length}}).catch(()=>{});
   await logTranscriptAction(transcriptId,'summary_created',row.summaryId,'completed');return row;
 }
 async function saveStagedTranscriptTask(row){
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptTasks');if(rows)rows.push(row);}
   else{await valDbReady;if(pgPool)await dbQuery(`insert into transcript_tasks (task_id,transcript_id,assigned_to_contact_id,assigned_to_name,task_title,task_description,due_date,priority,confidence,status,needs_approval,source_quote,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())`,[row.taskId,row.transcriptId,row.assignedToContactId||null,row.assignedToName||null,row.taskTitle,row.taskDescription||'',row.dueDate||null,row.priority||'medium',row.confidence||0,row.status||'staged',!!row.needsApproval,row.sourceQuote]);else{const store=valStore();transcriptFileArray(store,'transcriptTasks').push(row);saveValStore(store);}}
+  await saveEvidenceLink({sourceType:'transcript',sourceId:row.transcriptId,sourceLabel:row.calendarEventTitle||'',targetType:'transcript_task',targetId:row.taskId,relationship:'extracted_task',summary:row.taskTitle,quote:row.sourceQuote,confidence:row.confidence||0,metadata:{assignedToName:row.assignedToName||'',assignedToContactId:row.assignedToContactId||'',priority:row.priority||'',dueDate:row.dueDate||null,needsApproval:!!row.needsApproval}}).catch(()=>{});
   await logTranscriptAction(row.transcriptId,'task_extracted',row.taskId,'completed');return row;
 }
 async function updateStagedTranscriptTask(taskId,updates){
@@ -9587,6 +12179,13 @@ function transcriptDetailFromIndex(data,transcript){
   return {...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
 }
 async function clearTranscriptStaging(transcriptId){
+  await clearEvidenceLinksForTranscript(transcriptId);
+  const evidence=await evidenceItemForSource('transcript',transcriptId).catch(()=>null);
+  if(evidence?.id){
+    await clearAgencyMovesForEvidence(evidence.id).catch(()=>{});
+    await clearRelationshipTimelineForEvidence(evidence.id).catch(()=>{});
+    await clearEvidenceObservationsForItem(evidence.id).catch(()=>{});
+  }
   if(DEMO_MODE){for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog']){const rows=transcriptDemoArray(key)||[];for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);}return;}
   await valDbReady;
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
@@ -10059,7 +12658,7 @@ function responseText(payload){
 async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
-  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
+  if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const body = {
     model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
@@ -10093,7 +12692,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
-  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
+  if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const body = {
     model: openAiModel,
     input: [
@@ -13074,7 +15673,44 @@ async function promoteTranscriptTask(staged){
   const transcript=data.transcripts?.[0]||{};
   const transcriptTitle=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:staged.calendarEventTitle},transcript.rawTranscript);
   const mainTask={id:uuid('task'),title:contextualTaskTitle(staged.calendarEventTitle||transcriptTitle,staged.taskTitle),notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,transcriptTitle?`Transcript title: ${transcriptTitle}`:'',`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,transcriptId:staged.transcriptId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
-  await saveTask(mainTask);await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
+  await saveTask(mainTask);
+  await saveEvidenceLink({sourceType:'transcript',sourceId:staged.transcriptId,sourceLabel:transcriptTitle,targetType:'task',targetId:mainTask.id,relationship:'created_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptTaskId:staged.taskId,assignedToName:staged.assignedToName||'',assignedToContactId:staged.assignedToContactId||'',calendarEventId:mainTask.calendarEventId||'',calendarEventTitle:mainTask.calendarEventTitle||''}}).catch(()=>{});
+  await saveEvidenceLink({sourceType:'transcript_task',sourceId:staged.taskId,sourceLabel:staged.taskTitle,targetType:'task',targetId:mainTask.id,relationship:'promoted_to_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptId:staged.transcriptId}}).catch(()=>{});
+  await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
+}
+function observationText(value){
+  if(!value)return '';
+  if(typeof value==='string')return value.trim();
+  return String(value.content||value.text||value.summary||value.title||value.taskTitle||value.question||value.decision||value.need||value.risk||value.opportunity||value.signal||value.update||'').trim();
+}
+function observationQuote(transcript,value){
+  if(!value||typeof value==='string')return transcriptSupportingQuote(transcript,value||'');
+  return transcriptSupportingQuote(transcript,value.sourceQuote||value.exactQuote||value.quote||value.evidence||value.content||value.text||value.taskTitle||'');
+}
+function transcriptParticipantForObservation(value,participants=[]){
+  if(!value||typeof value==='string')return null;
+  const name=value.assignedToName||value.assignedPerson||value.person||value.contactName||value.name||'';
+  const contactId=value.contactId||value.personId||value.assignedToContactId||'';
+  return participants.find(p=>(contactId&&p.matchedContactId===contactId)||(name&&(looseNameScore(name,p.speakerNameRaw)>=0.8||looseNameScore(name,p.matchedContactName)>=0.8)))||null;
+}
+async function saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}){
+  const evidence=await evidenceItemForSource('transcript',sourceId);
+  if(!evidence?.id)return [];
+  await saveEvidenceItem({id:evidence.id,sourceType:'transcript',sourceId,occurredAt:evidence.occurredAt||null,capturedAt:evidence.capturedAt||new Date().toISOString(),title,rawText:transcript,summary:summary?.executiveSummary||parsed.executiveSummary||parsed.summary||'',participantsJson:participants||[],entitiesJson:{participantCount:(participants||[]).length,taskCount:(parsed.tasks||parsed.actionItems||[]).length},confidence:summary?1:0.7,status:'processed',metadataJson:{legacyTranscriptId:sourceId,summaryId:summary?.summaryId||''}}).catch(()=>{});
+  const candidates=[];
+  const push=(type,value,extra={})=>{
+    const content=observationText(value);
+    if(!content)return;
+    const participant=transcriptParticipantForObservation(value,participants);
+    candidates.push({observationType:type,personId:participant?.matchedContactId||extra.personId||'',organizationId:extra.organizationId||'',projectId:extra.projectId||'',content,exactQuote:observationQuote(transcript,value),confidence:Math.max(0,Math.min(1,Number(value?.confidence)||extra.confidence||0.75)),status:extra.status||'observed',dueAt:value?.dueDate||value?.due_at||extra.dueAt||null});
+  };
+  for(const item of (Array.isArray(parsed.keyDecisions)?parsed.keyDecisions:[]).slice(0,20))push('decision',item,{confidence:0.8});
+  for(const item of (Array.isArray(parsed.openQuestions)?parsed.openQuestions:[]).slice(0,20))push('question',item,{confidence:0.8,status:'open'});
+  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item,{confidence:0.75});
+  for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,30))push(item?.observationType||item?.type||'task',item,{confidence:0.75,status:'open'});
+  for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item.reason||item.newValue||item,{confidence:Math.max(0.5,Number(item.confidence)||0.5)});
+  for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
+  return (await runObservationEngine(evidence,{candidates,replace:true})).observations;
 }
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
@@ -13091,6 +15727,7 @@ async function processTranscriptPayload(payload){
     parsed={executiveSummary:transcript.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Automated fallback summary; model processing needs review.',keyDecisions:decisions,openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),relationshipUpdates:[],tasks:fallbackTasks,contactUpdates:[],followupDrafts:[]};
   }
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
+  await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{}));
   if(modelFailed)await logTranscriptAction(sourceId,'failed_action','summary_model','failed',modelFailed);
   const stagedTasks=[],createdTasks=[],createdDrafts=[];
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
@@ -13104,8 +15741,8 @@ async function processTranscriptPayload(payload){
     await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
   const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
-  if(recapDraft){createdDrafts.push(recapDraft);await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
-  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote:transcriptSupportingQuote(transcript,draft.sourceQuote)}});createdDrafts.push(saved);await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
+  if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
+  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const sourceQuote=transcriptSupportingQuote(transcript,draft.sourceQuote);const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote}});createdDrafts.push(saved);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:saved.id||'',relationship:'created_followup_draft',summary:saved.subject||draft.subject||`Follow-up: ${title}`,quote:sourceQuote,confidence:Math.max(0,Math.min(1,Number(draft.confidence)||0.75)),metadata:{draftType:draft.draftType||draft.type||'follow_up'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
   return {analysis:parsed,summary,participants,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
@@ -13152,10 +15789,14 @@ app.get('/api/val/transcripts',async(req,res)=>{
   try{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
+    const archive=await transcriptArchiveRecords(days,limit);
+    const transcripts=mergeTranscriptMigrationRecords(archive,data).slice(0,limit).map(record=>{
+      if(record.detail){const detail={...record.detail};delete detail.transcriptText;return detail;}
+      return transcriptUiRecord(record);
+    });
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -13233,6 +15874,33 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});const result={ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})};await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title,source:body.source||''},success:true}).catch(()=>{});res.json(result);}catch(e){res.status(500).json({error:e.message});}});
+app.get('/api/presence/contract',(req,res)=>{
+  res.json({ok:true,contract:PRESENCE_MODE_CONTRACT,bookMode:isBookEditorProject(),message:isBookEditorProject()?'Michele book/editor voice remains on its separate workflow.':'Presence Mode protects bold noticing and careful action.'});
+});
+app.post('/api/presence/classify',(req,res)=>{
+  try{
+    const text=req.body.command||req.body.text||req.body.transcript||'';
+    res.json(classifyPresenceIntent(text,{sourceId:req.body.sourceId,evidenceItemId:req.body.evidenceItemId,currentSession:req.body.currentSession}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/presence/session',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor voice remains on its separate workflow.'});
+    const session=presenceSessionPayload(req.body||{});
+    if(!session.transcript)return res.status(400).json({ok:false,error:'Presence session transcript text is required.'});
+    const classification=classifyPresenceIntent(session.transcript,{sourceId:session.id,currentSession:true});
+    const saved=await saveTranscript({id:session.id,source:`presence_mode:${session.mode}`,type:'voice_session',title:session.title,transcript:session.transcript,attendees:session.participants,timestamp:session.occurredAt,createdAt:session.occurredAt,metadata:session.metadata,reviewStatus:'needs_review'});
+    await saveEvidenceItem({sourceType:'voice_session',sourceId:saved.id,occurredAt:session.occurredAt,capturedAt:new Date().toISOString(),title:session.title,rawText:session.transcript,summary:'',participantsJson:session.participants,entitiesJson:{presenceMode:session.mode,contractVersion:'presence_mode_contract_v1'},confidence:1,status:'captured',metadataJson:session.metadata}).catch(()=>{});
+    let processed=null,processingError='';
+    if(session.process){
+      try{processed=await processTranscriptPayload({source:`presence_mode:${session.mode}`,title:session.title,transcript:session.transcript,savedTranscriptId:saved.id,attendees:session.participants,metadata:session.metadata,timestamp:session.occurredAt});}
+      catch(e){processingError=e.message;await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});}
+    }
+    await saveMemoryItem({kind:'voice_session',summary:`Presence Mode ${session.mode} session: ${session.title}`,rawText:session.transcript,importance:3,metadata:{source:'presence_mode',mode:session.mode,transcriptId:saved.id,classification}}).catch(()=>{});
+    await auditLog({req,action:'presence_session_saved',resourceType:'transcript',resourceId:saved.id,metadata:{mode:session.mode,title:session.title,classification:classification.intent},success:true}).catch(()=>{});
+    res.status(201).json({ok:true,sessionId:saved.id,mode:session.mode,evidenceSourceType:'voice_session',transcriptSourceType:'transcript',classification,processed:!!processed,processingError,analysis:processed?.analysis||null,counts:processed?.counts||null});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/conversations/:id',async(req,res)=>{
@@ -13471,8 +16139,46 @@ app.get('/api/relationships/review',async(req,res)=>{
       return res.json(demoRelationshipReview(demoState(req,res),Number(req.query.windowDays)||7));
     }
     const windowDays=Math.min(Math.max(Number(req.query.windowDays)||7,1),90);
-    res.json(await buildRelationshipReview({windowDays}));
+    const review=await buildRelationshipReview({windowDays});
+    if((review.relationshipProfiles||[]).length)return res.json(review);
+    const stored=await relationshipReviewFromStoredProfiles({windowDays}).catch(()=>null);
+    res.json(stored&&(stored.relationshipProfiles||[]).length?{...stored,providerReviewErrors:review.errors||[]}:review);
   }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/intelligence/backfill',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    const result=await backfillValIntelligence(req.body||{});
+    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'val_intelligence_backfill_failed',resourceType:'intelligence',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/admin/transcript-migration',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VAL Transcript Migration</title><style>body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8f5ef;color:#10162f;margin:0;padding:40px}.wrap{max-width:720px;margin:auto;background:#fff;border:1px solid #e7dfd2;border-radius:8px;padding:28px;box-shadow:0 18px 60px rgba(16,22,47,.08)}h1{font-family:Georgia,serif;font-size:32px;margin:0 0 12px}p{font-size:16px;line-height:1.55;color:#313a55}button{border:0;border-radius:6px;background:#071b36;color:white;font-weight:700;padding:13px 18px;font-size:15px;cursor:pointer}button:disabled{opacity:.6;cursor:wait}pre{background:#f3efe7;border:1px solid #e1d8c9;border-radius:6px;padding:16px;white-space:pre-wrap;min-height:80px}.meta{font-size:13px;color:#697089;margin-top:18px}</style></head><body><main class="wrap"><h1>Transcript Migration</h1><p>This runs the transcript-only evidence migration for this signed-in VAL. It gathers existing transcripts, saves them as evidence, extracts observations, and lets the relationship and agency layers update from that evidence.</p><p>It does not send emails, texts, invites, or external actions.</p><button id="run">Run Transcript Migration</button><div class="meta">Window: all available transcripts, up to 250 records. Michele book/editor VAL remains protected separately.</div><pre id="out">Ready.</pre></main><script>document.getElementById('run').addEventListener('click',async()=>{const btn=document.getElementById('run'),out=document.getElementById('out');btn.disabled=true;out.textContent='Running transcript migration...';try{const r=await fetch('/api/val/transcripts/migrate',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({days:3650,limit:250})});const text=await r.text();try{out.textContent=JSON.stringify(JSON.parse(text),null,2)}catch(e){out.textContent=text||('HTTP '+r.status)}}catch(e){out.textContent='Migration request failed: '+e.message}finally{btn.disabled=false}});</script></body></html>`);
+});
+app.post('/api/val/transcripts/migrate',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before migrating transcripts.');
+    const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
+    const limit=Math.max(1,Math.min(500,Number(req.body?.limit)||250));
+    const transcripts=await backfillTranscriptEvidence({days,limit});
+    const [counts,briefing,storedRelationships]=await Promise.all([
+      executiveBriefingCounts(),
+      buildExecutiveBriefing().catch(()=>null),
+      relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
+    ]);
+    const result={ok:true,generatedAt:new Date().toISOString(),days,limit,transcripts,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+    await auditLog({req,action:'val_transcripts_migrated',resourceType:'transcript_migration',metadata:{days,limit,found:transcripts.found||0,processed:transcripts.processed||0,observations:transcripts.observations||0,errors:transcripts.errors?.length||0},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'val_transcripts_migration_failed',resourceType:'transcript_migration',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });
@@ -13513,6 +16219,12 @@ app.post('/api/relationships/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported action'});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.get('/api/executive-briefing',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Executive Briefing is not used for Michele book/editor mode.'});
+    res.json(await buildExecutiveBriefing());
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
@@ -13534,33 +16246,57 @@ app.post('/api/val/intelligence',async(req,res)=>{
 app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
-    if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}
+    const conversationId=String(req.body.conversationId||'').trim()||uuid('chat');
+    const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
+    async function sendChat(content,extra={}){
+      let saved=null,saveWarning='';
+      const fullMessages=messages.concat({role:'assistant',content});
+      try{
+        if(!DEMO_MODE&&process.env.DATABASE_URL&&!pgPool) throw new Error('Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
+        saved=await saveConversation({id:conversationId,title:conversationTitle,source:req.body.channel||'chat',messages:fullMessages,metadata:{channel:req.body.channel||'chat',savedBy:'chat_route'}});
+      }catch(saveError){
+        saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
+      }
+      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
+    }
+    if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
+    const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
+    if(presenceIntent?.requiresConfirmation){
+      return sendChat([
+        'I can prepare that, but I need your approval before anything external happens.',
+        '',
+        `Detected action: ${presenceIntent.action.replace(/_/g,' ')}`,
+        presenceIntent.allowedPrivatePreparations.length?`I can do the private prep first: ${presenceIntent.allowedPrivatePreparations.join(', ').replace(/_/g,' ')}.`:'',
+        '',
+        'Say “draft it first” or “yes, send/book/share it now” when you want to approve the next step.'
+      ].filter(Boolean).join('\n'),{presenceIntent});
+    }
     if(/\b(show|list|find)\b[\s\S]{0,40}\bunscheduled tasks|open loops\b/i.test(lastUser)){
       const loops=await openLoopsSummary();
       const lines=(loops.unscheduled||[]).slice(0,10).map((t,i)=>`${i+1}. ${t.title}${t.dueDate?` — due ${new Date(t.dueDate).toLocaleDateString()}`:''}`).join('\n')||'No unscheduled open tasks found.';
-      return res.json({message:{role:'assistant',content:`Open loops: ${loops.openCount} open, ${loops.unscheduledCount} unscheduled, ${loops.overdueCount} overdue.\n\n${lines}`},openLoops:loops});
+      return sendChat(`Open loops: ${loops.openCount} open, ${loops.unscheduledCount} unscheduled, ${loops.overdueCount} overdue.\n\n${lines}`,{openLoops:loops});
     }
     if(/\b(calendarize|schedule time|put .*calendar|block time)\b/i.test(lastUser)&&/\btask|tasks|open loops|follow[- ]?up/i.test(lastUser)){
       const loops=await openLoopsSummary();
       const task=(loops.unscheduled||[])[0];
-      if(!task)return res.json({message:{role:'assistant',content:'I do not see any unscheduled open tasks right now.'},openLoops:loops});
+      if(!task)return sendChat('I do not see any unscheduled open tasks right now.',{openLoops:loops});
       const suggestedSlots=await suggestTaskSlots(task).catch(()=>[]);
       const slotLines=suggestedSlots.slice(0,3).map((s,i)=>`${i+1}. ${s.label}`).join('\n');
-      return res.json({message:{role:'assistant',content:`I found the next unscheduled task: ${task.title}.\n\nSuggested protected work blocks:\n${slotLines||'No safe slot found yet.'}\n\nOpen Tasks and press Calendarize to confirm a private busy block with no attendees or meeting link.`},taskScheduling:{task,suggestedSlots}});
+      return sendChat(`I found the next unscheduled task: ${task.title}.\n\nSuggested protected work blocks:\n${slotLines||'No safe slot found yet.'}\n\nOpen Tasks and press Calendarize to confirm a private busy block with no attendees or meeting link.`,{taskScheduling:{task,suggestedSlots}});
     }
     if(inboxCommandIntent(lastUser)){
       const inbox=await runInboxCommand(lastUser,{maxResults:5});
       const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
-      return res.json({message:{role:'assistant',content:[inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n')},inboxCommand:inbox});
+      return sendChat([inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n'),{inboxCommand:inbox});
     }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();
-      return res.json({message:{role:'assistant',content:goallTestContactSummary(result)},ghlContact:result});
+      return sendChat(goallTestContactSummary(result),{ghlContact:result});
     }
     const inferredGhlAction=await inferGhlActionFromChat(lastUser);
     if(inferredGhlAction){
       const result=await executeValGhlAction(inferredGhlAction);
-      return res.json({message:{role:'assistant',content:result.content||'Done.'},ghlAction:result});
+      return sendChat(result.content||'Done.',{ghlAction:result});
     }
     if(isGoogleDocRewriteRequest(lastUser)){
       try{
@@ -13574,37 +16310,45 @@ app.post('/api/val/chat',async(req,res)=>{
           '',
           `I kept the full rewrite out of chat so you can review and edit it in Docs.`
         ].join('\n');
-        return res.json({message:{role:'assistant',content},googleDocRewrite:result});
+        return sendChat(content,{googleDocRewrite:result});
       }catch(e){
         if(/auth|required|scope|reconnect/i.test(e.message)){
-          return res.json({message:{role:'assistant',content:'I can use the memoir already uploaded into VAL as the source. Google only needs to be reconnected so I can create the rewritten Google Doc output. Open Integration Status, reconnect Google, and approve the Drive/Docs permissions.'}});
+          return sendChat('I can use the memoir already uploaded into VAL as the source. Google only needs to be reconnected so I can create the rewritten Google Doc output. Open Integration Status, reconnect Google, and approve the Drive/Docs permissions.');
         }
-        return res.json({message:{role:'assistant',content:`I tried to rewrite it from the uploaded VAL memoir or Google Docs, but I could not find a readable matching document yet: ${e.message}\n\nUse the exact uploaded file title, Google Doc title, or Google Doc URL, then ask me to rewrite it.`}});
+        return sendChat(`I tried to rewrite it from the uploaded VAL memoir or Google Docs, but I could not find a readable matching document yet: ${e.message}\n\nUse the exact uploaded file title, Google Doc title, or Google Doc URL, then ask me to rewrite it.`);
       }
     }
     const availabilityDoc=await readValUploadedRewriteSource({query:lastUser+'\n'+memoryQuery}).catch(()=>null);
     if(availabilityDoc&&/\b(can you|could you|do you|are you able to)\b[\s\S]{0,80}\b(read|see|access|open)\b/i.test(lastUser)&&/\b(manuscript|memoir|book|document|doc|draft)\b/i.test(lastUser)){
-      return res.json({message:{role:'assistant',content:[
+      return sendChat([
         `Yes. I can read the manuscript already uploaded into VAL.`,
         '',
         `Source: ${availabilityDoc.title}`,
         `Readable characters: ${availabilityDoc.text.length}`,
         '',
         `Google Drive is only needed if you want me to create or update a Google Doc output. For reading and editorial review, I can use the uploaded VAL manuscript.`
-      ].join('\n')}});
+      ].join('\n'));
     }
     const uploadedDocs=await uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
-    const [memory,ghlContext,googleDocs]=await Promise.all([
+    const [memory,ghlContext,googleDocs,executiveBriefing]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
-      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`)
+      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
+      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
     ]);
-    const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const babyStudioContext=await babyStudioPromptContext();
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present. When the user asks why, what matters, what changed, what VAL is worried about, or what VAL is excited about, ground the answer in Executive Briefing, agency moves, relationship velocity, and cited evidence/observations when present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
-    res.json({message:{role:'assistant',content:finalContent},createdTasks,ghlContextAvailable:!!ghlContext});
-  }catch(e){res.status(500).json({error:e.message});}
+    return sendChat(finalContent,{createdTasks,ghlContextAvailable:!!ghlContext});
+  }catch(e){
+    const raw=e.message||'';
+    const message=/OPENAI_KEY not configured|OPENAI_API_KEY|api key/i.test(raw)
+      ? 'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'
+      : raw;
+    res.status(500).json({error:message});
+  }
 });
 
 async function extractUploadedText(file){

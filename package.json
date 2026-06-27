@@ -1,13 +1,10 @@
 {
-  "name": "mark-goall-val",
+  "name": "val-proxy",
   "version": "1.0.0",
+  "description": "VAL Dashboard GHL Proxy",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test test/*.test.js"
-  },
-  "engines": {
-    "node": ">=18"
+    "start": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -16,6 +13,9 @@
     "mammoth": "^1.12.0",
     "multer": "^2.1.1",
     "pdf-parse": "^1.1.1",
-    "pg": "^8.21.0"
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

@@ -41,6 +41,20 @@ test('task UI exposes scheduling controls and status',()=>{
   assert.match(dashboard,/Scheduled /);
 });
 
+test('task detail panel opens above workspace modal and shows transcript evidence',()=>{
+  assert.match(dashboard,/id='taskDetailPanel'/);
+  assert.match(dashboard,/z-index:3200/);
+  assert.match(dashboard,/d\.sourceQuote/);
+  assert.match(dashboard,/Transcript: /);
+  assert.match(dashboard,/Source context/);
+});
+
+test('right-side action panels open above executive workspace overlays',()=>{
+  assert.match(dashboard,/id='approvalQueuePanel'[\s\S]*?z-index:3200/);
+  assert.match(dashboard,/id='docDetailPanel'[\s\S]*?z-index:3200/);
+  assert.match(dashboard,/id='docDetailPanel'[\s\S]*?max-width:94vw/);
+});
+
 test('command center highlights open loops needing calendar time',()=>{
   assert.match(commandCenter,/Open Loops/);
   assert.match(commandCenter,/unscheduled/);

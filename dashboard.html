@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
 <title>VAL - Executive Command Center</title>
+<link rel="icon" type="image/png" href="https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fcfdfd50c4ff184fc1abb.png">
+<link rel="apple-touch-icon" href="https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fcfdfd50c4ff184fc1abb.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800;900&family=Jost:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 * { cursor: none !important; }
@@ -264,6 +266,35 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .alert-btn.primary{background:var(--gold);border-color:var(--gold);color:var(--navy)}
 .alert-btn:hover{transform:translateY(-1px);border-color:var(--gold-border)}
 
+.executive-briefing-panel{width:100%;max-width:1120px;text-align:left;background:#fff;border:1px solid rgba(27,43,69,.12);border-radius:8px;padding:18px;box-shadow:0 16px 44px rgba(27,43,69,.08);margin:0 0 1rem;color:#172740}
+.executive-briefing-panel.loading{background:#f8fafc}
+.eb-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:14px}
+.eb-kicker,.eb-label{font-size:.5rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+.executive-briefing-panel h2{font-family:var(--serif);font-size:1.8rem;line-height:1.05;color:#172740;margin:0 0 5px}
+.executive-briefing-panel h3{font-family:var(--serif);font-size:1.28rem;line-height:1.12;color:#172740;margin:0 0 8px}
+.executive-briefing-panel p{font-size:.84rem;line-height:1.55;color:#334155;margin:0}
+.eb-btn{height:31px;border:1px solid rgba(196,150,58,.35);border-radius:7px;background:#fffaf0;color:#6f4f14;font-size:.55rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;padding:0 10px;cursor:pointer;flex-shrink:0}
+.eb-btn:hover{border-color:var(--gold);background:rgba(196,150,58,.16)}
+.eb-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(220px,.8fr);gap:10px}
+.eb-grid article{border:1px solid rgba(27,43,69,.1);background:#f8fafc;border-radius:8px;padding:13px;min-width:0}
+.eb-grid .eb-primary{grid-row:span 2;background:#fff;border-color:rgba(196,150,58,.28)}
+.eb-if{margin-top:10px;border-left:3px solid var(--gold);background:#fff8e6;padding:9px 10px;font-size:.76rem;line-height:1.45;color:#344054}
+.eb-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.eb-meta span{height:22px;border:1px solid rgba(27,43,69,.1);border-radius:999px;background:#fff;color:#334155;font:800 .52rem var(--mono);letter-spacing:.06em;text-transform:uppercase;display:inline-flex;align-items:center;padding:0 8px}
+.eb-people{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.eb-person{border:1px solid rgba(27,43,69,.08);background:#fff;border-radius:7px;padding:8px;min-width:0}
+.eb-person strong{display:block;font-size:.78rem;color:#172740;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eb-person span{font-size:.64rem;color:#64748b}
+.eb-move-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;border-bottom:1px solid rgba(27,43,69,.08);padding:8px 0}
+.eb-move-line:last-child{border-bottom:0;padding-bottom:0}
+.eb-move-line strong{font-size:.78rem;color:#172740;line-height:1.25;overflow-wrap:anywhere}
+.eb-move-line span{grid-column:1/-1;font-size:.7rem;color:#475569;line-height:1.4}
+.eb-move-line em{font-style:normal;font:800 .58rem var(--mono);color:#6f4f14}
+.eb-noticed{padding-left:1rem;margin:0}
+.eb-noticed li{font-size:.76rem;line-height:1.45;color:#334155;margin:0 0 6px}
+.eb-empty{font-size:.72rem;color:#64748b;line-height:1.45}
+@media(max-width:820px){.executive-briefing-panel{padding:14px}.eb-head{display:block}.eb-btn{margin-top:10px}.eb-grid{grid-template-columns:1fr}.eb-grid .eb-primary{grid-row:auto}.eb-people{grid-template-columns:1fr}}
+
 .exec-workspace-overlay{position:fixed;inset:0;z-index:2200;background:rgba(7,17,29,.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:22px}
 .exec-workspace-modal{width:min(1180px,100%);height:min(860px,94dvh);background:#111c2c;border:1px solid rgba(196,150,58,.28);border-radius:12px;box-shadow:0 30px 110px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden;color:var(--val-soft-white)}
 .exec-workspace-head{height:64px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;background:#16253a;border-bottom:1px solid rgba(196,150,58,.22);flex-shrink:0}
@@ -277,6 +308,33 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .exec-card h3{font-family:var(--serif);font-size:1.18rem;line-height:1.15;color:var(--val-white);margin-bottom:8px}
 .exec-card p,.exec-card li{font-size:.78rem;line-height:1.55;color:var(--val-muted-white)}
 .exec-card ul{padding-left:1rem}
+.teach-val-shell{display:grid;grid-template-columns:235px minmax(0,1fr);gap:14px;min-height:640px}
+.teach-val-rail{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.teach-val-rail h3{font-family:var(--body);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin:0 0 4px}
+.teach-val-step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:8px;padding:8px;color:var(--val-muted-white)}
+.teach-val-step.current{background:rgba(196,150,58,.14);border-color:rgba(196,150,58,.35)}
+.teach-val-step.done{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.2)}
+.teach-val-dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font:800 10px var(--mono);color:var(--val-white)}
+.teach-val-step.done .teach-val-dot{background:#22c55e;color:#052e16}
+.teach-val-step.current .teach-val-dot{background:var(--gold);color:#111d30}
+.teach-val-step strong{font-size:.76rem;color:var(--val-white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.teach-val-step small{font-size:.64rem;color:var(--val-slate)}
+.teach-val-stage{background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.035));border:1px solid rgba(196,150,58,.2);border-radius:10px;padding:20px;min-height:640px;display:flex;flex-direction:column;gap:14px}
+.teach-val-hero{text-align:center;max-width:720px;margin:auto;display:grid;gap:14px}
+.teach-val-orb{width:92px;height:92px;border-radius:999px;margin:0 auto;background:radial-gradient(circle at 35% 30%,#fff7d8,#c4963a 38%,#172740 72%);box-shadow:0 0 0 9px rgba(196,150,58,.12),0 24px 70px rgba(0,0,0,.25);display:grid;place-items:center;color:#fff;font-size:38px}
+.teach-val-stage h2{font-family:var(--serif);font-size:2rem;line-height:1.05;color:var(--val-white)}
+.teach-val-stage p{color:var(--val-muted-white);line-height:1.58}
+.teach-val-action-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.teach-val-prompt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.teach-val-prompt-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--val-white);border-radius:8px;padding:11px;text-align:left;font-weight:800;cursor:pointer}
+.teach-val-prompt-btn.active{background:var(--gold);border-color:var(--gold);color:#111d30}
+.teach-val-prompt-btn span{display:block;font-size:.68rem;font-weight:600;opacity:.72;margin-top:3px}
+.teach-val-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px}
+.teach-val-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.teach-val-summary-card{background:#fff;border:1px solid #dfe4e9;border-radius:8px;padding:13px;color:#111827;text-align:center}
+.teach-val-summary-card strong{display:block;font:800 1.5rem var(--serif);color:#172740}
+.teach-val-summary-card span{font-size:.72rem;color:#475569}
+@media(max-width:900px){.teach-val-shell{grid-template-columns:1fr}.teach-val-rail{order:2}.teach-val-two{grid-template-columns:1fr}.teach-val-stage{min-height:auto}}
 .exec-workspace-body>.email-body{height:calc(100% - 51px);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden}
 .exec-workspace-body>.email-tabs{background:#111c2c;border:1px solid rgba(255,255,255,.08);border-bottom:0;border-radius:8px 8px 0 0}
 .task-board{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:14px;min-height:100%}
@@ -1031,6 +1089,31 @@ body{font-size:1rem}
 .michele-book-chat-turn.user{background:#fff7ed!important;border-color:#fed7aa}
 .michele-book-chat-turn.assistant{background:#eef6ff!important;border-color:#bfdbfe}
 .michele-book-chat-label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;font-weight:900;color:#6b7280!important;margin-bottom:4px}
+.michele-voice-panel{margin-top:12px;padding:14px;border:1px solid #d8c28d;border-radius:16px;background:linear-gradient(135deg,#fff8e8,#f8fbff)!important;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:13px;align-items:center}
+.michele-voice-orb{width:54px;height:54px;border-radius:999px;background:radial-gradient(circle at 35% 30%,#fff4ca,#c4963a 48%,#172740 100%);box-shadow:0 0 0 7px rgba(196,150,58,.14),0 12px 28px rgba(15,23,42,.16);position:relative;cursor:pointer;transition:.22s ease;display:grid;place-items:center}
+.michele-voice-orb:before,.michele-voice-orb:after{content:"";position:absolute;inset:-7px;border-radius:999px;border:1px solid rgba(196,150,58,.38);animation:micheleVoicePulse 2s ease-out infinite}
+.michele-voice-orb:after{animation-delay:.75s}
+.michele-voice-orb span{width:11px;height:11px;border-radius:999px;background:#fff;box-shadow:0 0 10px rgba(255,255,255,.8);z-index:1}
+.michele-voice-copy{display:grid;gap:3px}
+.michele-voice-state{font:900 11px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:#7a5618!important}
+.michele-voice-detail{font-size:14px;line-height:1.45;color:#172033!important}
+.michele-voice-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.michele-voice-action{border:1px solid #cbd5e1;background:#fff;color:#172740!important;border-radius:999px;padding:8px 11px;font:800 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;cursor:pointer}
+.michele-voice-action.primary{background:#c4963a;border-color:#c4963a;color:#111827!important}
+.michele-voice-floating{position:fixed;right:38px;bottom:92px;z-index:9999;display:none;align-items:center;gap:10px;background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 45px rgba(0,0,0,.32);border-radius:999px;padding:9px 13px 9px 9px;color:#fff!important;backdrop-filter:blur(12px)}
+.michele-voice-floating.open{display:flex}
+.michele-voice-floating .michele-voice-orb{width:42px;height:42px;box-shadow:0 0 0 6px rgba(196,150,58,.16)}
+.michele-voice-floating strong{font:900 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#f8fafc!important;display:block}
+.michele-voice-floating small{font-size:11px;color:#cbd5e1!important;display:block;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.michele-voice-floating button{border:0;background:rgba(255,255,255,.1);color:#fff!important;border-radius:999px;padding:6px 8px;font:800 9px var(--mono);cursor:pointer}
+.michele-voice-state-listening .michele-voice-orb{background:radial-gradient(circle at 35% 30%,#dcfce7,#22c55e 48%,#14532d 100%)}
+.michele-voice-state-thinking .michele-voice-orb{background:radial-gradient(circle at 35% 30%,#dbeafe,#3b82f6 48%,#172740 100%);animation:micheleVoiceThink 1.1s ease-in-out infinite}
+.michele-voice-state-speaking .michele-voice-orb{background:radial-gradient(circle at 35% 30%,#fff7ed,#f59e0b 48%,#7c2d12 100%);animation:micheleVoiceSpeak .8s ease-in-out infinite alternate}
+.michele-voice-state-paused .michele-voice-orb{filter:grayscale(.8);opacity:.72}
+.michele-voice-state-error .michele-voice-orb{background:radial-gradient(circle at 35% 30%,#fee2e2,#ef4444 48%,#7f1d1d 100%)}
+@keyframes micheleVoicePulse{0%{transform:scale(.82);opacity:.75}100%{transform:scale(1.42);opacity:0}}
+@keyframes micheleVoiceThink{0%,100%{transform:rotate(0deg) scale(1)}50%{transform:rotate(10deg) scale(1.04)}}
+@keyframes micheleVoiceSpeak{0%{transform:scale(.95)}100%{transform:scale(1.08)}}
 .michele-book-done{min-height:220px;display:grid;place-content:center;text-align:center}
 .michele-book-done h3{font-size:32px!important}
 .michele-book-chapter-list{display:grid;gap:8px;max-height:280px;overflow:auto}
@@ -1077,9 +1160,450 @@ body{font-size:1rem}
 .exec-workspace-modal button[style*="background:#fff"],.exec-workspace-modal button[style*="background: #fff"],.exec-workspace-modal button[style*="background:white"],.exec-workspace-modal button[style*="background: white"],.exec-workspace-modal button[style*="background:#f8fafc"],.exec-workspace-modal button[style*="background:#fff7"],.exec-workspace-modal button[style*="background:#f1f5f9"]{color:#111827!important}
 .val-command-card.priority,.val-command-card.priority *,.val-chat-msg.user,.val-chat-msg.user *,.exec-workspace-modal .exec-workspace-head,.exec-workspace-modal .exec-workspace-head *,.exec-workspace-modal .exec-workspace-footer,.exec-workspace-modal .exec-workspace-footer .exec-workspace-title{opacity:1!important;text-shadow:none!important}
 </style>
+<style id="val-reference-open-ux">
+:root{
+  --navy:#101633;
+  --navy-2:#1f2a44;
+  --navy-3:#f8f6f2;
+  --val-white:#ffffff;
+  --val-soft-white:#101633;
+  --val-muted-white:#4f5875;
+  --val-slate:#67708f;
+  --cream:#fbfaf7;
+  --cream-2:#f6f4f0;
+  --cream-3:#ece8df;
+  --gold:#101633;
+  --gold-2:#27314f;
+  --gold-dim:rgba(16,22,51,0.07);
+  --gold-border:rgba(16,22,51,0.2);
+  --text:#101633;
+  --text-2:#27314f;
+  --text-3:#5e6782;
+  --text-4:#7e879f;
+  --body:'Inter','Jost',system-ui,sans-serif;
+  --serif:'Inter','Jost',system-ui,sans-serif;
+  --border:rgba(16,22,51,0.1);
+  --border-2:rgba(16,22,51,0.16);
+  --blue:#101633;
+  --blue-dim:rgba(16,22,51,0.08);
+  --shadow-xs:0 1px 2px rgba(16,22,51,0.05);
+  --shadow-sm:0 8px 22px rgba(16,22,51,0.07);
+  --shadow:0 14px 36px rgba(16,22,51,0.09);
+  --shadow-lg:0 24px 72px rgba(16,22,51,0.14);
+}
+*,*::before,*::after{cursor:auto!important}
+input,textarea,[contenteditable="true"]{cursor:text!important;caret-color:var(--gold)!important}
+button,a,[role="button"],.chip,.tbtn,.cbtn,.send-btn,.stat,.fitem,.scard,.ws-item,.day-block,.cw-action{cursor:pointer!important}
+#val-cursor,#val-cursor-ring{display:none!important}
+html,body{background:var(--cream)!important;color:var(--navy)!important;font-family:var(--body)!important;letter-spacing:0!important}
+.app{background:var(--cream)!important;color:var(--navy)!important}
+.topbar,.statbar,.lpanel,.summary-cards,.ws-sidebar,.exec-workspace-head,.exec-workspace-footer,.exec-workspace-body>.email-tabs{background:rgba(255,255,255,0.92)!important;color:var(--navy)!important;border-color:rgba(16,22,51,0.1)!important;box-shadow:none!important}
+.topbar{height:62px!important;padding:0 22px!important;gap:12px!important;border-bottom:1px solid rgba(16,22,51,0.08)!important}
+.tb-logo,.ws-logo,.exec-workspace-title,.stat-num,.cw-title,.alert-title,.email-title,.keys-title,.exec-card h3,.task-column-title,.rec-title{font-family:var(--body)!important;font-weight:600!important;color:var(--navy)!important;letter-spacing:0!important}
+.tb-logo{font-size:1.18rem!important}
+.tb-tagline,.stext,.tb-clock,.stat-label,.lpanel-title,.rpanel-title,.ws-section-label,.exec-workspace-kicker,.cw-label,.alert-kicker,.scard-label,.suggestion-label{color:var(--text-3)!important;letter-spacing:.02em!important;text-transform:none!important;font-weight:700!important}
+.mode-btns,.tb-status,.actor-switch{background:transparent!important;border-color:rgba(16,22,51,0.1)!important}
+.mbtn-mode,.actor-btn,.tbtn,.ws-toggle{border:1px solid rgba(16,22,51,0.12)!important;background:#fff!important;color:var(--text-2)!important;border-radius:8px!important;text-transform:none!important;letter-spacing:0!important;font-weight:700!important;box-shadow:var(--shadow-xs)!important}
+.mbtn-mode.active,.actor-btn.active,.tbtn.on,.guide-cta,.ws-item.active{background:var(--gold-dim)!important;border-color:var(--gold-border)!important;color:var(--navy)!important;box-shadow:none!important}
+.mbtn-mode .mdot,.sdot,.tdot{background:var(--gold)!important;box-shadow:0 0 0 4px rgba(16,22,51,0.08)!important}
+.tbtn:hover,.mbtn-mode:hover,.actor-btn:hover,.ws-toggle:hover{background:#f5feff!important;border-color:var(--gold-border)!important;color:var(--navy)!important;transform:none!important}
+.actions-menu{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.12)!important;box-shadow:var(--shadow-lg)!important;border-radius:8px!important}
+.actions-menu button,.topbar .actions-menu button{color:var(--navy)!important;border-radius:7px!important;text-transform:none!important;letter-spacing:0!important;background:transparent!important}
+.actions-menu button:hover,.topbar .actions-menu button:hover{background:var(--gold-dim)!important;color:var(--navy)!important}
+.actions-menu button.primary,.topbar .actions-menu button.primary{background:var(--gold)!important;color:var(--navy)!important}
+.statbar{height:86px!important;min-height:86px!important;border-bottom:1px solid rgba(16,22,51,0.08)!important}
+.stat{padding:0 24px!important;border-color:rgba(16,22,51,0.08)!important;background:#fff!important}
+.stat:hover{background:#f8feff!important}
+.stat::after{height:3px!important;background:var(--gold)!important}
+.stat-icon{border-radius:8px!important;background:var(--gold-dim)!important;color:var(--navy)!important}
+.si-red{background:rgba(244,99,99,0.12)!important;color:#dc2626!important}
+.si-green{background:rgba(34,197,94,0.13)!important;color:#15803d!important}
+.si-gold,.si-purple,.si-blue{background:var(--gold-dim)!important;color:var(--navy)!important}
+.stat-num{font-size:1.75rem!important}
+.body{background:var(--cream)!important;max-height:calc(100dvh - 62px - 86px)!important}
+.lpanel{width:330px!important;border-right:1px solid rgba(16,22,51,0.08)!important}
+.lpanel-head,.ws-head,.rpanel-head,.detail-topbar{background:#fff!important;border-color:rgba(16,22,51,0.08)!important;color:var(--navy)!important}
+.lpanel-title::before{content:''!important;width:8px;height:8px;border-radius:999px;background:var(--gold);display:inline-block}
+.fitem{border-bottom:1px solid rgba(16,22,51,0.06)!important;color:var(--navy)!important;padding:14px 18px!important}
+.fitem:hover,.fitem.active{background:var(--gold-dim)!important;transform:none!important;border-right:0!important}
+.fitem-title,.scard-val,.ws-item-title,.prompt-row,.lpanel .fitem-title,.lpanel .scard-val{color:var(--navy)!important;font-weight:700!important}
+.fitem-meta,.scard-sub,.lpanel .fitem-meta,.lpanel .scard-label,.lpanel .scard-sub{color:var(--text-3)!important}
+.summary-cards{background:#fff!important;border-top:1px solid rgba(16,22,51,0.08)!important}
+.scard{border-color:rgba(16,22,51,0.08)!important;padding:16px 18px!important}
+.scard:hover{background:#f8feff!important}
+.scard-link,.lpanel-refresh,.rpanel-link,.prompt-row::after{color:var(--navy)!important}
+.dynamic-suggestions{padding:8px 12px 16px!important}
+.suggestion-label{color:var(--text-3)!important;border-color:rgba(16,22,51,0.08)!important}
+.prompt-row{background:#fff!important;border-color:rgba(16,22,51,0.1)!important;border-radius:8px!important;font-weight:700!important}
+.prompt-row:hover{background:var(--gold-dim)!important;border-color:var(--gold-border)!important;color:var(--navy)!important}
+.center,.center-welcome,.center-detail,.chat-scroll,.cmd-area,.rpanel{background:var(--cream)!important;color:var(--navy)!important}
+.center-welcome{padding:34px 36px 96px!important}
+.cw-title{font-size:2.2rem!important;line-height:1.08!important}
+.cw-sub{color:var(--text-2)!important;font-size:1rem!important;line-height:1.55!important;max-width:700px!important;margin-bottom:28px!important}
+.cw-actions,.alert-board{gap:14px!important}
+.cw-action,.alert-section,.email-card,.key-card,.rec-modal,.rule-row,.val-command-card:not(.priority),.val-detail-card,.val-review-card,.val-transcript-row,.val-transcript-stat,.val-empty,.val-recap-preview,.typing-row,.cmsg.assistant .cmsg-bubble{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
+.cw-action:hover,.alert-section:hover{border-color:var(--gold-border)!important;background:#f8feff!important;transform:none!important}
+.cw-action-label,.alert-kicker,.exec-workspace-kicker,.email-pill,.key-status{color:var(--navy)!important}
+.cw-action-text,.alert-copy,.email-reason,.email-preview,.rule-row,.rule-row *{color:var(--text-2)!important}
+.alert-section.primary{background:#f8feff!important;border-color:var(--gold-border)!important}
+.alert-btn,.email-actions button,.exec-workspace-modal button:not(.exec-workspace-close),.relationship-actions button,.relationship-action-panel button,.task-actions button,.michele-voice-action{height:36px!important;border-radius:8px!important;border:1px solid rgba(16,22,51,0.13)!important;background:#fff!important;color:var(--navy)!important;text-transform:none!important;letter-spacing:0!important;font-weight:800!important;box-shadow:none!important}
+.alert-btn.primary,.email-actions button.primary,.exec-workspace-modal button.primary,.task-actions button.primary,.michele-voice-action.primary,.relationship-actions button.primary,.relationship-action-panel button.primary{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.alert-btn:hover,.email-actions button:hover,.exec-workspace-modal button:hover{border-color:var(--gold-border)!important;background:#f8feff!important;transform:none!important}
+.send-btn{background:#101633!important;color:#fff!important;border-radius:8px!important}
+.send-btn svg{color:#fff!important}
+.cmd-box{border-radius:8px!important;border-color:rgba(16,22,51,0.13)!important;background:#fff!important;box-shadow:var(--shadow-sm)!important}
+.cmd-box:focus-within{border-color:var(--gold-border)!important;box-shadow:0 0 0 4px rgba(16,22,51,0.08)!important}
+.cmd-ta,.chip,.cbtn{color:var(--navy)!important}
+.chip{border-radius:999px!important;background:#fff!important;border-color:rgba(16,22,51,0.12)!important}
+.chip:hover{background:var(--gold-dim)!important;border-color:var(--gold-border)!important;transform:none!important}
+.cmsg.user .cmsg-bubble{background:var(--gold)!important;color:#fff!important;border-radius:12px 12px 3px 12px!important}
+.cmsg.assistant .cmsg-bubble{border-radius:12px 12px 12px 3px!important}
+.sys-line{background:#fff!important;border-color:rgba(16,22,51,0.1)!important;color:var(--text-3)!important;border-radius:999px!important}
+.exec-workspace-overlay{background:rgba(16,22,51,0.28)!important;backdrop-filter:blur(10px)!important;padding:28px!important}
+.exec-workspace-modal{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-lg)!important}
+.exec-workspace-head{height:72px!important;padding:0 24px!important}
+.exec-workspace-body{background:var(--cream)!important;padding:22px!important}
+.exec-workspace-footer{min-height:66px!important;padding:14px 22px!important}
+.exec-workspace-close,.ws-close{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important}
+.exec-card,.task-column,.teach-val-rail,.teach-val-stage,.michele-book-card,.exec-workspace-modal .michele-book-card{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
+.exec-card *,.task-column *,.teach-val-rail *,.teach-val-stage *,.michele-book-card *{color:var(--navy)!important}
+.exec-card p,.exec-card li,.teach-val-stage p,.task-meta,.task-notes,.task-empty{color:var(--text-2)!important}
+.exec-workspace-grid{gap:16px!important}
+.teach-val-shell{grid-template-columns:260px minmax(0,1fr)!important;gap:18px!important}
+.teach-val-rail{padding:16px!important}
+.teach-val-rail h3{color:var(--navy)!important;text-transform:none!important;letter-spacing:0!important;font-size:.85rem!important}
+.teach-val-step{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;color:var(--navy)!important;padding:10px!important}
+.teach-val-step.current{background:var(--gold-dim)!important;border-color:var(--gold-border)!important}
+.teach-val-step.done{background:rgba(34,197,94,0.09)!important;border-color:rgba(34,197,94,0.22)!important}
+.teach-val-dot{background:#edf1f7!important;color:var(--navy)!important}
+.teach-val-step.current .teach-val-dot{background:var(--gold)!important;color:var(--navy)!important}
+.teach-val-step.done .teach-val-dot{background:#22c55e!important;color:#052e16!important}
+.teach-val-shell{grid-template-columns:300px minmax(0,1fr)!important}
+.teach-val-step{grid-template-columns:24px minmax(0,1fr)!important;align-items:start!important;gap:8px 10px!important}
+.teach-val-step strong{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;font-size:.8rem!important;line-height:1.25!important}
+.teach-val-step small{grid-column:2!important;font-size:.68rem!important;line-height:1.25!important;color:var(--text-3)!important}
+.teach-val-stage{background:linear-gradient(135deg,#ffffff,#f8feff)!important;padding:24px!important;min-height:620px!important}
+.teach-val-hero{gap:18px!important}
+.teach-val-stage h2{font-size:1.8rem!important;color:var(--navy)!important}
+.teach-val-orb,.michele-voice-orb{background:radial-gradient(circle at 35% 30%,#ffffff,#27314f 48%,#101633 100%)!important;box-shadow:0 0 0 8px rgba(16,22,51,0.08),0 18px 48px rgba(16,22,51,0.16)!important}
+.teach-val-prompt-btn{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important;box-shadow:var(--shadow-xs)!important}
+.teach-val-prompt-btn.active{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.teach-val-summary-card,.task-card,.exec-workspace-modal .task-card{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
+.task-column-head{background:#fff!important;border-color:rgba(16,22,51,0.08)!important}
+.task-count-pill{border-color:var(--gold-border)!important;color:var(--navy)!important;text-transform:none!important;letter-spacing:0!important}
+.task-check{border-radius:8px!important;border-color:var(--gold-border)!important}
+.task-card.done .task-check{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.email-body,.exec-workspace-modal .email-body,.exec-workspace-modal .email-list,.exec-workspace-modal .email-detail{background:var(--cream)!important;color:var(--navy)!important;border-color:rgba(16,22,51,0.1)!important}
+.email-tabs button,.exec-workspace-modal .email-tabs button{border-radius:8px!important;background:#fff!important;color:var(--navy)!important;border-color:rgba(16,22,51,0.12)!important;text-transform:none!important;letter-spacing:0!important}
+.email-tabs button.active,.exec-workspace-modal .email-tabs button.active{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.email-item,.exec-workspace-modal .email-item{background:#fff!important;border-color:rgba(16,22,51,0.08)!important;border-radius:8px!important;margin:8px!important;box-shadow:var(--shadow-xs)!important}
+.email-item.active,.email-item:hover,.exec-workspace-modal .email-item.active,.exec-workspace-modal .email-item:hover{background:#f8feff!important}
+.email-reason,.email-preview,.michele-book-chat,.relationship-summary,.relationship-action-panel{background:#f8feff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;color:var(--navy)!important}
+.michele-book-hero,.michele-voice-panel{background:linear-gradient(135deg,#ffffff,#f8feff)!important;border-color:var(--gold-border)!important;border-radius:8px!important}
+.michele-book-chat-turn.assistant{background:#f8feff!important;border-color:var(--gold-border)!important}
+.michele-book-chat-turn.user{background:#f6f4f0!important;border-color:rgba(16,22,51,0.1)!important}
+.michele-voice-state{color:var(--navy)!important}
+.michele-voice-floating{background:#fff!important;color:var(--navy)!important;border-color:rgba(16,22,51,0.12)!important;box-shadow:var(--shadow-lg)!important}
+.michele-voice-floating strong,.michele-voice-floating small,.michele-voice-floating button{color:var(--navy)!important}
+.ws-overlay{background:rgba(16,22,51,0.28)!important;backdrop-filter:blur(10px)!important}
+.ws-sidebar{box-shadow:var(--shadow-lg)!important}
+.ws-item{color:var(--navy)!important;border-color:transparent!important}
+.ws-item:hover{background:var(--gold-dim)!important}
+.ws-item-icon{background:#f2f6f7!important;color:var(--navy)!important;border-radius:8px!important}
+.ws-new-session{background:var(--gold)!important;color:var(--navy)!important;border-color:var(--gold)!important;border-radius:8px!important}
+.rpanel{border-left:1px solid rgba(16,22,51,0.08)!important}
+.day-block{background:#fff!important;border-color:rgba(16,22,51,0.06)!important}
+.day-block:hover,.day-block.today{background:#f8feff!important}
+.rec-ring{background:var(--gold-dim)!important}
+input,textarea,select,.michele-book-response,.relationship-action-panel input,.relationship-action-panel textarea,.relationship-action-panel select{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.14)!important;border-radius:8px!important}
+input:focus,textarea:focus,select:focus{outline:0!important;border-color:var(--gold-border)!important;box-shadow:0 0 0 4px rgba(16,22,51,0.08)!important}
+.val-primary-nav{background:#fff!important;color:var(--navy)!important;border-right:1px solid rgba(16,22,51,0.08)!important;box-shadow:var(--shadow-sm)!important}
+.val-primary-nav *{color:var(--navy)!important;text-shadow:none!important}
+.val-nav-brand{border-bottom:1px solid rgba(16,22,51,0.08)!important}
+.val-nav-mark{background:var(--gold-dim)!important;border:1px solid var(--gold-border)!important;color:var(--navy)!important;border-radius:8px!important}
+.val-nav-title{font-family:var(--body)!important;font-size:1rem!important;font-weight:600!important;letter-spacing:0!important;color:var(--navy)!important}
+.val-nav-subtitle,.val-nav-group-label,.val-nav-footer{color:var(--text-3)!important;letter-spacing:.04em!important}
+.val-nav-item{background:transparent!important;color:var(--text-2)!important;border:1px solid transparent!important;border-radius:8px!important;margin:2px 10px!important;font-weight:700!important;letter-spacing:0!important}
+.val-nav-item:hover{background:#f8feff!important;border-color:var(--gold-border)!important;color:var(--navy)!important}
+.val-nav-item.active{background:var(--gold-dim)!important;border-color:var(--gold-border)!important;color:var(--navy)!important;box-shadow:none!important}
+.val-nav-icon{color:var(--navy)!important}
+.val-dashboard-shell,.val-main,.val-main-content{background:var(--cream)!important;color:var(--navy)!important}
+.val-hero-kicker,.val-card-kicker{color:var(--navy)!important;letter-spacing:.04em!important}
+.val-hero-title{font-family:var(--body)!important;color:var(--navy)!important;font-weight:600!important;letter-spacing:0!important}
+.val-hero-subtitle{color:var(--text-2)!important}
+.val-command-grid{gap:16px!important}
+.val-command-card,.val-command-card.priority{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
+.val-command-card.priority{background:linear-gradient(135deg,#ffffff,#f8feff)!important;border-color:var(--gold-border)!important}
+.val-command-card *,.val-command-card.priority *{color:var(--navy)!important;text-shadow:none!important;opacity:1!important}
+.val-command-card .val-card-kicker,.val-command-card.priority .val-card-kicker{color:var(--navy)!important}
+.val-card-count{background:var(--gold-dim)!important;color:var(--navy)!important;border:1px solid var(--gold-border)!important;border-radius:999px!important}
+.val-card-action{background:#fff!important;color:var(--navy)!important;border:1px solid rgba(16,22,51,0.13)!important;border-radius:8px!important;text-transform:none!important;letter-spacing:0!important;font-weight:750!important}
+.val-command-card.priority .val-card-action,.val-card-action.primary{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+html body .app .val-command-card.priority button.val-card-action,
+html body .app button.val-card-action.primary,
+html body .app .center button.val-card-action{
+  background:#101633!important;border-color:#101633!important;color:#fff!important;
+}
+.val-card-action:hover{background:#f8feff!important;border-color:var(--gold-border)!important;transform:none!important}
+.val-side-panel,.val-week-panel,.val-week-card{background:#fff!important;color:var(--navy)!important;border-color:rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
+.val-week-panel *,.val-side-panel *,.val-week-card *{color:var(--navy)!important;text-shadow:none!important}
+.val-week-heading,.val-week-link{color:var(--navy)!important;letter-spacing:.04em!important}
+html body .app .alert-btn.primary,
+html body .app .center .alert-btn.primary,
+html body .app .exec-workspace-modal .alert-btn.primary,
+html body .app .exec-workspace-modal .exec-workspace-footer .alert-btn.primary,
+html body .app .exec-workspace-modal .email-actions button.primary,
+html body .app .exec-workspace-modal .michele-voice-action.primary,
+html body .app .exec-workspace-modal .task-actions button.primary{
+  background:#101633!important;border-color:#101633!important;color:#fff!important;
+}
+html body .exec-workspace-modal .alert-btn.primary,
+html body .exec-workspace-modal .teach-val-action-row .alert-btn.primary,
+html body .exec-workspace-modal .exec-workspace-footer .alert-btn.primary,
+html body .exec-workspace-modal .email-actions button.primary,
+html body .exec-workspace-modal .michele-voice-action.primary,
+html body .exec-workspace-modal .task-actions button.primary{
+  background:#101633!important;border-color:#101633!important;color:#fff!important;
+}
+.center h1,.center h2,.center h3,.exec-workspace-modal h1,.exec-workspace-modal h2,.exec-workspace-modal h3,.val-hero-title,.cw-title,.exec-workspace-title{
+  font-weight:600!important;
+}
+html body .send-btn,
+html body .ws-new-session,
+html body .social-plat.sel,
+html body .email-tabs button.active,
+html body .exec-workspace-modal .email-tabs button.active,
+html body .teach-val-prompt-btn.active,
+html body .task-card.done .task-check,
+html body .exec-workspace-modal .task-card.done .task-check{
+  background:#101633!important;border-color:#101633!important;color:#fff!important;
+}
+html body .send-btn svg,
+html body .ws-new-session svg,
+html body .ws-new-session span,
+html body .teach-val-prompt-btn.active *,
+html body .email-tabs button.active *,
+html body .exec-workspace-modal .email-tabs button.active *{
+  color:#fff!important;
+}
+html body .topbar .actions-menu,
+html body .actions-menu{
+  background:#fff!important;
+  color:#101633!important;
+  border:1px solid rgba(16,22,51,0.12)!important;
+  border-radius:8px!important;
+  box-shadow:0 24px 72px rgba(16,22,51,0.16)!important;
+  padding:10px!important;
+}
+html body .topbar .actions-menu::-webkit-scrollbar-thumb,
+html body .actions-menu::-webkit-scrollbar-thumb{
+  background:rgba(16,22,51,0.18)!important;
+  border-radius:999px!important;
+}
+html body .topbar .actions-menu .menu-hint,
+html body .actions-menu .menu-hint{
+  color:#6b7280!important;
+  font-family:var(--body)!important;
+  font-size:.72rem!important;
+  font-weight:500!important;
+  letter-spacing:.14em!important;
+  text-transform:uppercase!important;
+  padding:10px 12px 7px!important;
+}
+html body .topbar .actions-menu button,
+html body .actions-menu button{
+  min-height:44px!important;
+  background:#fff!important;
+  color:#101633!important;
+  border:1px solid transparent!important;
+  border-radius:8px!important;
+  font-family:var(--body)!important;
+  font-size:.95rem!important;
+  font-weight:600!important;
+  letter-spacing:0!important;
+  text-transform:none!important;
+  padding:10px 12px!important;
+}
+html body .topbar .actions-menu button span,
+html body .actions-menu button span{
+  color:#5f677d!important;
+  font-weight:600!important;
+}
+html body .topbar .actions-menu button:hover,
+html body .actions-menu button:hover{
+  background:rgba(16,22,51,0.05)!important;
+  border-color:rgba(16,22,51,0.1)!important;
+  color:#101633!important;
+}
+html body .topbar .actions-menu button.primary,
+html body .actions-menu button.primary{
+  background:#101633!important;
+  border-color:#101633!important;
+  color:#fff!important;
+}
+html body .topbar .actions-menu button.primary span,
+html body .actions-menu button.primary span{
+  color:rgba(255,255,255,0.78)!important;
+}
+html body .topbar .actions-menu button.primary:hover,
+html body .actions-menu button.primary:hover{
+  background:#27314f!important;
+  border-color:#27314f!important;
+  color:#fff!important;
+}
+html body .topbar .actions-menu .menu-sep,
+html body .actions-menu .menu-sep{
+  background:rgba(16,22,51,0.1)!important;
+  margin:10px 8px!important;
+}
+@media(max-width:900px){
+  .topbar{padding:10px 12px!important}
+  .statbar{height:auto!important;min-height:0!important}
+  .body{max-height:none!important}
+  .center-welcome{padding:22px 16px 104px!important}
+  .exec-workspace-overlay{padding:0!important}
+  .teach-val-shell{grid-template-columns:1fr!important}
+}
+</style>
+<style id="val-executive-home-redesign">
+:root{
+  --val-ink:#07182d;
+  --val-ink-2:#172740;
+  --val-gold:#c99a3d;
+  --val-gold-soft:#fff5d8;
+  --val-line:rgba(7,24,45,.1);
+  --val-card-shadow:0 16px 42px rgba(7,24,45,.08);
+  --val-logo-url:url('https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fd004c93b89d83f6008e6.png');
+  --val-brand-banner-url:url('https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fcfdfc408020f97c693d8.png');
+}
+html body .app{display:grid!important;grid-template-columns:186px minmax(0,1fr)!important;grid-template-rows:1fr!important;background:#fbfaf7!important}
+html body .topbar,html body .statbar,html body .lpanel,html body .rpanel{display:none!important}
+html body .body{grid-column:2!important;grid-row:1!important;display:flex!important;max-height:none!important;height:100dvh!important;min-height:0!important;background:#fbfaf7!important}
+html body .center{height:100dvh!important;background:#fbfaf7!important}
+html body .val-primary-nav{
+  grid-column:1!important;grid-row:1!important;width:186px!important;height:100dvh!important;position:relative!important;z-index:30!important;
+  display:flex!important;flex-direction:column!important;background:rgba(255,255,255,.92)!important;border-right:1px solid rgba(7,24,45,.08)!important;
+  box-shadow:6px 0 24px rgba(7,24,45,.035)!important;color:var(--val-ink)!important;overflow:hidden!important;
+}
+.val-nav-brand{display:grid!important;place-items:center!important;height:168px!important;min-height:168px!important;flex:0 0 168px!important;box-sizing:border-box!important;padding:20px 16px 14px!important;border-bottom:0!important;text-align:center!important;overflow:hidden!important}
+.val-nav-logo{display:block!important;width:118px!important;height:auto!important;max-height:138px!important;object-fit:contain!important}
+.val-nav-items{flex:1!important;overflow:auto!important;padding:10px 12px!important}
+.val-nav-group-label{font-size:.5rem!important;font-weight:800!important;letter-spacing:.14em!important;text-transform:uppercase!important;color:#a9a099!important;margin:16px 12px 6px!important}
+.val-nav-group-label:first-child{display:none!important}
+.val-nav-item{width:100%!important;height:44px!important;margin:2px 0!important;padding:0 11px!important;border-radius:8px!important;display:flex!important;align-items:center!important;gap:12px!important;background:transparent!important;border:1px solid transparent!important;color:#18243a!important;font-weight:600!important;font-size:.9rem!important;text-align:left!important;box-shadow:none!important}
+.val-nav-item:hover,.val-nav-item.active{background:#f3ead9!important;border-color:#ead9b9!important;color:var(--val-ink)!important}
+.val-nav-icon{width:20px!important;height:20px!important;display:grid!important;place-items:center!important;color:var(--val-ink)!important;flex-shrink:0!important}
+.val-nav-icon svg{width:19px!important;height:19px!important;fill:none!important;stroke:currentColor!important;stroke-width:1.8!important;stroke-linecap:round!important;stroke-linejoin:round!important}
+.val-nav-label{min-width:0!important;flex:1!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.val-nav-badge{min-width:18px!important;height:18px!important;border-radius:999px!important;background:#07182d!important;color:#fff!important;display:grid!important;place-items:center!important;font-size:.62rem!important;font-weight:800!important;padding:0 5px!important}
+.val-nav-badge.empty{display:none!important}
+.val-nav-foot{padding:13px 14px 19px!important;border-top:0!important}
+.val-nav-user{display:flex!important;align-items:center!important;gap:10px!important;color:var(--val-ink)!important}
+.val-user-avatar{width:34px!important;height:34px!important;border-radius:999px!important;display:grid!important;place-items:center!important;background:linear-gradient(135deg,#f6d48b,#fff8e4)!important;border:1px solid rgba(201,154,61,.32)!important;font-weight:800!important}
+.val-nav-user strong{display:block!important;font-size:.83rem!important;color:var(--val-ink)!important}
+.val-nav-user small{display:block!important;font-size:.62rem!important;color:#7a8497!important}
+.center-welcome.val-home{display:block!important;text-align:left!important;padding:0 42px 126px!important;overflow:auto!important;background:#fbfaf7!important;color:var(--val-ink)!important;position:relative!important}
+.val-briefing-contract{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}
+.val-home-hero{min-height:190px!important;display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:30px!important;padding:54px 22px 42px 28px!important;position:relative!important;overflow:hidden!important}
+.val-home-hero:before{content:""!important;position:absolute!important;top:0!important;right:-42px!important;width:min(55%,820px)!important;height:226px!important;opacity:.98!important;background:linear-gradient(90deg,rgba(251,250,247,0) 0%,rgba(251,250,247,.18) 16%,rgba(251,250,247,.02) 52%,rgba(251,250,247,.05) 100%),radial-gradient(circle at 78% 35%,rgba(255,236,170,.96) 0 3%,rgba(255,199,92,.65) 4% 8%,transparent 9%),linear-gradient(10deg,rgba(26,33,43,.40) 0 21%,transparent 22%),linear-gradient(5deg,rgba(85,96,110,.23) 0 31%,transparent 32%),linear-gradient(180deg,#fff8ea 0%,#f2cf9d 48%,#bfa47c 100%)!important;background-size:cover!important;background-position:center right!important;clip-path:polygon(16% 0,100% 0,100% 100%,0 100%)!important}
+.time-afternoon .val-home-hero:before{background:linear-gradient(90deg,rgba(251,250,247,0) 0%,rgba(251,250,247,.18) 16%,rgba(251,250,247,.02) 52%,rgba(251,250,247,.05) 100%),radial-gradient(circle at 80% 32%,rgba(255,231,157,.86) 0 3%,rgba(239,173,74,.48) 4% 8%,transparent 9%),linear-gradient(10deg,rgba(35,45,54,.34) 0 21%,transparent 22%),linear-gradient(5deg,rgba(103,112,123,.22) 0 31%,transparent 32%),linear-gradient(180deg,#fff7e4 0%,#ead1ab 48%,#c4b293 100%)!important}
+.time-evening .val-home-hero:before{background:linear-gradient(90deg,rgba(251,250,247,0) 0%,rgba(251,250,247,.15) 16%,rgba(251,250,247,.02) 52%,rgba(251,250,247,.04) 100%),radial-gradient(circle at 78% 36%,rgba(255,210,128,.78) 0 3%,rgba(224,129,84,.42) 4% 9%,transparent 10%),linear-gradient(10deg,rgba(31,40,54,.45) 0 21%,transparent 22%),linear-gradient(5deg,rgba(93,83,94,.26) 0 31%,transparent 32%),linear-gradient(180deg,#fde8c9 0%,#c7937e 52%,#807d91 100%)!important}
+.time-night .val-home-hero:before{background:linear-gradient(90deg,rgba(251,250,247,0) 0%,rgba(251,250,247,.20) 16%,rgba(251,250,247,.04) 52%,rgba(251,250,247,.10) 100%),radial-gradient(circle at 78% 35%,rgba(231,232,210,.72) 0 2.5%,rgba(210,210,190,.20) 3% 6%,transparent 7%),linear-gradient(10deg,rgba(11,20,34,.62) 0 22%,transparent 23%),linear-gradient(5deg,rgba(33,45,62,.36) 0 31%,transparent 32%),linear-gradient(180deg,#d8deea 0%,#77839b 45%,#253149 100%)!important}
+.val-home-hero>*{position:relative!important;z-index:1!important}
+.val-home-hero h1{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;font-size:2.95rem!important;line-height:1!important;font-weight:600!important;letter-spacing:0!important;color:var(--val-ink)!important;margin:0 0 12px!important}
+.val-home-hero p{font-size:1.13rem!important;line-height:1.45!important;color:#26354d!important;max-width:680px!important;margin:0!important}
+.val-home-hero p strong,.val-home-hero p em{color:#a77114!important;font-style:normal!important}
+.val-hero-note{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;font-size:1.02rem!important;color:#8a5a17!important;white-space:nowrap!important;margin-top:-4px!important}
+.val-hero-note span{margin-left:12px!important;color:#a36f21!important}
+.val-dashboard-grid{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;gap:16px!important;max-width:1280px!important;margin:0 auto!important;position:relative!important;z-index:2!important}
+.val-dash-card{min-height:258px!important;background:rgba(255,255,255,.92)!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:8px!important;box-shadow:var(--val-card-shadow)!important;padding:24px!important;color:var(--val-ink)!important;overflow:hidden!important}
+.val-dash-card.highest{background:linear-gradient(135deg,#fffdf8,#fff2c8)!important;border-color:rgba(201,154,61,.28)!important}
+.val-card-title{display:flex!important;align-items:center!important;gap:12px!important;margin-bottom:24px!important}
+.val-card-title h2{font:700 1.28rem Inter,system-ui,sans-serif!important;color:var(--val-ink)!important;margin:0!important;letter-spacing:0!important;flex:1!important}
+.val-card-symbol{width:30px!important;height:30px!important;border-radius:999px!important;display:grid!important;place-items:center!important;background:#f3f7fb!important;border:1px solid rgba(7,24,45,.08)!important;color:#3f536c!important;font-size:1rem!important}
+.val-card-symbol.gold{color:#f0a000!important;background:#fff7dc!important;border-color:#f5db9a!important}
+.val-card-link{border:0!important;background:transparent!important;color:#0c477b!important;font-size:.78rem!important;font-weight:600!important;padding:0!important;white-space:nowrap!important}
+.val-row-list,.val-people-list,.val-project-list,.val-momentum-list,.val-ready-list{display:grid!important;gap:15px!important}
+.val-dash-row{display:grid!important;grid-template-columns:28px minmax(0,1fr)!important;gap:13px!important;align-items:center!important;font-size:.95rem!important;color:#08172d!important;line-height:1.35!important}
+.val-row-icon{width:20px!important;height:20px!important;border-radius:5px!important;display:grid!important;place-items:center!important;background:#5bae57!important;color:#fff!important;font-size:.75rem!important;font-weight:900!important}
+.val-row-icon.risk{background:#f1663d!important}.val-row-icon.deadline{background:#2876c8!important}.val-row-icon.relationship_signal,.val-row-icon.relationship{background:#54a85a!important}
+.val-dash-card.highest h3{font:700 1.42rem Inter,system-ui,sans-serif!important;color:var(--val-ink)!important;line-height:1.25!important;margin:0 0 14px!important}
+.val-dash-card.highest p{font-size:.98rem!important;line-height:1.55!important;color:#26354d!important;margin:0 0 26px!important}
+.val-leverage-meta{border-top:1px solid rgba(7,24,45,.11)!important;padding-top:17px!important;margin-bottom:20px!important;display:grid!important;gap:12px!important}
+.val-leverage-meta span{display:flex!important;justify-content:space-between!important;gap:12px!important;font-size:.88rem!important;color:#172740!important}
+.val-leverage-meta strong{font-weight:500!important;color:#172740!important;background:#dff1d8!important;border-radius:999px!important;padding:3px 14px!important}
+.val-primary-action{height:44px!important;min-width:182px!important;border:0!important;border-radius:6px!important;background:#07182d!important;color:#fff!important;font-weight:800!important;font-size:.88rem!important;box-shadow:0 9px 18px rgba(7,24,45,.18)!important}
+.val-person-row,.val-project-row{display:grid!important;grid-template-columns:42px minmax(0,1fr) auto!important;gap:12px!important;align-items:center!important;border:0!important;border-bottom:1px solid rgba(7,24,45,.09)!important;background:transparent!important;padding:0 0 12px!important;text-align:left!important}
+.val-person-row:last-child,.val-project-row:last-child{border-bottom:0!important;padding-bottom:0!important}
+.val-person-avatar{width:40px!important;height:40px!important;border-radius:999px!important;display:grid!important;place-items:center!important;background:linear-gradient(135deg,#f5d6a2,#e9eef4)!important;color:#07182d!important;font-weight:800!important}
+.val-person-row strong,.val-project-row strong{display:block!important;color:#07182d!important;font-size:.96rem!important;line-height:1.2!important}
+.val-person-row small,.val-project-row small{display:block!important;color:#576174!important;font-size:.82rem!important;margin-top:3px!important}
+.val-person-row small.up,.val-person-row em.up,.val-project-row em.up{color:#319236!important}.val-person-row small.risk,.val-person-row em.risk,.val-project-row em.risk{color:#f05a2a!important}.val-person-row small.steady,.val-person-row em.steady{color:#1c6ec4!important}
+.val-person-row em,.val-project-row em{font-style:normal!important;font-size:1.35rem!important}
+.val-project-icon{width:34px!important;height:34px!important;border-radius:999px!important;background:#e2f3dc!important;color:#319236!important;display:grid!important;place-items:center!important;font-weight:900!important}
+.val-project-icon.risk{background:#ffeadf!important;color:#f05a2a!important}
+.val-project-row em{font-size:.78rem!important;font-weight:700!important;white-space:nowrap!important}
+.val-momentum-row{display:grid!important;grid-template-columns:34px minmax(0,1fr)!important;gap:12px!important;align-items:start!important}
+.val-momentum-row>span{width:30px!important;height:30px!important;border-radius:999px!important;display:grid!important;place-items:center!important;border:2px solid currentColor!important;font-weight:900!important}
+.val-momentum-row strong{display:block!important;color:#319236!important;font-size:.92rem!important;line-height:1.2!important}.val-momentum-row small{display:block!important;color:#596376!important;font-size:.83rem!important;line-height:1.35!important}
+.val-momentum-row.watch,.val-momentum-row.watch strong{color:#f0a000!important}.val-momentum-row.risk,.val-momentum-row.risk strong{color:#f05a2a!important}.val-momentum-row.recover,.val-momentum-row.recover strong{color:#1c6ec4!important}.val-momentum-row.up,.val-momentum-row.up strong{color:#319236!important}
+.val-ready-row{display:grid!important;grid-template-columns:24px minmax(0,1fr) auto!important;gap:11px!important;align-items:center!important;color:#1b2a40!important;font-size:.95rem!important}
+.val-ready-row span{width:20px!important;height:20px!important;border-radius:999px!important;border:1px solid #42a04a!important;color:#42a04a!important;display:grid!important;place-items:center!important;font-size:.72rem!important}
+.val-ready-row strong{font-weight:500!important;color:#26354d!important}
+.val-home-chat{max-width:1080px!important;margin:22px auto 0!important;height:84px!important;border-radius:999px!important;border:1px solid rgba(7,24,45,.09)!important;background:rgba(255,255,255,.92)!important;box-shadow:0 16px 44px rgba(7,24,45,.08)!important;display:grid!important;grid-template-columns:40px minmax(0,1fr) 54px!important;align-items:center!important;gap:12px!important;padding:0 15px 0 30px!important}
+.val-home-chat>span{color:#9ca8ba!important;font-size:1.35rem!important}.val-home-chat button{border:0!important;background:transparent!important;text-align:left!important;color:#8a93a3!important;font-size:1rem!important}.val-home-send{width:48px!important;height:48px!important;border-radius:999px!important;background:#d7b072!important;color:#fff!important;text-align:center!important;font-size:1.45rem!important;font-weight:900!important}
+.cmd-area{display:none!important}
+.val-talk-button{position:fixed!important;right:34px!important;bottom:28px!important;width:94px!important;height:94px!important;border-radius:999px!important;border:0!important;background:#07182d!important;color:#fff!important;display:grid!important;place-items:center!important;gap:2px!important;box-shadow:0 18px 44px rgba(7,24,45,.28)!important;z-index:80!important;font-size:.72rem!important;font-weight:700!important}
+.val-talk-button span{width:28px!important;height:24px!important;border:2px solid #fff!important;border-radius:999px!important;position:relative!important}.val-talk-button span:after{content:""!important;position:absolute!important;left:4px!important;bottom:-6px!important;border-top:7px solid #fff!important;border-right:7px solid transparent!important}
+.val-mobile-nav-floating{display:none!important}
+.val-transcript-view.open,.center-detail.open{z-index:90!important}
+@media(max-width:1180px){
+  html body .app{grid-template-columns:76px minmax(0,1fr)!important}
+  html body .val-primary-nav{width:76px!important}
+  .val-nav-item span:last-child,.val-nav-group-label,.val-nav-user span:last-child{display:none!important}
+  .val-nav-brand{height:76px!important;min-height:76px!important;flex-basis:76px!important;padding:10px 8px!important}.val-nav-logo{width:54px!important;max-height:56px!important}.val-nav-item{justify-content:center!important;padding:0!important}.val-nav-icon{width:24px!important;height:24px!important}
+  .val-dashboard-grid{grid-template-columns:1fr 1fr!important}
+}
+@media(max-width:820px){
+  html body .app{display:block!important}
+  html body .val-primary-nav{position:fixed!important;left:0!important;top:0!important;bottom:0!important;transform:translateX(-105%)!important;transition:transform .2s ease!important;width:240px!important}
+  html body .val-primary-nav.open{transform:translateX(0)!important}
+  .val-mobile-nav-floating{display:grid!important;position:fixed!important;top:12px!important;left:12px!important;z-index:120!important;width:38px!important;height:38px!important;border-radius:999px!important;border:1px solid rgba(7,24,45,.12)!important;background:rgba(255,255,255,.92)!important;color:#07182d!important;place-items:center!important;box-shadow:0 10px 24px rgba(7,24,45,.12)!important;font-size:1.1rem!important}
+  html body .body{height:100svh!important}.center-welcome.val-home{padding:0 16px 124px!important}
+  .val-home-hero{padding:34px 4px 28px!important;min-height:160px!important}.val-home-hero:before{width:100%!important;height:170px!important;opacity:.5!important}
+  .val-home-hero h1{font-size:2.15rem!important}.val-home-hero p{font-size:.98rem!important}.val-hero-note{display:none!important}
+  .val-dashboard-grid{grid-template-columns:1fr!important}.val-dash-card{min-height:auto!important;padding:18px!important}
+  .val-home-chat{height:64px!important;grid-template-columns:24px minmax(0,1fr) 44px!important;padding-left:18px!important}.val-talk-button{width:62px!important;height:62px!important;right:14px!important;bottom:14px!important;font-size:0!important;gap:0!important}.val-talk-button span{width:24px!important;height:20px!important}
+}
+</style>
 </head>
 <body>
 <div class="app">
+<nav id="valPrimaryNav" class="val-primary-nav" aria-label="Primary navigation">
+  <div class="val-nav-brand"><img class="val-nav-logo" src="https://assets.cdn.filesafe.space/JuRSFup6NNQErVKkXlX5/media/6a3fd004c93b89d83f6008e6.png" alt="VAL"></div>
+  <div class="val-nav-items">
+    <button class="val-nav-item active" data-view="dashboard"><span class="val-nav-icon">⌂</span><span>Home</span></button>
+    <button class="val-nav-item" data-view="relationships"><span class="val-nav-icon">♙</span><span>Relationships</span></button>
+    <button class="val-nav-item" data-view="projects"><span class="val-nav-icon">□</span><span>Projects</span></button>
+    <button class="val-nav-item" data-view="evidence"><span class="val-nav-icon">▣</span><span>Evidence</span></button>
+    <button class="val-nav-item" data-view="calendar"><span class="val-nav-icon">▤</span><span>Calendar</span></button>
+    <button class="val-nav-item" data-view="documents"><span class="val-nav-icon">▧</span><span>Documents</span></button>
+    <div class="val-nav-group-label">Momentum</div>
+    <button class="val-nav-item" data-view="email_intelligence"><span class="val-nav-icon">✉</span><span>Email Intelligence</span></button>
+    <button class="val-nav-item" data-view="leads_employers"><span class="val-nav-icon">⌕</span><span>Scrape Employers</span></button>
+    <button class="val-nav-item" data-view="leads_partners"><span class="val-nav-icon">⌕</span><span>Scrape Partners</span></button>
+    <button class="val-nav-item" data-view="tasks"><span class="val-nav-icon">✓</span><span>Actions</span></button>
+    <button class="val-nav-item" data-view="drafts"><span class="val-nav-icon">✎</span><span>Drafts</span></button>
+    <button class="val-nav-item" data-view="teach_val"><span class="val-nav-icon">✦</span><span>Teach VAL</span></button>
+    <div class="val-nav-group-label">System</div>
+    <button class="val-nav-item" data-view="settings_dashboard_studio"><span class="val-nav-icon">▥</span><span>Dashboard Studio</span></button>
+    <button class="val-nav-item" data-view="settings_templates"><span class="val-nav-icon">▧</span><span>Templates</span></button>
+    <button class="val-nav-item" data-view="settings_api_keys"><span class="val-nav-icon">⌘</span><span>API Keys & Connections</span></button>
+    <button class="val-nav-item" data-view="settings_security"><span class="val-nav-icon">◈</span><span>Security & Privacy</span></button>
+    <button class="val-nav-item" data-view="settings"><span class="val-nav-icon">⚙</span><span>Settings</span></button>
+  </div>
+  <div class="val-nav-foot"><div class="val-nav-user"><span class="val-user-avatar">J</span><span><strong>Jessa</strong><small id="valNavStatus">System ready</small></span></div></div>
+</nav>
 
 <!-- ══ WORKSPACE SIDEBAR OVERLAY ══ -->
 <div class="ws-overlay" id="wsOverlay" onclick="closeWorkspace(event)">
@@ -1226,6 +1750,7 @@ body{font-size:1rem}
       </button>
       <div class="actions-menu" id="actionsMenu">
         <div class="menu-hint">Create</div>
+        <button class="primary" onclick="closeActionsMenu();openTeachValOnboarding()">Teach VAL <span>Onboard</span></button>
         <button class="primary" onclick="closeActionsMenu();startSocialPost()">Post <span>Social</span></button>
         <button onclick="closeActionsMenu();openMeetingBriefing()">Meeting Briefing <span>Prep</span></button>
         <button onclick="closeActionsMenu();openDraftsPage()">Drafts <span>Review</span></button>
@@ -1356,48 +1881,59 @@ body{font-size:1rem}
   <!-- CENTER -->
   <div class="center">
     <!-- Welcome state -->
-    <div class="center-welcome" id="centerWelcome">
-      <div class="cw-label">Executive Command Center</div>
-      <div class="cw-title">What VAL noticed</div>
-      <div class="cw-sub">Start with the signals that need judgment or action. Open the workspace, let VAL draft the next move, or dismiss what does not matter.</div>
-      <div class="alert-board" id="alertBoard">
-        <section class="alert-section primary">
-          <div class="alert-kicker">Priority Review</div>
-          <div class="alert-title">Your day has open loops across meetings, tasks, relationships, and pipeline.</div>
-          <div class="alert-copy">VAL checked the dashboard context and can turn the scattered signals into a ranked executive action list.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openPriorityReview()">Do It</button><button class="alert-btn" onclick="openPriorityReview()">Show Me</button><button class="alert-btn" onclick="snoozeAlert(this)">Later</button></div>
-        </section>
-        <section class="alert-section">
-          <div class="alert-kicker">Relationship Alert</div>
-          <div class="alert-title">A high-value relationship may need follow-up.</div>
-          <div class="alert-copy">Why it matters: relationship drift creates missed revenue, weak referrals, and forgotten commitments.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openRelationshipReview()">Review</button><button class="alert-btn" onclick="ask('Draft outreach for the highest priority relationship that needs follow-up.')">Draft Message</button><button class="alert-btn" onclick="snoozeAlert(this)">Snooze</button></div>
-        </section>
-        <section class="alert-section">
-          <div class="alert-kicker">Email Alert</div>
-          <div class="alert-title">Messages may need response or tracking.</div>
-          <div class="alert-copy">VAL can separate replies, waiting-on-response threads, draft suggestions, and low-priority noise.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openEmailIntelligence()">Open Email AI</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="dismissAlert(this)">Dismiss</button></div>
-        </section>
-        <section class="alert-section">
-          <div class="alert-kicker">Meeting Alert</div>
-          <div class="alert-title">The next meeting deserves a briefing.</div>
-          <div class="alert-copy">VAL can pull attendees, calendar context, transcripts, emails, open loops, and suggested questions.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openMeetingBriefing()">Prepare Briefing</button><button class="alert-btn" onclick="openMeetingBriefing()">Show Me</button><button class="alert-btn" onclick="snoozeAlert(this)">Later</button></div>
-        </section>
-        <section class="alert-section">
-          <div class="alert-kicker">Commitment Alert</div>
-          <div class="alert-title">Promised follow-ups and tasks should be checked.</div>
-          <div class="alert-copy">VAL can connect tasks to people, meetings, drafts, and overdue commitments so nothing sits passive.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openPriorityReview()">Create Task</button><button class="alert-btn" onclick="askTasks()">Review</button><button class="alert-btn" onclick="dismissAlert(this)">Never Ask Again</button></div>
-        </section>
-        <section class="alert-section">
-          <div class="alert-kicker">Opportunity Alert</div>
-          <div class="alert-title">Pipeline and lead signals may point to hidden revenue.</div>
-          <div class="alert-copy">VAL can inspect stalled opportunities, suggested introductions, lead scrape results, and next best actions.</div>
-          <div class="alert-actions"><button class="alert-btn primary" onclick="openOpportunityIntelligence()">Do It</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="snoozeAlert(this)">Snooze</button></div>
-        </section>
+    <div class="center-welcome val-home time-morning" id="centerWelcome">
+      <div class="val-home-hero">
+        <div><h1>Good morning, Jessa.</h1><p>I’ve been paying attention. Here’s what <em>matters</em> today.</p></div>
+        <div class="val-hero-note">You’ve got this. <span>♡</span></div>
       </div>
+      <section class="val-dashboard-grid">
+        <article class="val-dash-card what-changed">
+          <div class="val-card-title"><span class="val-card-symbol">⌾</span><h2>What Changed</h2><button class="val-card-link">View all</button></div>
+          <div class="val-row-list">
+            <div class="val-dash-row"><span class="val-row-icon relationship_signal">↗</span><span>VAL is watching for new evidence.</span></div>
+            <div class="val-dash-row"><span class="val-row-icon decision">✓</span><span>Emails and transcripts will appear here after sync.</span></div>
+            <div class="val-dash-row"><span class="val-row-icon risk">!</span><span>No urgent risk has surfaced yet.</span></div>
+            <div class="val-dash-row"><span class="val-row-icon deadline">□</span><span>Calendar shifts will be noticed here.</span></div>
+          </div>
+        </article>
+        <article class="val-dash-card highest">
+          <div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2><button class="val-card-link">View details</button></div>
+          <h3>No major move is ready yet</h3><p>VAL is watching without forcing action.</p>
+          <div class="val-leverage-meta"><span>Estimated impact <strong>Quiet</strong></span><span>Confidence <strong>--</strong></span></div>
+          <button class="val-primary-action">Keep Watching</button>
+        </article>
+        <article class="val-dash-card people">
+          <div class="val-card-title"><span class="val-card-symbol">♙</span><h2>People</h2><button class="val-card-link">View all</button></div>
+          <div class="val-people-list"><button class="val-person-row"><span class="val-person-avatar">R</span><span><strong>Relationships</strong><small class="steady">Waiting for evidence</small></span><em class="steady">→</em></button></div>
+        </article>
+        <article class="val-dash-card projects">
+          <div class="val-card-title"><span class="val-card-symbol">□</span><h2>Projects</h2><button class="val-card-link">View all</button></div>
+          <div class="val-project-list">
+            <button class="val-project-row"><span class="val-project-icon">↗</span><span><strong>VAL Platform</strong><small>Evidence and briefing system</small></span><em class="up">Momentum</em></button>
+            <button class="val-project-row"><span class="val-project-icon">↗</span><span><strong>Relationship Engine</strong><small>People create velocity</small></span><em class="up">Momentum</em></button>
+            <button class="val-project-row"><span class="val-project-icon risk">↘</span><span><strong>Email Intelligence</strong><small>Evidence before actions</small></span><em class="risk">Watching</em></button>
+          </div>
+        </article>
+        <article class="val-dash-card momentum">
+          <div class="val-card-title"><span class="val-card-symbol">◷</span><h2>Momentum</h2><button class="val-card-link">View analysis</button></div>
+          <div class="val-momentum-list">
+            <div class="val-momentum-row up"><span>↗</span><div><strong>Momentum Increasing</strong><small>Evidence spine, relationship engine, executive briefing</small></div></div>
+            <div class="val-momentum-row watch"><span>↘</span><div><strong>Momentum Slowing</strong><small>Inbox visibility depends on email sync depth</small></div></div>
+            <div class="val-momentum-row risk"><span>↓</span><div><strong>Momentum At Risk</strong><small>Too many suggested actions would reduce trust</small></div></div>
+            <div class="val-momentum-row recover"><span>↻</span><div><strong>Momentum Recovering</strong><small>Dashboard now shows judgment instead of raw data</small></div></div>
+          </div>
+        </article>
+        <article class="val-dash-card ready">
+          <div class="val-card-title"><span class="val-card-symbol">✧</span><h2>Ready for You</h2></div>
+          <div class="val-ready-list">
+            <div class="val-ready-row"><span>✓</span><strong>VAL is not forcing action yet</strong><button class="val-card-link">View</button></div>
+            <div class="val-ready-row"><span>✓</span><strong>Evidence pipeline is ready</strong><button class="val-card-link">View</button></div>
+            <div class="val-ready-row"><span>✓</span><strong>Relationship signals will surface here</strong><button class="val-card-link">View</button></div>
+          </div>
+        </article>
+      </section>
+      <div class="val-home-chat"><span>✦</span><button>What are we working on today?</button><button class="val-home-send">↑</button></div>
+      <button class="val-talk-button"><span></span><strong>Talk to VAL</strong></button>
     </div>
 
     <!-- Detail / chat view -->
@@ -1515,7 +2051,30 @@ function renderKeysPanel(message){
   var intro=message||'Client-owned provider keys live here, encrypted per tenant. Railway variables are platform-level only and are not created for client API keys.';
   var warning=!tenantApiKeyStatus.encryptionConfigured?'<div class="email-reason" style="border-color:#dc2626;background:#fef2f2;color:#7f1d1d"><strong>Encryption key missing.</strong> Saving tenant API keys is blocked until ENCRYPTION_KEY is configured.</div>':'';
   var fallback=tenantApiKeyStatus.platformFallbackAllowed?'<div class="email-reason">Platform/demo fallback is enabled for this environment.</div>':'<div class="email-reason">No silent platform-key fallback. If a tenant key is missing, VAL will ask the client to connect that provider.</div>';
-  body.innerHTML='<div class="keys-note">'+intro+'</div>'+warning+fallback+(tenantApiKeyProviders||[]).map(renderTenantApiKeyCard).join('');
+  body.innerHTML='<div class="keys-note">'+intro+'</div><section class="key-card" id="setupHealthPanel"><h3>Setup Health</h3><p>Checking Railway variables, Postgres, AI chat, Google, and Microsoft...</p></section>'+warning+fallback+(tenantApiKeyProviders||[]).map(renderTenantApiKeyCard).join('');
+  loadSetupHealthPanel();
+}
+function setupHealthBadge(status){
+  var good=status==='Connected',warn=status==='Misconfigured';
+  return '<span class="email-pill" style="background:'+(good?'rgba(34,197,94,.16)':warn?'rgba(245,158,11,.18)':'rgba(220,38,38,.14)')+';color:'+(good?'#14532d':warn?'#78350f':'#7f1d1d')+'">'+docSafe(status)+'</span>';
+}
+function setupHealthRow(item){
+  return '<div class="rule-row"><strong>'+docSafe(item.name)+'</strong><div>'+docSafe(item.controls||'')+'</div><div style="margin-top:6px">'+setupHealthBadge(item.status)+'</div><div class="email-reason" style="margin-top:8px">'+docSafe(item.howToFix||'Add this in Railway Variables, then redeploy.')+'</div></div>';
+}
+function loadSetupHealthPanel(){
+  var panel=document.getElementById('setupHealthPanel');if(!panel)return;
+  apiFetch(PROXY+'/api/setup-health').then(function(data){
+    var items=(data.items||[]).map(setupHealthRow).join('');
+    var google=data.google||{}, microsoft=data.microsoft||{};
+    panel.innerHTML='<h3>Setup Health</h3><p>Railway variables are checked without revealing secret values.</p>'
+      +'<div class="val-mini-list">'+items+'</div>'
+      +'<div class="email-reason"><strong>Google:</strong> '+docSafe(google.connected?'Connected':google.setupMessage||'Not connected')+'</div>'
+      +'<div class="email-actions"><button class="primary" onclick="window.open(PROXY+\'/auth/google\',\'_blank\',\'noopener\')">'+(google.connected?'Reconnect Google':'Connect Google')+'</button></div>'
+      +'<div class="email-reason"><strong>Microsoft:</strong> '+docSafe(microsoft.connected?'Connected':microsoft.setupMessage||'Not connected')+'</div>'
+      +'<div class="email-actions"><button class="primary" onclick="connectMicrosoft()">'+(microsoft.connected?'Reconnect Microsoft':'Connect Microsoft')+'</button><button onclick="openIntegrationStatus()">Open Live Integration Status</button></div>';
+  }).catch(function(e){
+    panel.innerHTML='<h3>Setup Health</h3><div class="email-reason">Setup Health could not load: '+docSafe(e.message||e)+'</div>';
+  });
 }
 function renderTenantApiKeyCard(p){
   var provider=p.providerId||p.provider||'';
@@ -1697,10 +2256,52 @@ function selectDashboardStudioFeature(feature){
   dashboardStudioDraftScope.feature=feature;
   refreshDashboardStudioScopeBuilder();
 }
+function babyStudioFormHtml(settings){
+  settings=settings||{};
+  var links=(settings.importantLinks||[]).map(function(l){return (l.label||'')+' | '+(l.url||'');}).join('\n');
+  var cards=['today','chat','calendar','tasks','integrations','relationships','transcripts'];
+  var shown=settings.shownCards||['today','chat','calendar','tasks','integrations'];
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Simple Baby VAL Settings</h3><p>These edits save to this VAL’s existing Postgres and update the dashboard/chat behavior without Codex.</p>'
+    +'<div class="exec-workspace-grid">'
+    +'<label>Baby VAL name<input id="babyStudioName" value="'+docSafe(settings.babyValName||VAL_CONFIG.brandName||'VAL')+'" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"></label>'
+    +'<label>Brand/accent color<input id="babyStudioAccent" type="color" value="'+docSafe(settings.accentColor||'#C4963A')+'" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"></label>'
+    +'</div>'
+    +'<label>Welcome message<textarea id="babyStudioWelcome" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.welcomeMessage||'')+'</textarea></label>'
+    +'<label>About Me context<textarea id="babyStudioAbout" rows="4" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.aboutMe||'')+'</textarea></label>'
+    +'<label>Preferred tone<textarea id="babyStudioTone" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.preferredTone||'')+'</textarea></label>'
+    +'<label>Important links <span class="email-reason">One per line: Label | https://example.com</span><textarea id="babyStudioLinks" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(links)+'</textarea></label>'
+    +'<div class="email-reason"><strong>Dashboard cards shown</strong><br>'+cards.map(function(card){return '<label style="display:inline-flex;align-items:center;gap:6px;margin:6px 12px 0 0"><input type="checkbox" class="babyStudioCard" value="'+docSafe(card)+'" '+(shown.indexOf(card)>-1?'checked':'')+'> '+docSafe(card)+'</label>';}).join('')+'</div>'
+    +'<label>Simple instructions for how Baby VAL should help<textarea id="babyStudioInstructions" rows="4" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827">'+docSafe(settings.simpleInstructions||'')+'</textarea></label>'
+    +'<div class="email-actions"><button class="primary" onclick="saveBabyStudioSettings()">Save Settings</button><span id="babyStudioSaveState" class="email-reason">Ready</span></div></section>';
+}
+function babyStudioPayload(){
+  return {
+    babyValName:(document.getElementById('babyStudioName')||{}).value||'',
+    welcomeMessage:(document.getElementById('babyStudioWelcome')||{}).value||'',
+    accentColor:(document.getElementById('babyStudioAccent')||{}).value||'#C4963A',
+    aboutMe:(document.getElementById('babyStudioAbout')||{}).value||'',
+    preferredTone:(document.getElementById('babyStudioTone')||{}).value||'',
+    importantLinks:(document.getElementById('babyStudioLinks')||{}).value||'',
+    shownCards:Array.from(document.querySelectorAll('.babyStudioCard:checked')).map(function(x){return x.value;}),
+    simpleInstructions:(document.getElementById('babyStudioInstructions')||{}).value||''
+  };
+}
+function saveBabyStudioSettings(){
+  var state=document.getElementById('babyStudioSaveState');if(state)state.textContent='Saving...';
+  apiFetch(PROXY+'/api/baby-val-studio/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(babyStudioPayload())})
+    .then(function(data){
+      if(state)state.textContent='Saved';
+      VAL_CONFIG.babyValStudioSettings=data.settings;
+      VAL_CONFIG.brandName=data.settings.babyValName||VAL_CONFIG.brandName;
+      document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
+      addSys('Dashboard Studio settings saved.');
+    })
+    .catch(function(e){if(state)state.textContent=e.message||'Could not save because Postgres is unavailable';});
+}
 function openDashboardStudioPage(){
   if(!(VAL_CONFIG&&VAL_CONFIG.featureFlags&&VAL_CONFIG.featureFlags.dashboard_studio_beta)){addSys('Dashboard Studio is not enabled for this VAL.');return;}
   var body='<div id="dashboardStudioBody"><div class="task-empty">Loading Dashboard Studio Beta...</div></div>';
-  openExecutiveWorkspace({id:'dashboardStudioWorkspace',title:'Dashboard Studio Beta',body:body,footer:'<button class="alert-btn primary" onclick="submitDashboardStudioRequest()">Submit Request</button><button class="alert-btn" onclick="loadDashboardStudio()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'dashboardStudioWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'dashboardStudioWorkspace',title:'Dashboard Studio',body:body,footer:'<button class="alert-btn primary" onclick="saveBabyStudioSettings()">Save Simple Settings</button><button class="alert-btn" onclick="submitDashboardStudioRequest()">Submit Advanced Request</button><button class="alert-btn" onclick="loadDashboardStudio()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'dashboardStudioWorkspace\')">Close</button>'});
   loadDashboardStudio();
 }
 function loadDashboardStudio(){
@@ -1711,6 +2312,7 @@ function loadDashboardStudio(){
 function renderDashboardStudio(data){
   var el=document.getElementById('dashboardStudioBody');if(!el)return;
   if(!data||!data.ok){el.innerHTML='<div class="exec-card"><h3>Dashboard Studio unavailable</h3><p>'+docSafe((data&&data.error)||'This beta is not enabled here.')+'</p></div>';return;}
+  var simpleSettings=(VAL_CONFIG&&VAL_CONFIG.babyValStudioSettings)||{};
   var rows=(data.requests||[]).map(function(r){
     var approve=(r.status!=='blocked'&&r.classification!=='blocked'&&r.classification!=='premium_request'&&r.status!=='approved'&&r.status!=='approved_for_deployment'&&r.status!=='deployed'&&r.status!=='deployment_failed'&&r.status!=='config_applied'&&r.status!=='pr_created')
       ? '<div class="email-actions"><button class="primary" onclick="approveDashboardStudioRequest(\''+docSafe(r.id)+'\')">Jessa says deploy</button></div>':'';
@@ -1733,6 +2335,7 @@ function renderDashboardStudio(data){
   var activeSummary=active?('Active deployment: '+(active.activeDeploymentId||'tenant override')+' · updated '+(active.updatedAt?new Date(active.updatedAt).toLocaleString():'recently')):'No active Dashboard Studio override deployed.';
   var activeConfig=active&&active.config?JSON.stringify(active.config,null,2):'';
   el.innerHTML='<div class="exec-workspace-grid">'
+    +babyStudioFormHtml(simpleSettings)
     +'<section class="exec-card"><h3>Safety Notice</h3><p>'+docSafe(data.safetyNotice||'Dashboard Studio is a beta feature.')+'</p><div class="email-reason">Approval phrase: <strong>'+docSafe(data.approvalPhrase||'Jessa says deploy')+'</strong><br>Only use this when Jessa is present and approves this dashboard change.</div></section>'
     +'<section class="exec-card"><h3>Deployment Status</h3><p>'+docSafe(activeSummary)+'</p>'+(active?'<pre class="email-reason" style="white-space:pre-wrap;max-height:160px;overflow:auto">'+docSafe(activeConfig)+'</pre>':'')+'<div class="email-actions"><button onclick="loadDashboardStudio()">Refresh Status</button>'+(active&&active.canRollback&&active.rollbackDeploymentId?'<button onclick="rollbackDashboardStudioDeployment(\''+docSafe(active.rollbackDeploymentId)+'\')">Rollback Active Override</button>':'')+'</div></section>'
     +'<section class="exec-card" style="grid-column:1/-1"><h3>Dashboard Studio Project Manager</h3><p>Pick a lane first so VAL already knows the scope before you describe the change.</p>'+dashboardStudioScopeBuilderHtml()+'</section>'
@@ -1982,6 +2585,7 @@ function renderEmailSyncStatus(data){
     g.lastSuccessfulSyncAt||g.lastSyncAt?'Last successful sync: '+new Date(g.lastSuccessfulSyncAt||g.lastSyncAt).toLocaleString():'No successful sync recorded yet',
     'Fetched: '+(g.fetchedCount!=null?g.fetchedCount:(g.recentInboxCount||0)),
     'Analyzed: '+(g.analyzedCount!=null?g.analyzedCount:((data&&data.emails&&data.emails.length)||0)),
+    'Evidence: '+(g.evidenceCaptured!=null?g.evidenceCaptured:((data&&data.summary&&data.summary.evidenceCaptured)||0)),
     g.lastQuery?'Query: '+g.lastQuery:'',
     g.error?'Error: '+g.error:''
   ].filter(Boolean);
@@ -2297,25 +2901,50 @@ function runBookAction(action,label,query){
   runValAction(action,label,query||('Use all uploaded manuscript, chapter, outline, transcript, and launch-note memory for '+project+'. If no manuscript material is uploaded yet, say that clearly and use labeled sample/demo guidance only.'));
 }
 function micheleBookCard(title,body){
-  return '<section class="exec-card michele-book-card"><h3>'+docSafe(title)+'</h3><p>'+docSafe(body)+'</p></section>';
+  return '<section class="exec-card michele-book-card"><h3>'+docSafe(title)+'</h3><p style="white-space:pre-line">'+docSafe(body).replace(/\\\\n/g,'\n')+'</p></section>';
 }
 function micheleBookListText(value){
   if(Array.isArray(value)){
-    return '<ul class="michele-book-mini-list">'+value.slice(0,3).map(function(v){return '<li>'+docSafe(v)+'</li>';}).join('')+'</ul>';
+    return '<ul class="michele-book-mini-list">'+value.slice(0,3).map(function(v){return '<li>'+docSafe(clampMicheleBookText(safeMicheleBookDisplayText(v),220))+'</li>';}).join('')+'</ul>';
   }
-  return '<p>'+docSafe(value||'')+'</p>';
+  return '<p>'+docSafe(clampMicheleBookText(safeMicheleBookDisplayText(value||''),320))+'</p>';
+}
+function clampMicheleBookText(value,max){
+  var text=String(value||'').replace(/\s+/g,' ').trim();
+  max=max||260;
+  if(text.length<=max)return text;
+  return text.slice(0,max-1).trim()+'…';
+}
+function micheleLooksLikeRawChapterText(value){
+  var text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text)return false;
+  if(text.length>900)return true;
+  if(/\bChapter\s+#?\d+\s*:/i.test(text)&&text.length>260)return true;
+  if((text.match(/[.!?]\s+[A-Z“"]/g)||[]).length>9&&text.length>520)return true;
+  if(/\b(I was|I had|I remember|you can’t make|Universe|sneakers|scarf|accident)\b/i.test(text)&&text.length>520)return true;
+  return false;
+}
+function safeMicheleBookDisplayText(value){
+  var text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text)return '';
+  if(micheleLooksLikeRawChapterText(text)){
+    return 'VAL has the chapter loaded for context. The manuscript text is hidden here so Michele can stay focused on the editorial conversation.';
+  }
+  return text;
 }
 function micheleBookBullets(summary){
   var items=[];
-  if(summary&&summary.noticed)items.push(['What the editor noticed',summary.noticed]);
-  if(summary&&summary.recommends)items.push(['What VAL recommends',summary.recommends]);
-  if(summary&&summary.question)items.push(['Question for Michele',summary.question]);
+  if(summary&&summary.chapterSummary)items.push(['Chapter summary',safeMicheleBookDisplayText(summary.chapterSummary)]);
+  if(summary&&summary.strengths)items.push(['3 things working',Array.isArray(summary.strengths)?summary.strengths.map(safeMicheleBookDisplayText):safeMicheleBookDisplayText(summary.strengths)]);
+  if(summary&&summary.opportunities)items.push(['3 things to improve',Array.isArray(summary.opportunities)?summary.opportunities.map(safeMicheleBookDisplayText):safeMicheleBookDisplayText(summary.opportunities)]);
+  if(summary&&summary.question)items.push(['Question for Michele',safeMicheleBookDisplayText(summary.question)]);
   if(!items.length)items=[
-    ['What VAL noticed',['The next chapter is ready for a calm review, with enough manuscript context for VAL to make an actual rewrite instead of another suggestion list.']],
-    ['What VAL recommends',['Choose the emotional direction first. VAL will preserve Michele’s voice, save a snapshot, and apply the rewrite directly to the manuscript output.']],
-    ['Question for Michele','Which direction should VAL prioritize here: deepen the emotion, sharpen the story arc, or keep the voice mostly intact and only smooth what feels clunky?']
+    ['Chapter summary','The selected chapter is loaded for a focused editorial conversation. VAL will use it for context without reading the manuscript aloud.'],
+    ['3 things working',['There is enough story material to shape a real revision.','Michele’s voice should stay funny, honest, and emotionally alive.','The chapter can carry scene, humor, truth, and meaning together.']],
+    ['3 things to improve',['Ground the reader in the scene before reflection.','Clarify the emotional truth underneath the event.','Smooth transitions so the meaning lands naturally.']],
+    ['Question for Michele','What moment in this chapter still has the most heat?']
   ];
-  return '<div class="michele-book-bullets">'+items.slice(0,3).map(function(item){
+  return '<div class="michele-book-bullets">'+items.slice(0,4).map(function(item){
     return '<div class="michele-book-bullet"><div class="michele-book-bullet-label">'+docSafe(item[0])+'</div><div class="michele-book-bullet-text">'+micheleBookListText(item[1])+'</div></div>';
   }).join('')+'</div>';
 }
@@ -2339,10 +2968,19 @@ function renderMicheleBookCompanion(data){
     if(footer)footer.innerHTML='<button class="alert-btn primary" onclick="openMicheleBookCompanion()">Try Again</button><button class="alert-btn" onclick="openMicheleBookAdmin()">Admin</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookWorkspace\')">Close</button>';
     return;
   }
+  data=scrubMicheleBookClientState(data||{});
   window._micheleBookState=data;
-  window._micheleBookConversation=[];
+  window._micheleBookSessionId=(data.session&&data.session.id)||'';
+  window._micheleBookSessionState=data.session||{};
+  window._micheleBookConversation=(data.session&&Array.isArray(data.session.turns))?data.session.turns.map(function(t){return {role:t.role,content:t.content,inputType:t.inputType,hidden:t.role==='user'&&t.inputType==='voice'};}):[];
   window._micheleBookVoiceActive=false;
-  window._micheleBookSuggestedInstruction='';
+  window._micheleBookVoiceOpeningAskedFor='';
+  window._micheleBookVoiceFinalText='';
+  window._micheleBookVoiceInterimText='';
+  window._micheleBookVoiceManualStop=false;
+  window._micheleBookVoiceQuietTimer=null;
+  window._micheleBookVoiceSession={active:false,state:'idle',detail:'Voice is ready when Michele is.'};
+  window._micheleBookSuggestedInstruction=(data.session&&data.session.rewriteDirection)||'';
   var chapter=data.chapter||{};
   var last=data.lastCompletedChapter||null;
   var chapters=Array.isArray(data.chapters)?data.chapters:[];
@@ -2350,23 +2988,119 @@ function renderMicheleBookCompanion(data){
     var label=micheleBookChapterLabel(ch);
     return '<option value="'+docSafe(ch.id||'')+'" '+((ch.id===chapter.id)?'selected':'')+'>'+docSafe(label)+'</option>';
   }).join('');
-  var prompt=(data.summary&&data.summary.question)||'What detail from this moment still feels impossible to forget?';
+  var prompt=sanitizeMicheleOpeningQuestion((data.summary&&data.summary.question)||'',chapter)||micheleClientQuestionForChapter(chapter);
+  window._micheleBookOpeningQuestion=prompt;
+  if(typeof preloadSpeech==='function')preloadSpeech(prompt);
   var progressText=last
     ? 'Last completed: '+docSafe(micheleBookChapterLabel(last))+'. Now we can work on '+docSafe(micheleBookChapterLabel(chapter))+', chapter transitions, voice consistency, emotional arc, humor, or anything else Michele wants.'
     : 'Start gently. Michele can choose this chapter, chapter transitions, voice consistency, emotional arc, humor, or anything else that feels most useful.';
   body.innerHTML='<div class="michele-book-shell">'
     +'<section class="exec-card michele-book-card michele-book-hero"><div class="michele-book-kicker">Current chapter</div><h3>'+docSafe(micheleBookChapterLabel(chapter))+'</h3><p>'+progressText+'</p><div class="michele-book-controls"><label>Chapter<select id="micheleBookChapterSelect" onchange="selectMicheleBookChapter()">'+chapterOptions+'</select></label><label>Mode<select id="micheleBookModeSelect"><option value="interview">Interview Mode</option><option value="editor">Editor Mode</option><option value="proofreading">Proofreading Mode</option><option value="overview">Chapter Overview Mode</option></select></label></div></section>'
     +micheleBookBullets(data.summary)
-    +'<section class="exec-card michele-book-card"><h3>'+docSafe(prompt)+'</h3><div id="micheleBookChat" class="michele-book-chat"><div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe('I’ve read the selected chapter. I’ll work with humor, scene, emotional truth, reader understanding, and transitions together. Answer the question above, or ask me for an overview, proofread, or specific thoughts.')+'</div></div><textarea id="micheleBookResponse" class="michele-book-response" rows="5" placeholder="Answer the question, or ask VAL about this chapter..."></textarea><div class="michele-book-actions"><button class="alert-btn" id="micheleBookVoiceBtn" onclick="dictateMicheleBookResponse()">Voice</button><button class="alert-btn primary" id="micheleBookTalkBtn" onclick="talkWithMicheleBookVal()">Message with VAL</button><button class="alert-btn" id="micheleBookSubmitBtn" onclick="submitMicheleBookResponse()">Create Revision Draft</button></div><p class="michele-book-fineprint">VAL shows a revised draft first. The fresh manuscript is updated only after Michele approves the draft. The original manuscript is never edited.</p></section>'
+    +'<section class="exec-card michele-book-card"><h3 id="micheleBookPromptHeading">'+docSafe(prompt)+'</h3><div id="micheleBookChat" class="michele-book-chat"><div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe('I’ve read the selected chapter. I’ll work with humor, scene, emotional truth, reader understanding, and transitions together. Answer the question above, or ask me for an overview, proofread, or specific thoughts.')+'</div></div><textarea id="micheleBookResponse" class="michele-book-response" rows="5" placeholder="Type here if you prefer text, or start a voice session below..."></textarea>'+micheleVoicePanelHtml()+'<div class="michele-book-actions"><button class="alert-btn primary" id="micheleBookTalkBtn" onclick="talkWithMicheleBookVal()">Message with VAL</button><button class="alert-btn" id="micheleBookSubmitBtn" onclick="submitMicheleBookResponse()">Write Chapter</button></div><p class="michele-book-fineprint">In voice mode, VAL keeps listening until Michele pauses or ends the session. When Michele chooses Write Chapter, VAL saves a hidden snapshot and updates only the fresh manuscript document. The original manuscript is never edited.</p></section>'
     +'</div>';
   if(footer)footer.innerHTML='<button class="alert-btn" onclick="openMicheleBookAdmin()">Admin</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'micheleBookWorkspace\')">Close</button>';
+  updateMicheleVoiceVisual('idle','Voice is ready when Michele is.');
+}
+function scrubMicheleBookClientState(data){
+  function scrubChapter(ch){
+    if(!ch||typeof ch!=='object')return ch;
+    var copy=Object.assign({},ch);
+    delete copy.currentText;delete copy.current_text;delete copy.fullText;delete copy.full_text;delete copy.rawText;delete copy.raw_text;delete copy.text;
+    return copy;
+  }
+  var safe=Object.assign({},data||{});
+  safe.chapter=scrubChapter(safe.chapter);
+  safe.lastCompletedChapter=scrubChapter(safe.lastCompletedChapter);
+  safe.chapters=Array.isArray(safe.chapters)?safe.chapters.map(scrubChapter):[];
+  return safe;
 }
 function micheleBookChapterLabel(chapter){
   chapter=chapter||{};
   var n=Number(chapter.chapterNumber!=null?chapter.chapterNumber:chapter.chapter_number);
-  var title=chapter.chapterTitle||chapter.chapter_title||chapter.title||'';
+  var title=safeMicheleBookChapterTitle(chapter.chapterTitle||chapter.chapter_title||chapter.title||'',n);
   if(n===0)return title&&title!=='Prologue'?'Prologue: '+title:'Prologue';
   return 'Chapter '+(n||'')+(title?': '+title:'');
+}
+function safeMicheleBookChapterTitle(value,num){
+  var text=String(value||'').replace(/\s+/g,' ').trim().replace(/^[:\-–—\s]+/,'');
+  [
+    /\s+(There[’']?s|There is|There are)\s+/i,
+    /\s+(You can[’']?t|I was|I remember|At that point|The intake process|Instead, I said|A few weeks later)\s+/i
+  ].some(function(re){var m=text.match(re);if(m&&m.index>18){text=text.slice(0,m.index).trim();return true;}return false;});
+  if(micheleLooksLikeRawChapterText(text)||text.length>120)text=text.slice(0,110).trim();
+  text=text.replace(/\(\s+/g,'(').replace(/\s+\)/g,')').trim();
+  return text||((Number(num)===0)?'Prologue':'');
+}
+function micheleClientQuestionForChapter(chapter){
+  chapter=chapter||{};
+  var label=(micheleBookChapterLabel(chapter)||'').toLowerCase();
+  var title=String(chapter.chapterTitle||chapter.chapter_title||chapter.title||'').toLowerCase();
+  var num=Number(chapter.chapterNumber!=null?chapter.chapterNumber:chapter.chapter_number);
+  if(num===0||/prologue/.test(label))return 'What promise should this opening make to the reader?';
+  if(/sneaker|shoe|universe|trick/.test(title))return 'What tiny physical detail makes that moment feel real again?';
+  if(/scarf|ice|accident/.test(title))return 'Where should the reader first feel that something is off?';
+  if(/mother|mom|father|dad|family|child|girl/.test(title))return 'What did younger you need someone there to understand?';
+  if(/hospital|doctor|body|pain|sick|diagnos|surgery/.test(title))return 'What did your body know before everyone else caught up?';
+  if(/love|date|marriage|husband|boyfriend|relationship/.test(title))return 'What should feel charming before the deeper truth appears?';
+  if(/god|universe|faith|miracle|spirit/.test(title))return 'Where should the reader feel mystery without being told what to believe?';
+  var bank=[
+    'What moment in this chapter still has the most heat?',
+    'Where should the reader feel more inside the scene?',
+    'What truth is this chapter circling but not quite naming yet?',
+    'What would you say if you told this part over coffee?',
+    'Where does this chapter need more of your real voice?'
+  ];
+  var seed=String(label||title||num||'chapter').split('').reduce(function(sum,ch){return sum+ch.charCodeAt(0);},0);
+  return bank[Math.abs(seed)%bank.length];
+}
+function sanitizeMicheleOpeningQuestion(raw,chapter){
+  var text=String(raw||'').replace(/\s+/g,' ').trim();
+  if(!text)return '';
+  text=text.replace(/\bWhat did your body know in the\s+.+?\s+moment before your mind caught up\?/i,'What did your body know in this moment before your mind caught up?');
+  if(/^(what|where|when|why|how|who|which|can|could|would|should|is|are|do|does|did)\b/i.test(text)&&/\?$/.test(text)&&text.length<=190&&text.split(/\s+/).length<=32)return text;
+  var questions=text.match(/(?:^|[\s])((?:What|Where|When|Why|How|Who|Which|Can|Could|Would|Should|Is|Are|Do|Does|Did)\b[^?]{8,180}\?)/gi)||[];
+  if(questions.length)text=questions[questions.length-1].trim();
+  text=text
+    .replace(/["“”][^"“”]{80,}["“”]/g,'')
+    .replace(/\b(I’ve read|I have read|VAL has read)\b[^.?]{0,180}[.?]/i,'')
+    .replace(/\b(I’m going to|I am going to)\b[^.?]{0,180}[.?]/i,'')
+    .trim();
+  if(!/\?$/.test(text)||text.length>170||text.split(/\s+/).length>28)return micheleClientQuestionForChapter(chapter);
+  return text;
+}
+function micheleVoicePanelHtml(){
+  return '<div id="micheleVoicePanel" class="michele-voice-panel michele-voice-state-idle">'
+    +'<div class="michele-voice-orb" onclick="toggleMicheleVoiceSession()" title="Start or pause voice"><span></span></div>'
+    +'<div class="michele-voice-copy"><div id="micheleVoiceStateText" class="michele-voice-state">Voice ready</div><div id="micheleVoiceDetailText" class="michele-voice-detail">Start a voice session and VAL will listen continuously.</div></div>'
+    +'<div class="michele-voice-actions"><button id="micheleVoicePrimaryBtn" class="michele-voice-action primary" onclick="toggleMicheleVoiceSession()">Start Voice Session</button><button class="michele-voice-action" onclick="endMicheleVoiceSession()">End</button></div>'
+    +'</div><div id="micheleVoiceFloating" class="michele-voice-floating michele-voice-state-idle"><div class="michele-voice-orb" onclick="toggleMicheleVoiceSession()"><span></span></div><div><strong id="micheleVoiceFloatState">Voice ready</strong><small id="micheleVoiceFloatDetail">Start when ready.</small></div><button onclick="toggleMicheleVoiceSession()">Pause</button><button onclick="endMicheleVoiceSession()">End</button></div>';
+}
+function updateMicheleVoiceVisual(state,detail){
+  state=state||'idle';
+  detail=detail||'';
+  window._micheleBookVoiceSession=Object.assign({},window._micheleBookVoiceSession||{},{state:state,detail:detail});
+  var labelMap={idle:'Voice ready',listening:'Listening',thinking:'Thinking',speaking:'Speaking',paused:'Paused',error:'Needs attention'};
+  var panel=document.getElementById('micheleVoicePanel');
+  var floating=document.getElementById('micheleVoiceFloating');
+  [panel,floating].forEach(function(el){
+    if(!el)return;
+    el.className=el.className.replace(/\bmichele-voice-state-\w+/g,'').trim()+' michele-voice-state-'+state;
+  });
+  var stateText=document.getElementById('micheleVoiceStateText');
+  var detailText=document.getElementById('micheleVoiceDetailText');
+  var floatState=document.getElementById('micheleVoiceFloatState');
+  var floatDetail=document.getElementById('micheleVoiceFloatDetail');
+  var primary=document.getElementById('micheleVoicePrimaryBtn');
+  if(stateText)stateText.textContent=labelMap[state]||'Voice';
+  if(detailText)detailText.textContent=detail||'';
+  if(floatState)floatState.textContent=labelMap[state]||'Voice';
+  if(floatDetail)floatDetail.textContent=detail||'';
+  if(primary)primary.textContent=state==='idle'?'Start Voice Session':(state==='paused'?'Resume Voice':'Pause Voice');
+  if(floating)floating.classList.toggle('open',!!(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active));
+}
+function setMicheleVoiceSessionState(state,detail){
+  updateMicheleVoiceVisual(state,detail);
 }
 function selectMicheleBookChapter(){
   var state=window._micheleBookState||{};
@@ -2376,8 +3110,15 @@ function selectMicheleBookChapter(){
   if(found){
     state.chapter=found;
     window._micheleBookState=state;
+    window._micheleBookSessionId='';
+    window._micheleBookSessionState={};
     window._micheleBookConversation=[];
     window._micheleBookSuggestedInstruction='';
+    window._micheleBookVoiceOpeningAskedFor='';
+    window._micheleBookOpeningQuestion=micheleClientQuestionForChapter(found);
+    var heading=document.getElementById('micheleBookPromptHeading');
+    if(heading)heading.textContent=window._micheleBookOpeningQuestion;
+    if(typeof preloadSpeech==='function')preloadSpeech(window._micheleBookOpeningQuestion);
     renderMicheleBookChat();
     addSys('Selected '+micheleBookChapterLabel(found)+'.');
   }
@@ -2386,56 +3127,171 @@ function renderMicheleBookChat(){
   var chat=document.getElementById('micheleBookChat');
   if(!chat)return;
   var turns=window._micheleBookConversation||[];
-  var intro='<div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe('I’ve read the selected chapter. I’ll work with humor, scene, emotional truth, reader understanding, and transitions together. Answer the question above, or ask me for an overview, proofread, or specific thoughts.')+'</div>';
+  var intro=turns.length?'':'<div class="michele-book-chat-turn assistant"><div class="michele-book-chat-label">VAL</div>'+docSafe(window._micheleBookOpeningQuestion||'I’m ready when Michele is.')+'</div>';
   chat.innerHTML=intro+turns.filter(function(turn){return !turn.hidden;}).map(function(turn){
     return '<div class="michele-book-chat-turn '+(turn.role==='user'?'user':'assistant')+'"><div class="michele-book-chat-label">'+(turn.role==='user'?'Michele':'VAL')+'</div>'+docSafe(turn.content||'')+'</div>';
   }).join('');
   chat.scrollTop=chat.scrollHeight;
 }
-function dictateMicheleBookResponse(){
-  var box=document.getElementById('micheleBookResponse');
-  var btn=document.getElementById('micheleBookVoiceBtn');
-  var Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!box)return;
-  if(!Speech){addSys('Voice dictation is not available in this browser. Typing works beautifully here.');return;}
-  if(window._micheleBookRecognition){
-    try{window._micheleBookRecognition.stop();}catch(e){}
-    window._micheleBookRecognition=null;
-    window._micheleBookVoiceActive=false;
-    if(btn)btn.textContent='Voice';
+function askMicheleBookOpeningQuestionThenListen(){
+  var state=window._micheleBookState||{};
+  var chapter=state.chapter||{};
+  var chapterKey=String(chapter.id||micheleBookChapterLabel(chapter)||'current');
+  var question=window._micheleBookOpeningQuestion||'What part of this chapter should we work on first?';
+  if((window._micheleBookConversation||[]).some(function(t){return t.role==='assistant';})){
+    setMicheleVoiceSessionState('listening','Listening. Michele can keep going.');
+    setTimeout(startMicheleBookVoiceListening,250);
+    return true;
+  }
+  if(window._micheleBookVoiceOpeningAskedFor===chapterKey)return false;
+  window._micheleBookVoiceOpeningAskedFor=chapterKey;
+  window._micheleBookVoiceActive=true;
+  setMicheleVoiceSessionState('speaking','VAL is asking the first question.');
+  window._micheleBookConversation=window._micheleBookConversation||[];
+  if(!window._micheleBookConversation.some(function(t){return t.role==='assistant'&&t.content===question;})){
+    window._micheleBookConversation.push({role:'assistant',content:question});
+    renderMicheleBookChat();
+  }
+  if(typeof speak==='function'){
+    speak(question,null,function(){if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active)startMicheleBookVoiceListening();});
+  }else{
+    setTimeout(startMicheleBookVoiceListening,500);
+  }
+  return true;
+}
+function startMicheleVoiceSession(){
+  window._micheleBookVoiceSession={active:true,state:'thinking',detail:'Starting voice session.'};
+  window._micheleBookVoiceActive=true;
+  window._micheleBookVoiceManualStop=false;
+  setMicheleVoiceSessionState('thinking','Starting voice session...');
+  if(askMicheleBookOpeningQuestionThenListen())return;
+  startMicheleBookVoiceListening();
+}
+function pauseMicheleVoiceSession(){
+  window._micheleBookVoiceSession=Object.assign({},window._micheleBookVoiceSession||{},{active:false,state:'paused'});
+  window._micheleBookVoiceActive=false;
+  window._micheleBookVoiceManualStop=true;
+  clearTimeout(window._micheleBookVoiceQuietTimer);
+  window._micheleBookVoiceQuietTimer=null;
+  if(window._micheleBookRecognition){try{window._micheleBookRecognition.stop();}catch(e){}}
+  window._micheleBookRecognition=null;
+  if(typeof stopSpeak==='function')stopSpeak();
+  setMicheleVoiceSessionState('paused','Voice is paused. Resume when ready.');
+}
+function endMicheleVoiceSession(){
+  pauseMicheleVoiceSession();
+  window._micheleBookVoiceSession={active:false,state:'idle',detail:'Voice session ended.'};
+  window._micheleBookVoiceFinalText='';
+  setMicheleVoiceSessionState('idle','Voice session ended. Start again anytime.');
+}
+function toggleMicheleVoiceSession(){
+  var session=window._micheleBookVoiceSession||{};
+  if(session.active&&(session.state==='speaking'||session.state==='thinking')){
+    if(typeof stopSpeak==='function')stopSpeak();
+    window._micheleBookVoiceManualStop=false;
+    setMicheleVoiceSessionState('listening','Interrupted. Listening now.');
+    setTimeout(startMicheleBookVoiceListening,120);
     return;
   }
+  if(window._micheleBookRecognition||session.active){pauseMicheleVoiceSession();return;}
+  startMicheleVoiceSession();
+}
+function dictateMicheleBookResponse(){
+  toggleMicheleVoiceSession();
+}
+function scheduleMicheleBookVoiceQuietSubmit(){
+  clearTimeout(window._micheleBookVoiceQuietTimer);
+  window._micheleBookVoiceQuietTimer=setTimeout(function(){
+    if(window._micheleBookRecognition&&(String(window._micheleBookVoiceFinalText||'').trim()||String(window._micheleBookVoiceInterimText||'').trim()))finishMicheleBookVoiceListening();
+  },1800);
+}
+function finishMicheleBookVoiceListening(){
+  clearTimeout(window._micheleBookVoiceQuietTimer);
+  window._micheleBookVoiceQuietTimer=null;
+  window._micheleBookVoiceManualStop=true;
+  var rec=window._micheleBookRecognition;
+  if(rec){try{rec.stop();}catch(e){}}
+  window._micheleBookRecognition=null;
+  var text=String(window._micheleBookVoiceFinalText||window._micheleBookVoiceInterimText||'').trim();
+  window._micheleBookVoiceFinalText='';
+  window._micheleBookVoiceInterimText='';
+  if(text){
+    setMicheleVoiceSessionState('thinking','VAL heard you. Thinking...');
+    setTimeout(function(){talkWithMicheleBookVal({fromVoice:true,voiceText:text,silentUser:true});},120);
+  }else{
+    setMicheleVoiceSessionState('listening','I did not catch that. Keep talking when ready.');
+    if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active)setTimeout(startMicheleBookVoiceListening,500);
+  }
+}
+function startMicheleBookVoiceListening(){
+  var box=document.getElementById('micheleBookResponse');
+  var Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!box)return;
+  if(!Speech){setMicheleVoiceSessionState('error','Voice dictation is not available in this browser. Typing still works.');addSys('Voice dictation is not available in this browser. Typing works beautifully here.');return;}
+  if(window._micheleBookRecognition)return;
   if(typeof stopSpeak==='function')stopSpeak();
   window._micheleBookVoiceActive=true;
+  window._micheleBookVoiceManualStop=false;
+  window._micheleBookVoiceFinalText='';
+  window._micheleBookVoiceInterimText='';
   var rec=new Speech();
   window._micheleBookRecognition=rec;
   rec.lang='en-US';
   rec.continuous=true;
   rec.interimResults=true;
-  var finalText='';
-  if(btn)btn.textContent='Listening...';
+  setMicheleVoiceSessionState('listening','Listening. Michele can talk naturally.');
   rec.onresult=function(e){
     var interim='';
     for(var i=e.resultIndex;i<e.results.length;i++){
       var piece=(e.results[i][0]&&e.results[i][0].transcript||'').trim();
-      if(e.results[i].isFinal)finalText=(finalText+' '+piece).trim();
+      if(e.results[i].isFinal)window._micheleBookVoiceFinalText=(String(window._micheleBookVoiceFinalText||'')+' '+piece).trim();
       else interim=(interim+' '+piece).trim();
     }
-    if(finalText&&e.results[e.results.length-1]&&e.results[e.results.length-1].isFinal){
-      try{rec.stop();}catch(err){}
-      window._micheleBookRecognition=null;
-      if(btn)btn.textContent='Voice';
-      setTimeout(function(){talkWithMicheleBookVal({fromVoice:true,voiceText:finalText,silentUser:true});},150);
+    window._micheleBookVoiceInterimText=interim;
+    if(interim)setMicheleVoiceSessionState('listening','Listening...');
+    if(window._micheleBookVoiceFinalText||window._micheleBookVoiceInterimText){
+      scheduleMicheleBookVoiceQuietSubmit();
     }
   };
-  rec.onerror=function(){window._micheleBookRecognition=null;window._micheleBookVoiceActive=false;if(btn)btn.textContent='Voice';addSys('Voice dictation paused. You can type the answer instead.');};
-  rec.onend=function(){window._micheleBookRecognition=null;if(btn)btn.textContent='Voice';};
+  rec.onerror=function(){
+    clearTimeout(window._micheleBookVoiceQuietTimer);
+    window._micheleBookVoiceQuietTimer=null;
+    window._micheleBookRecognition=null;
+    window._micheleBookVoiceActive=false;
+    setMicheleVoiceSessionState('error','Voice paused. Resume when ready.');
+    addSys('Voice dictation paused. You can type the answer instead.');
+  };
+  rec.onend=function(){
+    if((String(window._micheleBookVoiceFinalText||'').trim()||String(window._micheleBookVoiceInterimText||'').trim())&&!window._micheleBookVoiceManualStop){
+      finishMicheleBookVoiceListening();
+      return;
+    }
+    if(window._micheleBookVoiceActive&&!window._micheleBookVoiceManualStop&&window._micheleBookRecognition===rec){
+      setTimeout(function(){
+        if(window._micheleBookVoiceActive&&!window._micheleBookVoiceManualStop&&window._micheleBookRecognition===rec){
+          try{rec.start();}catch(e){}
+        }
+      },350);
+      return;
+    }
+    window._micheleBookRecognition=null;
+    if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active&&!window._micheleBookVoiceManualStop){
+      setTimeout(startMicheleBookVoiceListening,350);
+    }
+  };
   rec.start();
 }
 function micheleBookConversationInstruction(extra){
   var turns=(window._micheleBookConversation||[]).map(function(t){return (t.role==='user'?'Michele':'VAL')+': '+(t.content||'');}).join('\n\n');
-  var suggested=window._micheleBookSuggestedInstruction||'';
-  return [turns,suggested?('VAL suggested direction: '+suggested):'',extra?('Final Michele note: '+extra):''].filter(Boolean).join('\n\n').trim();
+  var session=window._micheleBookSessionState||{};
+  var suggested=window._micheleBookSuggestedInstruction||session.rewriteDirection||'';
+  var sessionBits=[
+    session.storyBeats&&session.storyBeats.length?('Story beats: '+session.storyBeats.join('; ')):'',
+    session.emotionalThreads&&session.emotionalThreads.length?('Emotional threads: '+session.emotionalThreads.join('; ')):'',
+    session.sceneDetails&&session.sceneDetails.length?('Scene details: '+session.sceneDetails.join('; ')):'',
+    session.readerTakeaways&&session.readerTakeaways.length?('Reader takeaways: '+session.readerTakeaways.join('; ')):''
+  ].filter(Boolean).join('\n');
+  return [sessionBits,turns,suggested?('Accumulated rewrite direction: '+suggested):'',extra?('Final Michele note: '+extra):''].filter(Boolean).join('\n\n').trim();
 }
 function micheleBookSendRewrite(payload){
   return apiFetch(PROXY+'/api/michele/book/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -2453,6 +3309,7 @@ function renderMichelePlacementPrompt(data,payload){
 function continueMicheleBookRewriteWithPlacement(placement){
   var payload=Object.assign({},window._michelePendingRewrite||{});
   if(!payload.response){addSys('Rewrite direction was lost. Please create the revision draft again.');return;}
+  stopMicheleVoiceForDrafting();
   payload.placement=placement;
   var body=document.getElementById('micheleBookWorkspaceBody');
   if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Writing now</h3><p>VAL is placing this section in the fresh manuscript document.</p></div>';
@@ -2480,9 +3337,17 @@ function renderMicheleDraftPreview(data,payload){
   window._michelePendingRewrite=Object.assign({},payload||{},{rewriteJobId:data.rewriteJobId||'',chapterId:(data.chapter&&data.chapter.id)||payload.chapterId,response:payload.response});
   body.innerHTML='<div class="michele-book-shell"><section class="exec-card michele-book-card"><div class="michele-book-kicker">Draft revision</div><h3>Review the revised version</h3><p>VAL has not written this to Google Docs yet. Michele can keep it, adjust it, or keep talking.</p><textarea id="micheleDraftPreviewText" class="michele-book-response" rows="14" readonly>'+docSafe(data.afterText||'')+'</textarea><textarea id="micheleDraftAdjustment" class="michele-book-response" rows="3" placeholder="If you want an adjustment, say what should change..."></textarea><div class="michele-book-actions"><button class="alert-btn primary" onclick="approveMicheleDraftRevision()">Keep & Write to Fresh Manuscript</button><button class="alert-btn" onclick="adjustMicheleDraftRevision()">Adjust Draft</button><button class="alert-btn" onclick="openMicheleBookCompanion()">Continue Conversation</button></div><p class="michele-book-fineprint">The original manuscript is never edited. The fresh manuscript is updated only after Michele approves this draft.</p></section></div>';
 }
+function writeMicheleChapterDirectly(payload){
+  var body=document.getElementById('micheleBookWorkspaceBody');
+  if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Writing now</h3><p>VAL is rewriting this chapter and placing it in the fresh manuscript document. The original manuscript is not being edited.</p></div>';
+  micheleBookSendRewrite(payload).then(handleMicheleBookRewriteResult).catch(function(e){
+    if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe(e&&e.message||'I could not update the chapter right now. Please ask Jessa to check the connection.')+'</p></div>';
+  });
+}
 function approveMicheleDraftRevision(){
   var payload=Object.assign({},window._michelePendingRewrite||{});
   if(!payload.rewriteJobId){addSys('Draft revision was not found. Please create the draft again.');return;}
+  stopMicheleVoiceForDrafting();
   var body=document.getElementById('micheleBookWorkspaceBody');
   if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Checking placement</h3><p>VAL is preparing to write the approved draft to the fresh manuscript.</p></div>';
   micheleBookSendRewrite(payload).then(handleMicheleBookRewriteResult).catch(function(e){
@@ -2501,6 +3366,17 @@ function adjustMicheleDraftRevision(){
     if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>'+docSafe(e&&e.message||'I could not adjust the draft right now.')+'</p></div>';
   });
 }
+function stopMicheleVoiceForDrafting(){
+  window._micheleBookVoiceSession=Object.assign({},window._micheleBookVoiceSession||{},{active:false,state:'paused',detail:'Voice paused while VAL prepares the draft.'});
+  window._micheleBookVoiceActive=false;
+  window._micheleBookVoiceManualStop=true;
+  clearTimeout(window._micheleBookVoiceQuietTimer);
+  window._micheleBookVoiceQuietTimer=null;
+  if(window._micheleBookRecognition){try{window._micheleBookRecognition.stop();}catch(e){}}
+  window._micheleBookRecognition=null;
+  if(typeof stopSpeak==='function')stopSpeak();
+  setMicheleVoiceSessionState('paused','Voice paused while VAL prepares the draft.');
+}
 function talkWithMicheleBookVal(opts){
   opts=opts||{};
   var state=window._micheleBookState||{};
@@ -2514,31 +3390,53 @@ function talkWithMicheleBookVal(opts){
   window._micheleBookConversation=window._micheleBookConversation||[];
   window._micheleBookConversation.push({role:'user',content:text,hidden:!!opts.silentUser});
   var thinkingIndex=window._micheleBookConversation.push({role:'assistant',content:'Reading the selected chapter and preparing a real response...'})-1;
-  var sentConversation=window._micheleBookConversation.slice(0,thinkingIndex);
   if(box)box.value='';
   renderMicheleBookChat();
+  if(opts.fromVoice)setMicheleVoiceSessionState('thinking','Thinking about what Michele said...');
   if(btn){btn.disabled=true;btn.textContent='Messaging...';}
-  apiFetch(PROXY+'/api/michele/book/converse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chapterId:chapter.id,message:text,conversation:sentConversation,mode:mode})})
+  apiFetch(PROXY+'/api/michele/book/session/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:window._micheleBookSessionId||'',chapterId:chapter.id,message:text,mode:mode,voiceMode:!!opts.fromVoice,inputType:opts.fromVoice?'voice':'text'})})
     .then(function(data){
       if(data&&data.ok){
+        if(data.session){
+          window._micheleBookSessionId=data.session.id||window._micheleBookSessionId||'';
+          window._micheleBookSessionState=data.session;
+        }
         if(data.chapter){
           window._micheleBookState.chapter=Object.assign({},window._micheleBookState.chapter||{},data.chapter);
           var select=document.getElementById('micheleBookChapterSelect');
           if(select&&data.chapter.id)select.value=data.chapter.id;
         }
-        window._micheleBookConversation[thinkingIndex]={role:'assistant',content:data.reply||'Choose the next thing you want from this chapter: overview, developmental edit, proofread, or interview questions.'};
+        if(data.session&&Array.isArray(data.session.turns)){
+          window._micheleBookConversation=data.session.turns.map(function(t){return {role:t.role,content:t.content,inputType:t.inputType,hidden:t.role==='user'&&t.inputType==='voice'};});
+        }else{
+          window._micheleBookConversation[thinkingIndex]={role:'assistant',content:data.reply||'Choose the next thing you want from this chapter: overview, developmental edit, proofread, or interview questions.'};
+        }
         if(data.suggestedInstruction)window._micheleBookSuggestedInstruction=data.suggestedInstruction;
         renderMicheleBookChat();
-        if(window._micheleBookVoiceActive&&typeof speak==='function')speak(data.reply||'');
+        if(opts.fromVoice&&typeof speak==='function'){
+          setMicheleVoiceSessionState('speaking','VAL is responding.');
+          speak(data.reply||'',null,function(){if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active)startMicheleBookVoiceListening();});
+        }
+        else if(window._micheleBookVoiceActive&&typeof speak==='function'){
+          setMicheleVoiceSessionState('speaking','VAL is responding.');
+          speak(data.reply||'',null,function(){if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active)startMicheleBookVoiceListening();});
+        }
         if(data.readyToRewrite)addSys('VAL has enough direction when Michele is ready to rewrite.');
       }else{
         window._micheleBookConversation[thinkingIndex]={role:'assistant',content:(data&&data.gentleMessage)||'I lost the thread for a second. Try saying that once more.'};
         renderMicheleBookChat();
+        if(opts.fromVoice&&typeof speak==='function'){
+          setMicheleVoiceSessionState('speaking','VAL is repairing the thread.');
+          speak(window._micheleBookConversation[thinkingIndex].content,null,function(){if(window._micheleBookVoiceSession&&window._micheleBookVoiceSession.active)startMicheleBookVoiceListening();});
+        }
       }
     })
     .catch(function(){
       window._micheleBookConversation[thinkingIndex]={role:'assistant',content:'I could not answer that just now. Nothing has changed in the manuscript.'};
       renderMicheleBookChat();
+      if(opts.fromVoice){
+        setMicheleVoiceSessionState('error','VAL could not answer. Keep talking or type instead.');
+      }
     })
     .then(function(){if(btn){btn.disabled=false;btn.textContent='Message with VAL';}});
 }
@@ -2549,14 +3447,12 @@ function submitMicheleBookResponse(){
   var btn=document.getElementById('micheleBookSubmitBtn');
   var response=micheleBookConversationInstruction((box&&box.value||'').trim());
   if(!response){addSys('Message with VAL first, or type what Michele wants reflected in the revision draft.');return;}
-  if(!confirm('Create a draft revision using the conversation so far? VAL will show it before writing anything to Google Docs.'))return;
-  if(btn){btn.disabled=true;btn.textContent='Drafting...';}
+  if(!confirm('Rewrite this chapter now and write it to the fresh manuscript document? The original manuscript will not be edited.'))return;
+  stopMicheleVoiceForDrafting();
+  if(btn){btn.disabled=true;btn.textContent='Writing...';}
   window._michelePendingRewrite={chapterId:chapter.id,response:response};
-  micheleBookSendDraft(window._michelePendingRewrite).then(function(data){renderMicheleDraftPreview(data,window._michelePendingRewrite);})
-    .catch(function(){
-      var body=document.getElementById('micheleBookWorkspaceBody');
-      if(body)body.innerHTML='<div class="exec-card michele-book-card"><h3>Almost ready</h3><p>I could not create the draft right now. Please ask Jessa to check the connection.</p></div>';
-    });
+  if(window._micheleBookSessionId)window._michelePendingRewrite.sessionId=window._micheleBookSessionId;
+  writeMicheleChapterDirectly(window._michelePendingRewrite);
 }
 function openMicheleBookAdmin(){
   openExecutiveWorkspace({
@@ -2584,10 +3480,12 @@ function renderMicheleBookAdmin(data){
   var chapters=data.chapters||[];
   var snap=data.latestSnapshot||null;
   var google=data.googleDocs||{};
+  var ai=data.ai||{};
   var syncError=google.chapterSyncError||google.error||'';
   body.innerHTML='<div class="exec-workspace-grid">'
     +micheleBookCard('Configured Docs','Master: '+(cfg.masterDocId||'missing')+'\\nReading Copy: '+(cfg.readingCopyDocId||'missing'))
     +micheleBookCard('Project','Title: '+(project.title||cfg.title||'Michele Book')+'\\nLast sync: '+(data.lastSync||'not synced yet'))
+    +micheleBookCard('AI Writing Brain','OpenAI runtime: '+(ai.openAiRuntimeConfigured?'connected':'not connected')+'\\nPlatform fallback: '+(ai.platformFallbackAllowed?'allowed':'off')+'\\nTenant key required: '+(ai.tenantOpenAiKeyRequired?'yes':'no'))
     +(syncError?'<section class="exec-card michele-book-card" style="grid-column:1/-1;border-color:#fecaca!important;background:#fff1f2!important"><h3>Google Docs Sync Needs Attention</h3><p>'+docSafe(syncError)+'</p></section>':'')
     +'<section class="exec-card michele-book-card"><h3>Access Tests</h3><div class="michele-book-actions"><button class="alert-btn primary" onclick="micheleBookAdminTest(\'read\')">Test Read</button><button class="alert-btn" onclick="micheleBookAdminTest(\'write\')">Test Write</button></div><div id="micheleBookAdminStatus" class="michele-book-fineprint">Test write verifies the fresh manuscript can be opened without changing it.</div></section>'
     +'<section class="exec-card michele-book-card" style="grid-column:1/-1"><h3>Import Prior Edit Notes</h3><p>Paste extracted editor conversation notes here. VAL stores them as hidden editor notes for the detected chapters in this Michele deployment only.</p><input id="micheleBookImportTitle" value="Master Edits 1" style="width:100%;margin:8px 0;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"><textarea id="micheleBookImportText" rows="6" placeholder="Paste Master Edits text..." style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#111827"></textarea><div class="michele-book-actions"><button class="alert-btn primary" onclick="importMicheleBookEdits()">Import Notes</button></div><div id="micheleBookImportStatus" class="michele-book-fineprint"></div></section>'
@@ -2700,9 +3598,17 @@ fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function
   VAL_CONFIG=Object.assign(VAL_CONFIG,cfg);
   ASSISTANT_NAME=(VAL_CONFIG.clientSlug||'val-core')+'-transcripts';
   valActor=VAL_CONFIG.clientName||valActor;
+  var babySettings=VAL_CONFIG.babyValStudioSettings||{};
+  if(babySettings.babyValName)VAL_CONFIG.brandName=babySettings.babyValName;
+  if(babySettings.accentColor)document.documentElement.style.setProperty('--gold',babySettings.accentColor);
+  if(babySettings.accentColor)document.documentElement.style.setProperty('--gold-2',babySettings.accentColor);
   document.title=(VAL_CONFIG.brandName||'VAL')+' - Executive Command Center';
   document.querySelectorAll('[data-client-name]').forEach(function(el){el.textContent=VAL_CONFIG.clientName||'VAL User';});
   document.querySelectorAll('[data-brand-name]').forEach(function(el){el.textContent=VAL_CONFIG.brandName||'VAL';});
+  if(babySettings.welcomeMessage){
+    var welcome=document.querySelector('#centerWelcome .cw-sub');
+    if(welcome)welcome.textContent=babySettings.welcomeMessage;
+  }
   if(VAL_CONFIG.demoMode){
     var keysBtn=document.getElementById('keysTopButton');
     if(keysBtn)keysBtn.style.display='none';
@@ -3182,8 +4088,10 @@ function openTaskDetail(id){
   var detailsHtml=(t.details&&t.details.length)
     ? t.details.map(function(d){
         var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-        return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
+      var sourceContext=[d.sourceQuote?'Source context: '+d.sourceQuote:'',d.transcriptTitle?'Transcript: '+d.transcriptTitle:''].filter(Boolean).join(' · ');
+      return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
           +'<div style="color:#f8f5ee;">'+docSafe(d.text||'')+'</div>'
+          +(sourceContext?'<div style="color:#d6dde8;font-size:11px;margin-top:3px;">'+docSafe(sourceContext)+'</div>':'')
           +'<div style="color:#d6dde8;font-size:10px;margin-top:2px;">'+ts+'</div>'
           +'</div>';
       }).join('')
@@ -3191,7 +4099,7 @@ function openTaskDetail(id){
 
   var panel=document.createElement('div');
   panel.id='taskDetailPanel';
-  panel.style.cssText='position:fixed;top:0;right:0;width:360px;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:999;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+  panel.style.cssText='position:fixed;top:0;right:0;width:360px;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:3200;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
   panel.innerHTML=
     '<div style="padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:flex-start;justify-content:space-between;">'
       +'<div>'
@@ -3245,8 +4153,10 @@ function saveTaskDetail(id){
   if(notesEl&&t&&t.details){
     notesEl.innerHTML=t.details.map(function(d){
       var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      var sourceContext=[d.sourceQuote?'Source context: '+d.sourceQuote:'',d.transcriptTitle?'Transcript: '+d.transcriptTitle:''].filter(Boolean).join(' · ');
       return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
         +'<div style="color:#f8f5ee;">'+docSafe(d.text||'')+'</div>'
+        +(sourceContext?'<div style="color:#d6dde8;font-size:11px;margin-top:3px;">'+docSafe(sourceContext)+'</div>':'')
         +'<div style="color:#d6dde8;font-size:10px;margin-top:2px;">'+ts+'</div>'
         +'</div>';
     }).join('');
@@ -3310,7 +4220,7 @@ function openApprovalQueue(){
   var drafts=valDocs.filter(function(d){return d.status==='draft';}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);});
   var panel=document.createElement('div');
   panel.id='approvalQueuePanel';
-  panel.style.cssText='position:fixed;top:0;right:0;width:520px;max-width:94vw;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:998;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+  panel.style.cssText='position:fixed;top:0;right:0;width:520px;max-width:94vw;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:3200;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
   var body=drafts.length?drafts.map(function(d){
     var created=new Date(d.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:13px 14px;background:rgba(255,255,255,0.04);margin-bottom:10px;">'
@@ -3348,7 +4258,7 @@ function openDocPanel(docId){
 
   var panel=document.createElement('div');
   panel.id='docDetailPanel';
-  panel.style.cssText='position:fixed;top:0;right:0;width:480px;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:999;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+  panel.style.cssText='position:fixed;top:0;right:0;width:480px;max-width:94vw;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:3200;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
 
   panel.innerHTML=
     // Header
@@ -3580,7 +4490,7 @@ var BOOK_STATE_URL = PROXY+'/api/val/book-state';
 var chatHistory=[],selFile=null,voiceOn=false,recording=false,uploadBatchState=null,uploadAudioCtx=null;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
 var keepAlive=null,meetingMode=false,meetingLog=[],savedChat=false,activeConversationId=null;
-var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0;
+var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0,voiceAudioCache={};
 var dashData={};
 var leadResearchState=null;
 var pendingLeadImport=null;
@@ -3741,6 +4651,7 @@ function apiTextOrJson(r){
     try{
       var parsed=JSON.parse(t);
       if(parsed&&parsed.message) message=parsed.message;
+      if(parsed&&parsed.error) message=parsed.error;
       if(parsed&&parsed.code) message+=' ('+parsed.code+')';
       if(parsed&&parsed.request_id) message+=' Request '+parsed.request_id+'.';
     }catch(_){}
@@ -3970,9 +4881,9 @@ function renderFeed(items){
     var div=document.createElement('div');
     div.className='fitem';
     div.style.animationDelay=(i*0.06)+'s';
-    var title=item.text||'Signal';
-    var meta=(item.time||'')+(item.type?' · '+item.type:'');
-    div.innerHTML='<div class="fitem-pip '+pip+'"></div><div class="fitem-body"><div class="fitem-title">'+title+'</div><div class="fitem-meta">'+meta+'</div></div>';
+    var title=clampMicheleBookText(isBookEditorMode()?safeMicheleBookDisplayText(item.text||'Signal'):(item.text||'Signal'),180);
+    var meta=clampMicheleBookText((item.time||'')+(item.type?' · '+item.type:''),120);
+    div.innerHTML='<div class="fitem-pip '+pip+'"></div><div class="fitem-body"><div class="fitem-title">'+docSafe(title)+'</div><div class="fitem-meta">'+docSafe(meta)+'</div></div>';
     div.onclick=function(){
       document.querySelectorAll('.fitem').forEach(function(f){f.classList.remove('active');});
       div.classList.add('active');
@@ -4316,15 +5227,11 @@ function deliverMorningBriefing(){
 
 
 // ── TTS ────────────────────────────────────────────────
-function speak(text,btn){
-  if(!text)return;
-  var clean=String(text).replace(/\*\*(.*?)\*\*/g,'$1').replace(/\[(.*?)\]\(.*?\)/g,'$1').replace(/<[^>]*>/g,'').substring(0,2000);
-  var now=Date.now();
-  if(!btn && clean===voiceLastSpoken && now-voiceLastSpokenAt<5000)return;
-  voiceLastSpoken=clean;voiceLastSpokenAt=now;
-  speaking=true;pauseListen();
-  if(curAudio){curAudio.pause();curAudio=null;}
-  fetch((window.PROXY||'')+'/api/val/tts',{
+function speechCleanText(text){
+  return String(text||'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\[(.*?)\]\(.*?\)/g,'$1').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim().substring(0,2000);
+}
+function fetchDeepgramTtsBlob(clean){
+  return fetch((window.PROXY||'')+'/api/val/tts',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({text:clean})
   }).then(function(r){
@@ -4334,24 +5241,46 @@ function speak(text,btn){
     var ct=r.headers.get('content-type')||'';
     if(ct.indexOf('audio/')===-1)throw new Error('Deepgram TTS did not return audio.');
     return r.blob();
-  })
+  });
+}
+function preloadSpeech(text){
+  var clean=speechCleanText(text);
+  if(!clean)return null;
+  if(voiceAudioCache[clean])return voiceAudioCache[clean];
+  voiceAudioCache[clean]=fetchDeepgramTtsBlob(clean).catch(function(e){delete voiceAudioCache[clean];throw e;});
+  return voiceAudioCache[clean];
+}
+function speak(text,btn,onDone){
+  if(!text)return;
+  onDone=typeof onDone==='function'?onDone:function(){};
+  var clean=speechCleanText(text);
+  var now=Date.now();
+  if(!btn && clean===voiceLastSpoken && now-voiceLastSpokenAt<5000){
+    setTimeout(function(){speaking=false;resumeListen();onDone();},100);
+    return;
+  }
+  voiceLastSpoken=clean;voiceLastSpokenAt=now;
+  speaking=true;pauseListen();
+  if(curAudio){curAudio.pause();curAudio=null;}
+  (voiceAudioCache[clean]||preloadSpeech(clean))
   .then(function(b){
+    delete voiceAudioCache[clean];
     var url=URL.createObjectURL(b);curAudio=new Audio(url);
-    curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;setTimeout(function(){speaking=false;resumeListen();},700);};
-    curAudio.onerror=function(){curAudio=null;speaking=false;resumeListen();};
-    curAudio.play().catch(function(){fallbackSpeak(clean);});
+    curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;setTimeout(function(){speaking=false;resumeListen();onDone();},700);};
+    curAudio.onerror=function(){curAudio=null;speaking=false;resumeListen();onDone();};
+    curAudio.play().catch(function(){fallbackSpeak(clean,onDone);});
   }).catch(function(e){
     var warnNow=Date.now();
     if(warnNow-voiceTtsWarnedAt>60000){
       voiceTtsWarnedAt=warnNow;
       if(typeof addSys==='function')addSys('Deepgram voice failed, using temporary browser voice: '+(e.message||e));
     }
-    fallbackSpeak(clean);
+    fallbackSpeak(clean,onDone);
   });
 }
 function pauseListen(){if(!deepgramWS||!voiceOn)return;listenPaused=true;if(mediaRec&&mediaRec.state==='recording')mediaRec.pause();}
 function resumeListen(){if(!deepgramWS||!voiceOn||!listenPaused)return;listenPaused=false;if(mediaRec&&mediaRec.state==='paused')mediaRec.resume();}
-function fallbackSpeak(t){try{speaking=true;pauseListen();var u=new SpeechSynthesisUtterance(t);u.rate=.94;u.pitch=1.02;u.onend=function(){setTimeout(function(){speaking=false;resumeListen();},600);};u.onerror=function(){speaking=false;resumeListen();};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){speaking=false;resumeListen();}}
+function fallbackSpeak(t,onDone){onDone=typeof onDone==='function'?onDone:function(){};try{speaking=true;pauseListen();var u=new SpeechSynthesisUtterance(t);u.rate=.94;u.pitch=1.02;u.onend=function(){setTimeout(function(){speaking=false;resumeListen();onDone();},600);};u.onerror=function(){speaking=false;resumeListen();onDone();};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){speaking=false;resumeListen();onDone();}}
 function stopSpeak(){if(curAudio){curAudio.pause();curAudio=null;}try{speechSynthesis.cancel();}catch(e){}speaking=false;resumeListen();}
 
 // ── STT ────────────────────────────────────────────────
@@ -4958,10 +5887,255 @@ function runLeadResearch(state){
   .catch(function(e){removeTyping();addSys('Lead research failed: '+e.message);});
 }
 
-function startOnboardingProfile(){
-  openDetailWithTitle('Tell Me About Yourself');
-  addSys('You can upload business plans, personality profiles, operating docs, offers, bios, or client context with the attachment button.');
-  ask('Start my VAL onboarding profile. Ask me thoughtful questions one at a time so you can understand how to help me best.\n\nCover these areas without overwhelming me:\n- who I am and what I am building\n- what relationships drive my business\n- how I make money\n- my highest-value contacts and communities\n- where I drop balls or lose follow-up\n- how I prefer to be pushed, reminded, and supported\n- my communication style and voice\n- my decision patterns, energy patterns, personality profile, and leadership style\n- what I never want automated without approval\n- what documents I should upload so you can understand me better\n\nAfter the questions, tell me which documents to upload first, such as business plan, personality profile, DISC, brand voice, offers, sales process, client list, pipeline notes, or strategic plans. Keep the tone warm, direct, and insightful. Ask only one question first.');
+var teachValOnboarding=null;
+var teachValActiveCategory='current_projects';
+var teachValSpeechRec=null;
+var teachValVoiceStatus=null;
+function teachValCardStatus(label,status){
+  var good=/Imported|Reviewed|Sent|Tested|complete/i.test(status||''),wait=/Waiting|Started|Ready|In Progress/i.test(status||'');
+  return '<div class="rule-row"><strong>'+docSafe(label)+'</strong><div>'+docSafe(status||'Not Started')+'</div><span class="email-pill" style="background:'+(good?'rgba(34,197,94,.16)':wait?'rgba(245,158,11,.18)':'rgba(148,163,184,.16)')+';color:'+(good?'#14532d':wait?'#78350f':'#334155')+'">'+docSafe(status||'Not Started')+'</span></div>';
+}
+function teachValImportFor(category){
+  return ((teachValOnboarding&&teachValOnboarding.imports)||[]).find(function(i){return i.category===category;});
+}
+function openTeachValOnboarding(){
+  openExecutiveWorkspace({
+    id:'teachValOnboardingWorkspace',
+    title:'Teach VAL About You',
+    body:'<div id="teachValOnboardingBody"><div class="task-empty">Loading Teach VAL About You...</div></div>',
+    footer:'<button class="alert-btn primary" onclick="teachValStart()">Start / Resume</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL</button><button class="alert-btn" onclick="teachValStartOver()">Start Over</button><button class="alert-btn primary" onclick="teachValCommit(false)">Send to VAL</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
+  });
+  teachValLoad();
+  teachValLoadVoiceStatus();
+}
+function startOnboardingProfile(){openTeachValOnboarding();}
+function teachValLoad(){
+  apiFetch(PROXY+'/api/teach-val/onboarding').then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){
+    var el=document.getElementById('teachValOnboardingBody');if(el)el.innerHTML='<div class="exec-card"><h3>Teach VAL could not load</h3><p>'+docSafe(e.message||e)+'</p></div>';
+  });
+}
+function teachValStart(){
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
+}
+function teachValStartUpdate(){
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:false,testMode:true,mode:'update'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL update could not start: '+e.message);});
+}
+function teachValStartOver(){
+  if(!teachValOnboarding||!teachValOnboarding.session){teachValStart();return;}
+  if(!confirm('Start over with a fresh Teach VAL session? The old session will be archived.'))return;
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'onboarding',testMode:true})}).then(function(data){teachValOnboarding=data;teachValActiveCategory='current_projects';teachValRender();}).catch(function(e){addSys('Teach VAL could not start over: '+e.message);});
+}
+function teachValSetStage(stage){
+  if(!teachValOnboarding||!teachValOnboarding.session)return;
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:stage})}).then(function(data){teachValOnboarding=data;teachValRender();});
+}
+function teachValProgressHtml(){
+  var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, p=s.progress||{};
+  var imported=((teachValOnboarding&&teachValOnboarding.imports)||[]).filter(function(i){return i.category!=='voice_interview';}).length;
+  var steps=[
+    ['Welcome',p.welcome],
+    ['Voice Interview',p.voice_interview],
+    ['Prompts for Previous AI Tools',imported?imported+' saved':'Not Started'],
+    ['Review Memory',p.review],
+    ['Send to VAL',p.send_to_val]
+  ];
+  return '<section class="exec-card"><h3>30-Minute Setup</h3><p>This is meant to feel relieving, not like homework. Most people should be able to finish the first pass in about 30 minutes.</p><div class="val-mini-list">'+steps.map(function(step,i){var done=/Complete|Imported|Reviewed|Sent|Tested|saved/i.test(step[1]||''),active=/Ready|In Progress|Waiting|Started/i.test(step[1]||'');return '<div class="rule-row" style="cursor:default"><strong>'+(done?'✓ ':active?'• ':'○ ')+docSafe(step[0])+'</strong><div>'+docSafe(step[1]||'Not Started')+'</div></div>';}).join('')+'</div><div class="email-actions"><button onclick="teachValStartOver()">Start Over</button><button onclick="teachValStartUpdate()">Update VAL Later</button></div></section>';
+}
+function teachValWelcomeHtml(){
+  var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+(mode==='update'?'Update What VAL Knows':'Before VAL Can Support You Well')+'</h3><p>'+(mode==='update'?'Use this anytime your priorities, projects, relationships, or preferences change. You do not need to repeat the whole onboarding flow.':'VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. This should feel liberating: a 30-minute transfer of context, not a long intake form.')+'</p><div class="email-reason">Take your time. You can ramble. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start Voice Interview</button><button onclick="teachValStartUpdate()">I Am Updating VAL</button></div></section>';
+}
+function teachValLoadVoiceStatus(){
+  apiFetch(PROXY+'/api/val/voice/status').then(function(data){teachValVoiceStatus=data;teachValRender();}).catch(function(){teachValVoiceStatus={ok:false,ttsConfigured:false,error:'Voice status unavailable'};teachValRender();});
+}
+function teachValVoiceStatusHtml(){
+  var s=teachValVoiceStatus||{};
+  var label=s.ttsConfigured?'Deepgram voice connected':'Deepgram voice not connected';
+  var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')+' | source: '+(s.ttsModelSource||'unknown')+' | key: '+(s.ttsKeySource||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
+  var last=s.lastTtsDiagnostic&&s.lastTtsDiagnostic.error?(' Last TTS error: '+s.lastTtsDiagnostic.error+(s.lastTtsDiagnostic.detail?' - '+s.lastTtsDiagnostic.detail:'')):'';
+  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail+last)+'<br><span id="teachValDeepgramTestStatus">Run Test VAL Voice to confirm the exact voice.</span></div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
+}
+function teachValTestVoice(){
+  var status=document.getElementById('teachValDeepgramTestStatus');
+  if(status)status.textContent='Testing Deepgram voice...';
+  apiFetch(PROXY+'/api/val/voice/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is the Deepgram voice VAL will use for onboarding.'})})
+    .then(function(diag){
+      if(status)status.textContent='Deepgram server test passed: '+(diag.model||'configured model')+' via '+(diag.keySource||'configured key')+'. Playing audio now...';
+      return fetchDeepgramTtsBlob('This is the Deepgram voice VAL will use for onboarding.').then(function(blob){return {blob:blob,diag:diag};});
+    })
+    .then(function(result){
+      var blob=result.blob;
+      var url=URL.createObjectURL(blob), audio=new Audio(url);
+      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram voice played successfully: '+((result.diag&&result.diag.model)||'configured model')+'.';};
+      audio.onerror=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram returned audio, but the browser could not play it.';};
+      return audio.play().catch(function(e){URL.revokeObjectURL(url);throw new Error('Browser blocked Deepgram playback: '+(e.message||e));});
+    })
+    .catch(function(e){if(status)status.textContent=(e.detail||e.message||'Deepgram voice test failed.');teachValLoadVoiceStatus();});
+}
+function teachValVoiceTurnsHtml(turns){
+  turns=turns||[];
+  if(!turns.length)return '<div class="task-empty">Start the interview and VAL will ask the first question here.</div>';
+  return '<div class="michele-book-chat" style="max-height:260px">'+turns.map(function(t){
+    return '<div class="michele-book-chat-turn '+(t.role==='user'?'user':'assistant')+'"><div class="michele-book-chat-label">'+(t.role==='user'?'You':'VAL')+'</div>'+docSafe(t.content||'')+'</div>';
+  }).join('')+'</div>';
+}
+function teachValVoiceHtml(){
+  var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, v=s.voiceInterview||{};
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p>'+teachValVoiceStatusHtml()+'<div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
+}
+function teachValVoiceTurn(payload){
+  if(!teachValOnboarding||!teachValOnboarding.session)return Promise.reject(new Error('Open Teach VAL About You first.'));
+  return apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/voice-turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})})
+    .then(function(data){teachValOnboarding=data;teachValRender();if(data.reply&&typeof speak==='function')speak(data.reply);return data;});
+}
+function teachValStartVoiceInterview(){
+  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='Starting...';
+  teachValVoiceTurn({start:true}).catch(function(e){addSys('Teach VAL voice could not start: '+e.message);});
+}
+function teachValSendVoiceAnswer(){
+  var box=document.getElementById('teachValVoiceAnswer'), text=String((box&&box.value)||'').trim();
+  if(!text){addSys('Add an answer first.');return;}
+  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='VAL is thinking...';
+  teachValVoiceTurn({message:text}).then(function(){if(box)box.value='';}).catch(function(e){addSys('Teach VAL voice answer failed: '+e.message);});
+}
+function teachValRecordVoiceAnswer(){
+  var Speech=window.SpeechRecognition||window.webkitSpeechRecognition, box=document.getElementById('teachValVoiceAnswer'), status=document.getElementById('teachValVoiceStatus');
+  if(!Speech){if(status)status.textContent='Browser voice dictation is not available. Type your answer here.';return;}
+  if(teachValSpeechRec){teachValStopVoiceAnswer();}
+  var rec=new Speech();teachValSpeechRec=rec;rec.lang='en-US';rec.continuous=true;rec.interimResults=true;
+  var finalText='';
+  if(status)status.textContent='Listening...';
+  rec.onresult=function(e){
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var part=e.results[i][0].transcript;
+      if(e.results[i].isFinal)finalText+=' '+part;else interim+=' '+part;
+    }
+    if(box)box.value=(finalText+' '+interim).trim();
+  };
+  rec.onerror=function(){if(status)status.textContent='Voice dictation paused. You can type instead.';teachValSpeechRec=null;};
+  rec.onend=function(){if(status)status.textContent='Recording stopped. Send the answer when ready.';teachValSpeechRec=null;};
+  try{rec.start();}catch(e){if(status)status.textContent='Could not start recording. Type your answer here.';teachValSpeechRec=null;}
+}
+function teachValStopVoiceAnswer(){
+  if(teachValSpeechRec){try{teachValSpeechRec.stop();}catch(e){}teachValSpeechRec=null;}
+  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='Recording stopped. Send the answer when ready.';
+}
+function teachValSaveInterview(){
+  var box=document.getElementById('teachValInterviewTranscript'), status=document.getElementById('teachValInterviewStatus');
+  if(status)status.textContent='Saving...';
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/interview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:(box&&box.value)||''})})
+    .then(function(data){teachValOnboarding=data;teachValActiveCategory='current_projects';teachValRender();})
+    .catch(function(e){if(status)status.textContent=e.message;});
+}
+function teachValCardsNavHtml(){
+  var cards=(teachValOnboarding&&teachValOnboarding.cards)||[];
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Prompts For Your Previous AI Tools</h3><p>Use these with ChatGPT, Claude, or any AI that already knows you. Pick one prompt, copy it, paste the answer back, then move to the next.</p><div class="val-mini-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));display:grid">'+cards.map(function(c){var imp=teachValImportFor(c.category);return '<button class="alert-btn '+(teachValActiveCategory===c.category?'primary':'')+'" onclick="teachValActiveCategory=\''+docSafe(c.category)+'\';teachValRender()">'+docSafe(c.title)+(imp?' ✓':'')+'</button>';}).join('')+'</div></section>';
+}
+function teachValOpenPrompt(category){
+  teachValActiveCategory=category;
+  if(teachValOnboarding&&teachValOnboarding.session)teachValSetStage(category);
+  else teachValRender();
+}
+function teachValCopyActivePrompt(){
+  var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0];
+  if(card)copyText(card.prompt,'Knowledge prompt');
+}
+function teachValKnowledgeCardHtml(){
+  var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0];
+  if(!card)return '';
+  var imp=teachValImportFor(card.category)||{};
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+docSafe(card.title)+'</h3><p>'+docSafe('This is a prompt for a previous AI tool, not a voice card. Copy it into ChatGPT or Claude, then paste that answer back here.')+'</p><div class="email-reason"><strong>Prompt to copy</strong><br>'+docSafe(card.prompt)+'</div><div class="email-actions"><button class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><textarea id="teachValRawResponse" rows="8" placeholder="Paste the response from ChatGPT, Claude, or another previous AI tool here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(imp.rawResponse||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Save And Extract</button><button onclick="teachValReview()">Review Extracted Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe(imp.status||'Waiting for Paste')+'</span></div>'+teachValExtractedItemsHtml(imp)+'</section>';
+}
+function teachValSaveKnowledgeCard(category){
+  var box=document.getElementById('teachValRawResponse'), status=document.getElementById('teachValCardStatus');
+  if(status)status.textContent='Extracting...';
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/imports/'+encodeURIComponent(category),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rawResponse:(box&&box.value)||''})})
+    .then(function(data){teachValOnboarding=data;teachValRender();})
+    .catch(function(e){if(status)status.textContent=e.message;});
+}
+function teachValExtractedItemsHtml(imp){
+  if(!imp||!(imp.extractedItems||[]).length)return '<div class="task-empty">No extracted items yet.</div>';
+  return '<div class="dashboard-studio-history">'+(imp.extractedItems||[]).map(function(item){
+    return '<div class="email-card"><div style="display:flex;justify-content:space-between;gap:12px"><h3>'+docSafe(item.title||'Memory item')+'</h3><label style="white-space:nowrap"><input type="checkbox" '+(item.include_in_val!==false?'checked':'')+' onchange="teachValToggleItem(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',this.checked)"> Include</label></div><p>'+docSafe(item.summary||'')+'</p><div class="email-reason">Category: '+docSafe(item.category||imp.category)+' · Confidence: '+docSafe(item.confidence||'')+' · Source: '+docSafe(item.source||'external_ai_import')+'</div></div>';
+  }).join('')+'</div>';
+}
+function teachValToggleItem(importId,itemId,include){
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/imports/'+encodeURIComponent(importId)+'/items/'+encodeURIComponent(itemId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_in_val:!!include})})
+    .then(function(data){teachValOnboarding=data;teachValRender();})
+    .catch(function(e){addSys('Could not update onboarding card: '+e.message);});
+}
+function teachValReview(){
+  teachValSetStage('review');
+}
+function teachValReviewHtml(){
+  var imports=(teachValOnboarding&&teachValOnboarding.imports)||[];
+  var all=imports.flatMap(function(i){return (i.extractedItems||[]).map(function(item){return {imp:i,item:item};});});
+  var included=all.filter(function(x){return x.item.include_in_val!==false;});
+  var counts={};
+  included.forEach(function(x){counts[x.item.category||x.imp.category]=(counts[x.item.category||x.imp.category]||0)+1;});
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Review Extracted Memory</h3><p>Nothing is final until you review it. Exclude anything VAL should not remember.</p><div class="email-reason"><strong>VAL found:</strong><br>'+Object.keys(counts).map(function(k){return docSafe(k.replace(/_/g,' '))+': '+counts[k];}).join('<br>')+'</div>'+imports.map(teachValExtractedItemsHtml).join('')+'</section>';
+}
+function teachValCommit(testMode){
+  if(!teachValOnboarding||!teachValOnboarding.session){addSys('Open Teach VAL About You first.');return;}
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({testMode:!!testMode})})
+    .then(function(data){addSys(testMode?'Teach VAL test payload built.':'Teach VAL memory sent.');teachValLoad();})
+    .catch(function(e){addSys('Teach VAL send failed: '+e.message);});
+}
+function teachValCategoryLabel(category){
+  var card=((teachValOnboarding&&teachValOnboarding.cards)||[]).find(function(c){return c.category===category;});
+  return card?card.title:String(category||'').replace(/_/g,' ');
+}
+function teachValPromptCategories(){
+  return ((teachValOnboarding&&teachValOnboarding.cards)||[]).map(function(c){return c.category;});
+}
+function teachValStepState(){
+  var state=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, p=state.progress||{}, imports=(teachValOnboarding&&teachValOnboarding.imports)||[];
+  var promptCount=imports.filter(function(i){return i.category!=='voice_interview';}).length;
+  var memoryCount=imports.reduce(function(sum,i){return sum+((i.extractedItems||[]).filter(function(item){return item.include_in_val!==false;}).length);},0);
+  return {state:state,progress:p,promptCount:promptCount,memoryCount:memoryCount,voiceDone:/Imported/i.test(p.voice_interview||''),reviewDone:/Reviewed/i.test(p.review||''),sent:/Sent|Tested/i.test(p.send_to_val||'')};
+}
+function teachValRailHtml(current){
+  var st=teachValStepState(), categories=teachValPromptCategories(), imported=st.promptCount;
+  var steps=[
+    {id:'welcome',label:'Welcome',meta:'30-minute setup',done:/Complete|Reviewed|Imported/i.test(st.progress.welcome||'')},
+    {id:'voice_interview',label:'Voice Interview',meta:st.voiceDone?'Transcript saved':'Conversation with VAL',done:st.voiceDone},
+    {id:'ai_prompts',label:'Bring in your AI',meta:imported?imported+' prompt set'+(imported===1?'':'s'):'Previous AI tools',done:imported>=categories.length&&categories.length>0},
+    {id:'review',label:'Review memory',meta:st.memoryCount+' item'+(st.memoryCount===1?'':'s'),done:st.reviewDone},
+    {id:'complete',label:'Send to VAL',meta:st.sent?'Complete':'Final save',done:st.sent}
+  ];
+  return '<aside class="teach-val-rail"><h3>Your Progress</h3>'+steps.map(function(step,i){var cls=step.done?' done':(current===step.id?' current':'');return '<div class="teach-val-step'+cls+'"><span class="teach-val-dot">'+(step.done?'✓':i+1)+'</span><strong>'+docSafe(step.label)+'</strong><small>'+docSafe(step.meta)+'</small></div>';}).join('')+'<div class="email-reason">Most people can finish the first pass in about 30 minutes. You can skip, come back, or update VAL later.</div><div class="email-actions"><button onclick="teachValStartOver()">Start Over</button><button onclick="teachValStartUpdate()">Update VAL Later</button></div></aside>';
+}
+function teachValWelcomeStageHtml(){
+  var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
+  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>You do not need to fill out a long form. I will guide you one step at a time, and you can bring in what your previous AI tools already know.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div></main>';
+}
+function teachValVoiceStageHtml(){
+  return '<main class="teach-val-stage"><div><h2>Voice Interview</h2><p>Have a warm conversation with VAL, then save the transcript before bringing in your existing AI context.</p></div>'+teachValVoiceHtml().replace('class="exec-card" style="grid-column:1/-1"','class="exec-card"')+'<div class="teach-val-action-row"><button class="alert-btn" onclick="teachValOpenPrompt(\'current_projects\')">Skip to AI Prompts</button></div></main>';
+}
+function teachValPromptStageHtml(){
+  var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0], imp=card?teachValImportFor(card.category):null;
+  if(!card)return '<main class="teach-val-stage"><h2>Prompts For Your Previous AI Tools</h2><p>No prompt cards are configured yet.</p></main>';
+  var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+docSafe(c.title)+'<span>'+(imported?'Imported':'Not started')+'</span></button>';}).join('')+'</div>';
+  var extracted=imp&&imp.extractedItems&&imp.extractedItems.length?'<div class="exec-card"><h3>Imported & Extracted</h3><p>VAL found '+imp.extractedItems.length+' item'+(imp.extractedItems.length===1?'':'s')+' from this response.</p>'+teachValExtractedItemsHtml(imp)+'<div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValReview()">Review Extracted Memory</button></div></div>':'';
+  return '<main class="teach-val-stage"><div><h2>Bring In Your AI — One Step At A Time</h2><p>Open ChatGPT, Claude, or another AI that already knows you. Copy one prompt, paste the response here, and VAL will extract the useful memory.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3>Current: '+docSafe(card.title)+'</h3><p>Copy this prompt into your previous AI tool.</p><div class="email-reason">'+docSafe(card.prompt)+'</div><div class="email-actions"><button class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><p>I’ll wait while you do that.</p></div><div class="exec-card"><h3>Paste AI Response</h3><p>You can edit later. No pressure.</p><textarea id="teachValRawResponse" rows="12" placeholder="Paste the response from ChatGPT, Claude, or another AI tool here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Save & Continue</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe((imp&&imp.status)||'Waiting for Paste')+'</span></div></div></div>'+extracted+'</main>';
+}
+function teachValReviewStageHtml(){
+  var st=teachValStepState(), imports=(teachValOnboarding&&teachValOnboarding.imports)||[], categoryCounts={};
+  imports.forEach(function(i){(i.extractedItems||[]).forEach(function(item){if(item.include_in_val!==false){var key=item.category||i.category;categoryCounts[key]=(categoryCounts[key]||0)+1;}});});
+  var summary=Object.keys(categoryCounts).map(function(k){return '<div class="teach-val-summary-card"><strong>'+categoryCounts[k]+'</strong><span>'+docSafe(k.replace(/_/g,' '))+'</span></div>';}).join('')||'<div class="task-empty">No extracted memory yet.</div>';
+  return '<main class="teach-val-stage"><div><h2>Review What VAL Learned</h2><p>Decide what stays. Project/client cards created here can become living workspaces later, with transcripts, notes, tasks, and relationship context attached to them.</p></div><div class="teach-val-summary-grid">'+summary+'</div>'+teachValReviewHtml().replace('class="exec-card" style="grid-column:1/-1"','class="exec-card"')+'<div class="teach-val-action-row"><button class="alert-btn" onclick="teachValOpenPrompt(\'current_projects\')">Keep Reviewing</button><button class="alert-btn primary" onclick="teachValCommit(true)">Looks Good</button></div></main>';
+}
+function teachValCompleteStageHtml(){
+  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">✓</div><h2>We’re In Business.</h2><p>Thank you for trusting me with your story. I’ll keep learning and help you build everything that matters.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Take Me To My Dashboard</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Later</button></div></div></main>';
+}
+function teachValRender(){
+  var el=document.getElementById('teachValOnboardingBody');if(!el||!teachValOnboarding)return;
+  var session=teachValOnboarding.session||{}, state=session.state||{}, stage=state.stage||'welcome';
+  if(stage==='current_projects'||stage==='important_people'||stage==='lessons_learned'||stage==='work_preferences'||stage==='frustrations'||stage==='opportunities'||stage==='things_to_remember')teachValActiveCategory=stage;
+  var current=stage==='complete'?'complete':(stage==='review'?'review':(stage==='welcome'?'welcome':(stage==='voice_interview'?'voice_interview':'ai_prompts')));
+  var stageHtml=current==='complete'?teachValCompleteStageHtml():(current==='review'?teachValReviewStageHtml():(current==='welcome'?teachValWelcomeStageHtml():(current==='voice_interview'?teachValVoiceStageHtml():teachValPromptStageHtml())));
+  el.innerHTML='<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
 }
 
 // ── COPY ───────────────────────────────────────────────
@@ -5717,10 +6891,14 @@ function gchatSend(){
   .then(function(d){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
     var text=((d.message&&d.message.content)||d.content||d.text||'').trim();
+    if(d.conversationId)gchatConversationId=d.conversationId;
     gchatHistory.push({role:'assistant',content:text});
     gchatBubble(text,false);
+    if(d.saveWarning)gchatBubble(d.saveWarning,false);
     if(!gchatConversationTitle||gchatConversationTitle==='New conversation')gchatConversationTitle=msg.slice(0,70);
-    return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:gchatConversationId,title:gchatConversationTitle,source:'general_chat',messages:gchatHistory,metadata:{channel:'general_chat',context:gchatContext}})}).then(function(saved){gchatConversationId=saved.id;var title=document.getElementById('gchatTitle');if(title)title.textContent=gchatConversationTitle;gchatLoadThreads();loadWsThreads();gchatSuggestContext(msg);});
+    var title=document.getElementById('gchatTitle');if(title)title.textContent=gchatConversationTitle;
+    gchatLoadThreads();loadWsThreads();gchatSuggestContext(msg);
+    return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:gchatConversationId,title:gchatConversationTitle,source:'general_chat',messages:gchatHistory,metadata:{channel:'general_chat',context:gchatContext}})}).then(function(saved){gchatConversationId=saved.id;gchatLoadThreads();loadWsThreads();}).catch(function(){});
   }).catch(function(e){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
     gchatBubble('Error: '+e.message,false);
@@ -6524,7 +7702,7 @@ window.addEventListener('resize',valSignalPlace);
 document.addEventListener('DOMContentLoaded',valSignalInit);
 setTimeout(valSignalInit,0);
 </script>
-<script src="/command-center.js?v=20260623-continue-book"></script>
+<script src="/command-center.js?v=20260627-val-home-redesign-assets"></script>
 <script>
 (function(){
   var opened=false;

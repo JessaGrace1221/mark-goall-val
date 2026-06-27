@@ -28,5 +28,23 @@ test('email intelligence UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/function refreshGmailNow/);
   assert.match(dashboard,/function renderEmailSyncStatus/);
   assert.match(dashboard,/Last successful sync/);
+  assert.match(dashboard,/Evidence:/);
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
+});
+
+test('email sync captures evidence before actions and does not auto-create tasks',()=>{
+  assert.match(server,/async function saveEmailEvidence/);
+  assert.match(server,/async function runObservationEngine/);
+  assert.match(server,/runObservationEngine\(evidence,\{candidates:emailObservationCandidates\(email\),replace:true\}\)/);
+  assert.match(server,/sourceType=email\.provider==='outlook'\?'outlook_email':'gmail_email'/);
+  for(const type of ['reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt']){
+    assert.match(server,new RegExp(`'${type}'`));
+  }
+  const syncStart=server.indexOf('async function emailIntelligencePayload');
+  const evidenceWrite=server.indexOf('const evidenceResults=await saveEmailEvidenceBatch(emails)',syncStart);
+  const logOnly=server.indexOf("actionType:'classified'",evidenceWrite);
+  const firstTaskSave=server.indexOf('await saveTask',syncStart);
+  assert.ok(evidenceWrite>syncStart,'email sync should write evidence');
+  assert.ok(logOnly>evidenceWrite,'email sync should log classification after evidence capture');
+  assert.ok(firstTaskSave<0||firstTaskSave>server.indexOf("app.post('/api/email/actions'",syncStart),'email sync should not save tasks directly');
 });

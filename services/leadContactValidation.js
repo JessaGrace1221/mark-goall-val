@@ -1,7 +1,17 @@
 'use strict';
 
-const NON_PERSON_NAME_WORDS = /\b(services?|company|companies|contractors?|electric|electrical|plumbing|hvac|heating|cooling|roofing|insulation|field|supervisor|manager|office|team|staff|department|careers?|jobs?|review|reviews?|licensed|commercial|residential|phone|mobile|cell|fax|email|contact|unknown|unnamed|n\/?a|phoenix|mesa|chandler|scottsdale|az|arizona)\b/i;
+const NON_PERSON_NAME_WORDS = /\b(services?|company|companies|contractors?|electric|electrical|plumbing|hvac|heating|cooling|roofing|insulation|holdings?|group|enterprises?|solutions?|agency|partners?|associates?|office|team|staff|department|careers?|jobs?|phone|mobile|cell|fax|email|contact|unknown|unnamed|n\/?a)\b/i;
 const NAME_PARTICLE = /^(?:de|del|della|di|da|dos|du|la|le|van|von|der|den|bin|al)$/i;
+
+function normalizeComparableName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\b(?:inc|incorporated|llc|l\.l\.c|ltd|limited|corp|corporation|co|company|pllc|pc|pa|llp|lp)\b/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function normalizeEmailAddress(value) {
   const email = String(value || '').trim().toLowerCase();
@@ -32,7 +42,7 @@ function validPhone(value) {
   return Boolean(normalizePhoneNumber(value));
 }
 
-function isReliablePersonName(value) {
+function isReliablePersonName(value, companyName = '') {
   const name = String(value || '').replace(/\s+/g, ' ').trim();
   if (!name || name.length > 100) return false;
   if (/[0-9@/\\]|https?:|www\.|\.(?:com|net|org)\b/i.test(name)) return false;
@@ -40,6 +50,9 @@ function isReliablePersonName(value) {
   const words = name.split(' ').filter(Boolean);
   if (words.length < 2 || words.length > 5) return false;
   if (/^(?:and|or|of|for|to|the|who|what|when|where|why|how|about|with|from|in|on|by)\b/i.test(name)) return false;
+  const personKey = normalizeComparableName(name);
+  const companyKey = normalizeComparableName(companyName);
+  if (companyKey && (companyKey === personKey || companyKey.startsWith(`${personKey} `) || personKey.startsWith(`${companyKey} `))) return false;
   return words.every((word, index) => {
     if (index > 0 && NAME_PARTICLE.test(word)) return true;
     return /^\p{Lu}[\p{L}.'’,-]*$/u.test(word);
@@ -48,7 +61,8 @@ function isReliablePersonName(value) {
 
 function sanitizeDecisionMaker(prospect = {}) {
   const name = String(prospect.decisionMakerName || '').replace(/\s+/g, ' ').trim();
-  if (!name || isReliablePersonName(name)) return prospect;
+  const companyName = prospect.organizationName || prospect.companyName || prospect.businessName || prospect.name || '';
+  if (!name || isReliablePersonName(name, companyName)) return prospect;
   return {
     ...prospect,
     decisionMakerName: '',
