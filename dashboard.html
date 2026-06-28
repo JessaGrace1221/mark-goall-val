@@ -924,7 +924,7 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 @keyframes valLanternFocus{0%,100%{transform:translateX(-50%) scaleY(.92);opacity:.78}50%{transform:translateX(-50%) scaleY(1.18);opacity:1}}
 @keyframes valLanternWork{0%,100%{transform:translateX(-50%) translateY(0);opacity:.82}50%{transform:translateX(-50%) translateY(-2px);opacity:1}}
 @keyframes valLanternDone{0%{transform:translateX(-50%) scale(1)}45%{transform:translateX(-50%) scale(1.35)}100%{transform:translateX(-50%) scale(1)}}
-@media(max-width:900px){.val-signal-core{width:46px;height:58px}.val-lantern{transform:scale(.88)}}
+@media(max-width:900px){.val-signal{display:none!important}.val-signal-core{width:46px;height:58px}.val-lantern{transform:scale(.88)}}
 .val-lantern-stat{justify-content:center;padding:0;background:var(--navy-2);cursor:default;overflow:visible}
 .statbar:has(.val-lantern-stat){position:relative;z-index:60;overflow:visible}
 .val-lantern-stat:hover{background:var(--navy-2)}
@@ -1509,7 +1509,7 @@ html body .val-primary-nav{
 .center-welcome.val-home{display:block!important;text-align:left!important;padding:0 42px 126px!important;overflow:auto!important;background:#fbfaf7!important;color:var(--val-ink)!important;position:relative!important}
 .val-briefing-contract{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}
 .val-home-hero{min-height:190px!important;display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:30px!important;padding:54px 22px 42px 28px!important;position:relative!important;overflow:hidden!important}
-.val-home-hero:before{content:""!important;position:absolute!important;top:0!important;right:-42px!important;width:min(55%,820px)!important;height:226px!important;opacity:.98!important;background-image:linear-gradient(90deg,rgba(251,250,247,0) 0%,rgba(251,250,247,.12) 18%,rgba(251,250,247,0) 56%),var(--val-brand-banner-url)!important;background-size:cover!important;background-position:center right!important;background-repeat:no-repeat!important;clip-path:polygon(16% 0,100% 0,100% 100%,0 100%)!important}
+.val-home-hero:before{content:""!important;position:absolute!important;top:0!important;right:0!important;width:min(42%,680px)!important;height:226px!important;opacity:.98!important;background-image:linear-gradient(90deg,rgba(251,250,247,1) 0%,rgba(251,250,247,.55) 10%,rgba(251,250,247,0) 24%),var(--val-brand-banner-url)!important;background-size:cover!important;background-position:right center!important;background-repeat:no-repeat!important;clip-path:none!important}
 .time-morning .val-home-hero:before{--val-brand-banner-url:var(--val-banner-morning)}
 .time-afternoon .val-home-hero:before{--val-brand-banner-url:var(--val-banner-afternoon)}
 .time-evening .val-home-hero:before{--val-brand-banner-url:var(--val-banner-evening)}
@@ -1581,11 +1581,12 @@ html body .val-primary-nav{
   html body .val-primary-nav.open{transform:translateX(0)!important}
   .val-mobile-nav-floating{display:grid!important;position:fixed!important;top:12px!important;left:12px!important;z-index:120!important;width:38px!important;height:38px!important;border-radius:999px!important;border:1px solid rgba(7,24,45,.12)!important;background:rgba(255,255,255,.92)!important;color:#07182d!important;place-items:center!important;box-shadow:0 10px 24px rgba(7,24,45,.12)!important;font-size:1.1rem!important}
   html body .body{height:100svh!important}.center-welcome.val-home{padding:0 16px 124px!important}
-  .val-home-hero{padding:34px 4px 28px!important;min-height:160px!important}.val-home-hero:before{width:100%!important;height:170px!important;opacity:.5!important}
+  .val-home-hero{padding:34px 4px 28px!important;min-height:160px!important}.val-home-hero:before{width:55%!important;height:150px!important;opacity:.38!important;background-image:linear-gradient(90deg,rgba(251,250,247,1) 0%,rgba(251,250,247,.85) 18%,rgba(251,250,247,0) 42%),var(--val-brand-banner-url)!important;background-position:right center!important}
   .val-home-hero h1{font-size:2.15rem!important}.val-home-hero p{font-size:.98rem!important}.val-hero-note{display:none!important}
   .val-dashboard-grid{grid-template-columns:1fr!important}.val-dash-card{min-height:auto!important;padding:18px!important}
   .val-presence-actions{grid-template-columns:1fr!important;gap:10px!important;margin-top:16px!important}.val-presence-btn{min-height:72px!important;padding:13px 15px!important;grid-template-columns:34px minmax(0,1fr)!important}.val-presence-icon{width:34px!important;height:34px!important;font-size:.98rem!important}
   .val-home-chat{height:64px!important;grid-template-columns:24px minmax(0,1fr) 44px!important;padding-left:18px!important}.val-talk-button{width:62px!important;height:62px!important;right:14px!important;bottom:14px!important;font-size:0!important;gap:0!important}.val-talk-button span{width:24px!important;height:20px!important}
+  .val-signal{display:none!important}
 }
 </style>
 </head>
