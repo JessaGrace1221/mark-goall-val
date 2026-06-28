@@ -181,6 +181,7 @@ function momentumRows(b){
 }
 function readyRows(b){
   var ready=[];
+  (b&&Array.isArray(b.readyForYou)?b.readyForYou:[]).slice(0,3).forEach(function(r){ready.push({title:r.title||'VAL is ready',view:r.view||'teach_val'});});
   (draftSignalState.drafts||[]).slice(0,3).forEach(function(d){ready.push({title:d.subject||'Draft prepared',view:'drafts'});});
   (b&&Array.isArray(b.alsoImportant)?b.alsoImportant:[]).slice(0,3).forEach(function(m){ready.push({title:m.title||'Suggested move ready',view:'tasks'});});
   if(!ready.length)ready=[{title:'VAL is not forcing action yet',view:'tasks'},{title:'Evidence pipeline is ready',view:'evidence'},{title:'Relationship signals will surface here',view:'relationships'}];

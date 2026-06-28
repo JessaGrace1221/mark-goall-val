@@ -12054,6 +12054,81 @@ async function executiveBriefingCounts(){
   const store=valStore();
   return {evidenceItems:transcriptFileArray(store,'evidenceItems').length,observations:transcriptFileArray(store,'evidenceObservations').length,agencyMoves:transcriptFileArray(store,'agencyMoves').length};
 }
+function parseTeachValCoreMemory(row={}){
+  const metadata=evidenceJsonValue(row.metadata||row.metadata_json,{});
+  const kind=String(row.kind||'');
+  const category=String(metadata.category||kind.replace(/^teach_val_/,'')||'memory');
+  const summary=String(row.summary||'').trim();
+  const parts=summary.split(':');
+  const title=(parts.length>1?parts.shift():summary).trim();
+  const detail=(parts.length?parts.join(':'):String(row.rawText||row.raw_text||'')).trim();
+  return {id:row.id||'',kind,category,title:title||category.replace(/_/g,' '),summary,detail,metadata,createdAt:row.createdAt||row.created_at||''};
+}
+async function listTeachValCoreMemory({limit=80}={}){
+  if(DEMO_MODE){
+    const rows=(requestContext.getStore()?.demoState?.memoryItems||[]).filter(m=>/^teach_val_/i.test(String(m.kind||'')));
+    return rows.map(parseTeachValCoreMemory).slice(0,limit);
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and kind like 'teach_val_%' order by created_at desc limit $2",[VAL_USER_ID,limit]);
+    return r.rows.map(row=>parseTeachValCoreMemory({id:row.id,kind:row.kind,summary:row.summary,rawText:row.raw_text,metadata:row.metadata,createdAt:row.created_at?.toISOString?.()||row.created_at||''}));
+  }
+  return (valStore().memoryItems||[]).filter(m=>/^teach_val_/i.test(String(m.kind||''))).map(parseTeachValCoreMemory).slice(0,limit);
+}
+function uniqueNamedRows(rows=[],key='name',limit=6){
+  const seen=new Set(),out=[];
+  for(const row of rows){
+    const name=String(row[key]||'').trim();
+    const norm=name.toLowerCase();
+    if(!name||seen.has(norm))continue;
+    seen.add(norm);out.push(row);
+    if(out.length>=limit)break;
+  }
+  return out;
+}
+function teachValOnboardingReflection(items=[]){
+  const memories=Array.isArray(items)?items:[];
+  if(!memories.length)return {active:false,count:0,whatChanged:[],people:[],projects:[],momentum:[],ready:[],recommendedMove:null};
+  const cat=(pattern)=>memories.filter(m=>pattern.test(String(m.category||m.kind||'').toLowerCase()));
+  const people=uniqueNamedRows(cat(/important_people|relationship|people|contact|client|partner/).map(m=>({id:m.id,name:m.title,state:'Held from onboarding',summary:m.detail||m.summary,source:'teach_val_onboarding',confidence:Number(m.metadata?.confidence||0.86)})),'name',8);
+  const projects=uniqueNamedRows(cat(/current_projects|project/).map(m=>({id:m.id,name:m.title,state:'Front of mind',summary:m.detail||m.summary,source:'teach_val_onboarding',openLoopCount:0,riskCount:0,opportunityCount:0,lastObservedAt:m.createdAt})),'name',6);
+  const preferences=cat(/work_preferences|preference|things_to_remember/);
+  const risks=cat(/frustration|process_gaps|risk|blocker/);
+  const opportunities=cat(/opportunit/);
+  const sacred=preferences[0]||people[0]||projects[0]||opportunities[0]||memories[0];
+  const highest=sacred?{
+    id:`teach_val_${sacred.id||'reflection'}`,
+    moveType:'honor_onboarding_context',
+    title:`Hold front and center: ${String(sacred.title||'what the user taught VAL').slice(0,120)}`,
+    why:`This came directly from Teach VAL onboarding. VAL should use it as context before recommending priorities, relationship moves, drafts, or meeting prep.`,
+    confidence:Number(sacred.metadata?.confidence||0.86),
+    priorityBand:'onboarding_truth',
+    impact:'Trust',
+    whatChanged:sacred.summary||sacred.detail||'VAL learned something the user wants held front and center.',
+    ifIgnored:'The user may feel VAL collected their context but did not carry it forward.',
+    metadata:{source:'teach_val_onboarding',category:sacred.category||''}
+  }:null;
+  const whatChanged=[
+    {title:`VAL learned ${memories.length} reviewed onboarding truth${memories.length===1?'':'s'} and promoted them into working memory.`,type:'decision'},
+    people.length?{title:`People now front of mind: ${people.slice(0,3).map(p=>p.name).join(', ')}.`,type:'relationship_signal'}:null,
+    projects.length?{title:`Projects now being watched: ${projects.slice(0,3).map(p=>p.name).join(', ')}.`,type:'opportunity'}:null,
+    preferences.length?{title:"Your working preferences are now part of VAL's operating context.",type:'preference'}:null
+  ].filter(Boolean);
+  const momentum=[
+    {title:'Knowledge Increased',detail:`VAL is holding ${memories.length} onboarding item${memories.length===1?'':'s'} as active context.`,state:'up'},
+    people.length?{title:'Relationships Front Of Mind',detail:people.slice(0,3).map(p=>p.name).join(', '),state:'up'}:null,
+    projects.length?{title:'Projects Now Watched',detail:projects.slice(0,3).map(p=>p.name).join(', '),state:'watch'}:null,
+    risks.length?{title:'Trust Guardrails Active',detail:`VAL is watching ${risks.length} risk, friction, or process signal${risks.length===1?'':'s'} you named.`,state:'risk'}:null
+  ].filter(Boolean);
+  const ready=[
+    {title:'Onboarding memory is active in VAL',view:'teach_val'},
+    people.length?{title:`${people.length} important relationship${people.length===1?'':'s'} ready for review`,view:'relationships'}:null,
+    projects.length?{title:`${projects.length} project${projects.length===1?'':'s'} ready to anchor dashboard context`,view:'projects'}:null,
+    {title:'Update what VAL knows anytime',view:'teach_val'}
+  ].filter(Boolean);
+  return {active:true,count:memories.length,whatChanged,people,projects,momentum,ready,recommendedMove:highest,learnedAt:memories[0]?.createdAt||''};
+}
 function executiveThemeFromMoves(moves=[],profiles=[]){
   const active=moves.filter(m=>!['ignored','quiet'].includes(m.priorityBand));
   const close=active.filter(m=>['close_open_loop','send_follow_up','draft_reply','answer_question'].includes(m.moveType)).length;
@@ -12073,25 +12148,32 @@ function profileVelocity(profile={}){
   return 'Observed';
 }
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:80}),executiveBriefingCounts()]);
+  const [moves,profiles,counts,onboardingMemory]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:80}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[])]);
+  const onboarding=teachValOnboardingReflection(onboardingMemory);
   const top=moves.filter(m=>m.priorityBand==='top_recommended').slice(0,3);
   const also=moves.filter(m=>m.priorityBand==='also_important').slice(0,8);
   const watching=moves.filter(m=>m.priorityBand==='watching').slice(0,8);
   const quiet=moves.filter(m=>m.priorityBand==='quiet').slice(0,8);
   const ignored=moves.filter(m=>m.priorityBand==='ignored').slice(0,8);
-  const people=profiles.filter(p=>p.profileType==='person').slice(0,8).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoops:p.openLoops.slice(0,3),risks:p.risks.slice(0,2),opportunities:p.opportunities.slice(0,2),confidence:p.confidence,lastObservedAt:p.lastObservedAt}));
-  const projects=profiles.filter(p=>p.profileType==='project').slice(0,6).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoopCount:p.openLoopCount,riskCount:p.riskCount,opportunityCount:p.opportunityCount,lastObservedAt:p.lastObservedAt}));
+  const people=uniqueNamedRows(onboarding.people.concat(profiles.filter(p=>p.profileType==='person').map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoops:p.openLoops.slice(0,3),risks:p.risks.slice(0,2),opportunities:p.opportunities.slice(0,2),confidence:p.confidence,lastObservedAt:p.lastObservedAt}))), 'name', 8);
+  const projects=uniqueNamedRows(onboarding.projects.concat(profiles.filter(p=>p.profileType==='project').map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoopCount:p.openLoopCount,riskCount:p.riskCount,opportunityCount:p.opportunityCount,lastObservedAt:p.lastObservedAt}))), 'name', 6);
   const up=profiles.filter(p=>p.opportunityCount>0||p.relationshipSignals.length).slice(0,5).map(p=>p.displayName);
   const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
-  const whatChanged=moves.slice(0,8).map(m=>({title:m.title,summary:m.whatChanged||m.why,priorityBand:m.priorityBand,confidence:m.confidence,createdAt:m.createdAt}));
+  const whatChanged=onboarding.whatChanged.concat(moves.slice(0,8).map(m=>({title:m.title,summary:m.whatChanged||m.why,priorityBand:m.priorityBand,confidence:m.confidence,createdAt:m.createdAt}))).slice(0,8);
   const theme=executiveThemeFromMoves(moves,profiles);
-  const highest=top[0]||also[0]||watching[0]||null;
+  const highest=top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
+  const momentum=onboarding.momentum.length?onboarding.momentum:[
+    up.length?{title:'Momentum Increasing',detail:up.slice(0,3).join(', '),state:'up'}:null,
+    down.length?{title:'Momentum Needs Attention',detail:down.slice(0,3).join(', '),state:'risk'}:null,
+    quiet.length?{title:'Quiet Handling',detail:`${quiet.length} lower-priority update${quiet.length===1?'':'s'} stayed out of your way.`,state:'recover'}:null
+  ].filter(Boolean);
   const valNoticed=[
+    onboarding.active?`Teach VAL is active: ${onboarding.count} onboarding truth${onboarding.count===1?'':'s'} are now part of dashboard and chat context.`:'',
     people.length?`People are the leverage point: ${people.slice(0,3).map(p=>p.name).join(', ')} currently carry the most relationship signal.`:'',
     down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
-  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum:{up,down},valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored};
+  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:onboarding.ready};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';

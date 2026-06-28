@@ -20,6 +20,8 @@ test('executive briefing endpoint distills engine outputs without model reasonin
   assert.match(server,/valNoticed/);
   assert.match(server,/quietlyHandled/);
   assert.match(server,/alsoImportant/);
+  assert.match(server,/onboardingReflection/);
+  assert.match(server,/readyForYou/);
   const start=server.indexOf('async function buildExecutiveBriefing');
   const end=server.indexOf('function executiveBriefingChatContext',start);
   const body=server.slice(start,end);
@@ -43,8 +45,21 @@ test('dashboard renders relationship-first executive briefing panel',()=>{
   assert.match(commandCenter,/Also Important/);
   assert.match(commandCenter,/Quietly Handled/);
   assert.match(commandCenter,/VAL Noticed/);
+  assert.match(commandCenter,/readyForYou/);
   assert.match(dashboard,/\.executive-briefing-panel/);
   assert.match(dashboard,/\.eb-primary/);
+});
+
+test('executive briefing visibly reflects Teach VAL onboarding',()=>{
+  assert.match(server,/function teachValOnboardingReflection/);
+  assert.match(server,/listTeachValCoreMemory/);
+  assert.match(server,/VAL learned \$\{memories\.length\} reviewed onboarding truth/);
+  assert.match(server,/People now front of mind/);
+  assert.match(server,/Projects now being watched/);
+  assert.match(server,/Hold front and center/);
+  assert.match(server,/Knowledge Increased/);
+  assert.match(server,/Onboarding memory is active in VAL/);
+  assert.match(commandCenter,/Array\.isArray\(b\.readyForYou\)/);
 });
 
 test('chat receives executive briefing source context for why questions',()=>{
