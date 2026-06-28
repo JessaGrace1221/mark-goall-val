@@ -11524,6 +11524,7 @@ function contextualTaskTitle(contextTitle,taskTitle){
 }
 async function saveTranscriptIndexRaw(payload,id){
   const rawTranscript=payload.transcript||payload.rawText||payload.text||'';
+  if(!isUsableTranscriptArchiveRecord({type:payload.type||'transcript',source:payload.source||payload.provider||'',rawText:rawTranscript,metadata:payload.metadata||{}}))return null;
   const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:transcriptDisplayTitleFromPayload(payload,rawTranscript),meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript,processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}await saveEvidenceItem({sourceType:'transcript',sourceId:id,sourceUrl:payload.sourceUrl||payload.url||'',occurredAt:row.meetingDatetime||row.createdAt,capturedAt:row.createdAt,title:row.meetingTitle,rawText:row.rawTranscript,summary:'',participantsJson:payload.attendees||payload.metadata?.attendees||[],entitiesJson:{calendarEventId:row.calendarEventId||'',meetingTitle:row.meetingTitle||''},confidence:1,status:'captured',metadataJson:{source:row.source,calendarEventId:row.calendarEventId||'',legacyTranscriptId:id}}).catch(()=>{});return row;}
   await valDbReady;
@@ -12506,18 +12507,18 @@ function transcriptPgRow(row){
 async function transcriptIndexData(transcriptId=''){
   if(DEMO_MODE){
     const get=key=>(transcriptDemoArray(key)||[]).filter(row=>!transcriptId||row.transcriptId===transcriptId);
-    return {transcripts:get('transcriptIndex'),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
+    return {transcripts:get('transcriptIndex').filter(isUsableTranscriptIndexRow),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
   }
   await valDbReady;
   if(pgPool){
     const where=transcriptId?' and transcript_id=$2':'',args=transcriptId?[VAL_USER_ID,transcriptId]:[VAL_USER_ID];
-    const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow);
+    const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow).filter(isUsableTranscriptIndexRow);
     const ids=transcripts.map(row=>row.transcriptId);if(!ids.length)return {transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]};
     const fetch=async table=>(await dbQuery(`select * from ${table} where transcript_id=any($1::text[]) order by created_at asc`,[ids])).rows.map(transcriptPgRow);
     return {transcripts,participants:await fetch('transcript_participants'),summaries:await fetch('transcript_summaries'),tasks:await fetch('transcript_tasks'),contactUpdates:await fetch('transcript_contact_updates'),actionLog:await fetch('transcript_action_log')};
   }
   const store=valStore(),get=key=>transcriptFileArray(store,key).filter(row=>!transcriptId||row.transcriptId===transcriptId);
-  return {transcripts:get('transcriptIndex'),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
+  return {transcripts:get('transcriptIndex').filter(isUsableTranscriptIndexRow),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
 }
 function transcriptDetailFromIndex(data,transcript){
   const id=transcript.transcriptId;
@@ -12648,16 +12649,42 @@ async function recentTranscripts(days=7){
   }
   return (valStore().transcripts||[]).filter(t=>new Date(t.createdAt||0)>=new Date(since));
 }
+function isTranscriptLikeType(type=''){
+  const kind=String(type||'').toLowerCase();
+  return !kind||['transcript','processed_transcript','voice_session','meeting_transcript','call_transcript','webhook'].includes(kind)||/(^|_)(transcript|recording)($|_)/.test(kind);
+}
+function isMeetingPrepMemoryText(text=''){
+  const raw=String(text||'');
+  return /\bPrepare me for this upcoming meeting using attendee intelligence\b/i.test(raw)
+    || (/\bAttendee intelligence:\b/i.test(raw)&&/\bSaved memory:\b/i.test(raw))
+    || /\bUse all known attendees\. If the data is thin\b/i.test(raw)
+    || /\bVAL:\s*I could not find a matching email\b/i.test(raw);
+}
+function isUsableTranscriptArchiveRecord(record={}){
+  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
+  const type=record.type||record.kind||record.metadata?.type||'transcript';
+  if(!raw) return false;
+  if(String(type||'').toLowerCase()==='chat_memory') return false;
+  if(!isTranscriptLikeType(type)) return false;
+  if(isMeetingPrepMemoryText(raw)) return false;
+  return true;
+}
+function isUsableTranscriptIndexRow(row={}){
+  const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
+  return !!raw&&!isMeetingPrepMemoryText(raw);
+}
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
   const metadata=item.metadata||{};
-  if(['transcript_insight','relationship_memory'].includes(kind)) return false;
+  const raw=item.rawText||item.raw_text||'';
+  if(['transcript_insight','relationship_memory','chat_memory'].includes(kind)) return false;
+  if(isMeetingPrepMemoryText(raw)) return false;
   return /(^|_)transcript($|_)/.test(kind)||!!metadata.transcriptId;
 }
 async function transcriptArchiveRecords(days=3650,limit=500){
   const [stored,memory]=await Promise.all([recentTranscripts(days),recentMemoryItems(days,Math.max(limit*6,600))]);
   const byId=new Map();
-  for(const row of (stored||[]).filter(Boolean))byId.set(String(row.id),{...row,metadata:row.metadata||{}});
+  for(const row of (stored||[]).filter(isUsableTranscriptArchiveRecord))byId.set(String(row.id),{...row,metadata:row.metadata||{}});
   const legacyGroups=new Map();
   for(const item of (memory||[]).filter(isTranscriptMemoryRecord)){
     const metadata=item.metadata||{},id=String(metadata.transcriptId||item.id||'');
@@ -12673,7 +12700,8 @@ async function transcriptArchiveRecords(days=3650,limit=500){
   for(const [id,items] of legacyGroups){
     items.sort((a,b)=>Number(a.metadata?.chunkIndex||1)-Number(b.metadata?.chunkIndex||1));
     const first=items[0],metadata=items.reduce((all,item)=>({...all,...(item.metadata||{})}),{});
-    byId.set(id,{id,type:first.kind||first.type||'transcript',title:metadata.title||first.summary||'Recovered transcript',rawText:items.map(item=>item.rawText||'').filter(Boolean).join('\n\n'),metadata:{...metadata,recoveredFrom:'val_memory_items'},createdAt:first.createdAt||metadata.timestamp||metadata.createdAt||''});
+    const recovered={id,type:first.kind||first.type||'transcript',title:metadata.title||first.summary||'Recovered transcript',rawText:items.map(item=>item.rawText||'').filter(Boolean).join('\n\n'),metadata:{...metadata,recoveredFrom:'val_memory_items'},createdAt:first.createdAt||metadata.timestamp||metadata.createdAt||''};
+    if(isUsableTranscriptArchiveRecord(recovered))byId.set(id,recovered);
   }
   return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
 }

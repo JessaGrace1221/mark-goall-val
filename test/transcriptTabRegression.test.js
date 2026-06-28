@@ -33,6 +33,16 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
   assert.match(server,/legacyGroups/);
 });
 
+test('transcript retrieval excludes meeting prep prompts and chat memory',()=>{
+  assert.match(server,/function isMeetingPrepMemoryText/);
+  assert.match(server,/Prepare me for this upcoming meeting using attendee intelligence/);
+  assert.match(server,/function isUsableTranscriptArchiveRecord/);
+  assert.match(server,/String\(type\|\|''\)\.toLowerCase\(\)===\'chat_memory\'/);
+  assert.match(server,/function isUsableTranscriptIndexRow/);
+  assert.match(server,/filter\(isUsableTranscriptIndexRow\)/);
+  assert.match(server,/saveTranscriptIndexRaw[\s\S]{0,260}isUsableTranscriptArchiveRecord/);
+});
+
 test('transcript titles reject command labels and prefer real topics',()=>{
   assert.match(server,/function transcriptTopicTitleFromText/);
   assert.match(server,/prepare me for\|summarize this past meeting\|meeting prep/);
