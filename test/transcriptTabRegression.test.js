@@ -22,6 +22,8 @@ test('transcript metadata is flattened and processing results are persisted',()=
   assert.match(server,/function updateTranscriptMetadata/);
   assert.match(server,/reviewStatus:\'needs_review\'/);
   assert.match(server,/processing failed after durable save/);
+  assert.match(server,/fallbackTranscriptSummary/);
+  assert.match(server,/process_endpoint/);
 });
 
 test('retrieval merges dedicated transcript storage with legacy durable memory',()=>{
@@ -60,6 +62,17 @@ test('refresh reloads the full durable archive and updates counts',()=>{
   assert.match(ui,/transcriptState\.counts=data\.counts/);
   assert.match(ui,/updateCommandCenterBadges/);
   assert.match(ui,/lastLoadedAt=new Date\(\)\.toISOString/);
+});
+
+test('pending transcript repair can reprocess stuck received rows',()=>{
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/repair'/);
+  assert.match(server,/processExistingTranscriptRecord/);
+  assert.match(server,/processingStatus:'failed',summaryStatus:'fallback_complete'/);
+  assert.match(server,/participant_matching/);
+  assert.match(ui,/function transcriptHeader/);
+  assert.match(ui,/Process Pending/);
+  assert.match(ui,/repairTranscriptProcessing/);
+  assert.match(ui,/api\/val\/transcripts\/repair/);
 });
 
 test('left navigation exposes live transcript, task, and draft badges',()=>{

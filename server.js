@@ -15862,19 +15862,33 @@ async function saveTranscriptEvidenceObservations({sourceId,title,transcript,par
   for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
   return (await runObservationEngine(evidence,{candidates,replace:true})).observations;
 }
+function fallbackTranscriptSummary(transcript,notes='Processing fallback summary; transcript retained for review.'){
+  const text=String(transcript||'').replace(/\s+/g,' ').trim();
+  const lines=String(transcript||'').split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  return {
+    executiveSummary:text.slice(0,900)||'Summary unavailable.',
+    clientSummary:'',
+    internalNotes:notes,
+    keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
+    openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),
+    relationshipUpdates:[],
+    tasks:lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
+    contactUpdates:[],
+    followupDrafts:[]
+  };
+}
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
   const title=transcriptDisplayTitleFromPayload(payload,transcript),sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
   await updateTranscriptIndexStatus(sourceId,{meetingTitle:title,calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',meetingDatetime:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||null});
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
-  const participants=await matchTranscriptParticipants(payload,sourceId,transcript);
+  const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
   const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
   try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
-    modelFailed=e.message;const lines=transcript.split(/\n+/).map(line=>line.trim()).filter(Boolean),fallbackTasks=lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>{const split=line.match(/^([^:]{2,80}):\s*(.+)$/),quote=split?split[2]:line,person=split?split[1]:'';return {taskTitle:cleanTaskTitle(quote).replace(/^I\s+will\s+/i,'').replace(/^we\s+will\s+/i,''),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:person,dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line};}),decisions=lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10);
-    parsed={executiveSummary:transcript.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Automated fallback summary; model processing needs review.',keyDecisions:decisions,openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),relationshipUpdates:[],tasks:fallbackTasks,contactUpdates:[],followupDrafts:[]};
+    modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{}));
@@ -16023,7 +16037,60 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});const result={ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})};await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title,source:body.source||''},success:true}).catch(()=>{});res.json(result);}catch(e){res.status(500).json({error:e.message});}});
+async function processExistingTranscriptRecord(record){
+  const rawText=String(record.rawTranscript||record.raw_text||record.rawText||record.transcriptText||'').trim();
+  const id=record.transcriptId||record.transcript_id||record.id;
+  if(!id||!rawText)return {ok:false,id:id||'',error:'Missing transcript text'};
+  const payload={...record,title:record.meetingTitle||record.title||'',meetingTitle:record.meetingTitle||record.meeting_title||record.title||'',transcript:rawText,rawText,savedTranscriptId:id,source:record.source||'transcript_repair',timestamp:record.meetingDatetime||record.meeting_datetime||record.createdAt||record.created_at||null,calendarEventId:record.calendarEventId||record.calendar_event_id||''};
+  try{return {ok:true,id,...await processTranscriptPayload(payload)};}
+  catch(e){
+    const fallback=fallbackTranscriptSummary(rawText,'Repair fallback summary; full processing failed but transcript is no longer pending.');
+    await saveTranscriptSummary(id,fallback).catch(()=>{});
+    await updateTranscriptIndexStatus(id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});
+    await logTranscriptAction(id,'failed_action','repair_pipeline','failed',e.message).catch(()=>{});
+    return {ok:false,id,error:e.message,fallbackSaved:true};
+  }
+}
+app.post('/api/val/transcripts/repair',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(50,Number(req.body?.limit)||25));
+    const data=await transcriptIndexData();
+    const stuck=(data.transcripts||[]).filter(row=>{
+      const summary=data.summaries.find(s=>String(s.transcriptId)===String(row.transcriptId));
+      const processing=String(row.processingStatus||'').toLowerCase();
+      const summaryStatus=String(row.summaryStatus||'').toLowerCase();
+      return !summary||['received','pending','failed','error','summarizing','matching_participants','extracting_actions'].includes(processing)||['pending','failed','error'].includes(summaryStatus);
+    }).slice(0,limit);
+    const results=[];
+    for(const row of stuck)results.push(await processExistingTranscriptRecord(row));
+    await auditLog({req,action:'transcript_repair_requested',resourceType:'transcript_processing',metadata:{requestedLimit:limit,found:stuck.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length},success:true}).catch(()=>{});
+    res.json({ok:true,found:stuck.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length,results});
+  }catch(e){console.error('[transcripts] repair failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/process',async(req,res)=>{
+  let saved=null,body=null,transcriptText='',title='Processed transcript',meetingMatch=null;
+  try{
+    body=normalizedTranscriptWebhookPayload(req.body||{});transcriptText=body.transcript||'';title=body.title||'Processed transcript';
+    if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});
+    saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});
+    const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};
+    meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);
+    if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});
+    const processed=await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch});
+    const result={ok:true,...saved,...processed,saved:true,processed:true};
+    await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title,source:body.source||''},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    if(saved?.id){
+      const fallback=fallbackTranscriptSummary(transcriptText,'Processing failed; transcript retained and fallback summary saved for review.');
+      await saveTranscriptSummary(saved.id,fallback).catch(()=>{});
+      await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});
+      await logTranscriptAction(saved.id,'failed_action','process_endpoint','failed',e.message).catch(()=>{});
+      return res.status(202).json({ok:true,...saved,saved:true,processed:false,processingError:e.message,meetingMatch});
+    }
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.get('/api/presence/contract',(req,res)=>{
   res.json({ok:true,contract:PRESENCE_MODE_CONTRACT,bookMode:isBookEditorProject(),message:isBookEditorProject()?'Michele book/editor voice remains on its separate workflow.':'Presence Mode protects bold noticing and careful action.'});
 });
