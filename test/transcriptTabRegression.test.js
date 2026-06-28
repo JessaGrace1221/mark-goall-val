@@ -10,11 +10,24 @@ const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 
 test('webhook accepts common transcript payload shapes and validates text',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
-  for(const field of ['rawText','raw_text','transcriptText','transcript_text','text','content','body','segments','sentences'])assert.ok(server.includes(field));
+  for(const field of ['rawText','raw_text','transcriptText','transcript_text','text','content','body','segments','sentences','utterances','speakerTurns'])assert.ok(server.includes(field));
   assert.match(server,/A usable transcript text field is required/);
   assert.match(server,/\[transcripts\] webhook received/);
   assert.match(server,/\[transcripts\] saved successfully/);
   assert.match(server,/\[transcripts\] save failed/);
+});
+
+test('webhook normalizes Krisp-style speaker turn payloads',()=>{
+  assert.match(server,/krispSamplePayload/);
+  assert.match(server,/function transcriptTurnsFromValue/);
+  assert.match(server,/speaker_turns/);
+  assert.match(server,/utterances/);
+  assert.match(server,/monologues/);
+  assert.match(server,/function transcriptTurnSpeaker/);
+  assert.match(server,/function transcriptTurnTime/);
+  assert.match(server,/function transcriptTurnText/);
+  assert.match(server,/participants:\[\{name:'Jessa'\},\{name:'Aric'/);
+  assert.match(server,/krispDetected/);
 });
 
 test('transcript metadata is flattened and processing results are persisted',()=>{
