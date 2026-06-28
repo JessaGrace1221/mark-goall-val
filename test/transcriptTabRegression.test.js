@@ -121,6 +121,10 @@ test('Teach VAL can upload old transcript files into the transcript pipeline',()
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/fd\.append\('docType','transcript'\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/teach_val_transcript_upload/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/loadTranscripts\(false\)/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/window\.teachValUploadTranscripts=function/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/window\.teachValTranscriptFilesChanged=function/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/fetch\(FILES_URL,\{method:'POST',credentials:'same-origin',body:fd\}/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/input\.click\(\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValVoiceStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValPromptStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValReviewStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);

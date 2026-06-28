@@ -6034,11 +6034,16 @@ function teachValVoiceHtml(){
   return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p>'+teachValVoiceStatusHtml()+'<div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
 }
 function teachValTranscriptUploadHtml(){
-  return '<section class="exec-card"><h3>Upload Existing Transcripts</h3><p>Bring in old Krisp, Zoom, meeting, or call transcripts. VAL will save them as transcript evidence, summarize them, and make them available on the Transcripts page.</p><input id="teachValTranscriptFiles" type="file" multiple accept=".txt,.md,.html,.json,.csv,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"><div class="email-actions"><button class="primary" onclick="teachValUploadTranscripts()">Upload Transcripts</button><button onclick="commandCenterNavigate(\'transcripts\')">Open Transcripts</button></div><div id="teachValTranscriptUploadStatus" class="email-reason">Each file becomes evidence first, then transcript intelligence.</div></section>';
+  return '<section class="exec-card"><h3>Upload Existing Transcripts</h3><p>Bring in old Krisp, Zoom, meeting, or call transcripts. VAL will save them as transcript evidence, summarize them, and make them available on the Transcripts page.</p><input id="teachValTranscriptFiles" type="file" multiple onchange="teachValTranscriptFilesChanged()" accept=".txt,.md,.html,.json,.csv,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"><div class="email-actions"><button type="button" class="primary" onclick="teachValUploadTranscripts()">Upload Transcripts</button><button type="button" onclick="commandCenterNavigate(\'transcripts\')">Open Transcripts</button></div><div id="teachValTranscriptUploadStatus" class="email-reason">Each file becomes evidence first, then transcript intelligence.</div></section>';
 }
-function teachValUploadTranscripts(){
+window.teachValTranscriptFilesChanged=function(){
   var input=document.getElementById('teachValTranscriptFiles'),status=document.getElementById('teachValTranscriptUploadStatus'),files=Array.prototype.slice.call((input&&input.files)||[]);
-  if(!files.length){if(status)status.textContent='Choose one or more transcript files first.';return;}
+  if(status)status.textContent=files.length?('Ready to upload '+files.length+' transcript file'+(files.length===1?'':'s')+'.'):'Each file becomes evidence first, then transcript intelligence.';
+};
+window.teachValUploadTranscripts=function(){
+  var input=document.getElementById('teachValTranscriptFiles'),status=document.getElementById('teachValTranscriptUploadStatus'),files=Array.prototype.slice.call((input&&input.files)||[]);
+  if(!input){if(status)status.textContent='Transcript upload control is not available. Refresh and open Teach VAL again.';return;}
+  if(!files.length){if(status)status.textContent='Choose one or more transcript files first.';input.click();return;}
   if(status)status.textContent='Uploading '+files.length+' transcript file'+(files.length===1?'':'s')+'...';
   var done=0,ok=0,errors=[];
   files.forEach(function(f){
@@ -6047,7 +6052,14 @@ function teachValUploadTranscripts(){
     fd.append('docType','transcript');
     fd.append('uploadedVia','teach_val_transcript_upload');
     fd.append('processTranscript','true');
-    apiFetch(FILES_URL,{method:'POST',body:fd}).then(function(data){
+    fetch(FILES_URL,{method:'POST',credentials:'same-origin',body:fd}).then(function(r){
+      return r.text().then(function(text){
+        var data=null;
+        try{data=text?JSON.parse(text):{};}catch(e){data={error:text};}
+        if(!r.ok||data.ok===false)throw new Error(data.error||('Upload failed with HTTP '+r.status));
+        return data;
+      });
+    }).then(function(data){
       ok++;
       if(data&&data.processed===false&&data.processingError)errors.push(f.name+': '+data.processingError);
     }).catch(function(e){errors.push(f.name+': '+e.message);}).finally(function(){
@@ -6059,7 +6071,7 @@ function teachValUploadTranscripts(){
       }
     });
   });
-}
+};
 function teachValVoiceTurn(payload){
   if(!teachValOnboarding||!teachValOnboarding.session)return Promise.reject(new Error('Open Teach VAL About You first.'));
   return apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/voice-turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})})
