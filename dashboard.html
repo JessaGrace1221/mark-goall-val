@@ -6033,6 +6033,33 @@ function teachValVoiceHtml(){
   var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, v=s.voiceInterview||{};
   return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p>'+teachValVoiceStatusHtml()+'<div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
 }
+function teachValTranscriptUploadHtml(){
+  return '<section class="exec-card"><h3>Upload Existing Transcripts</h3><p>Bring in old Krisp, Zoom, meeting, or call transcripts. VAL will save them as transcript evidence, summarize them, and make them available on the Transcripts page.</p><input id="teachValTranscriptFiles" type="file" multiple accept=".txt,.md,.html,.json,.csv,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"><div class="email-actions"><button class="primary" onclick="teachValUploadTranscripts()">Upload Transcripts</button><button onclick="commandCenterNavigate(\'transcripts\')">Open Transcripts</button></div><div id="teachValTranscriptUploadStatus" class="email-reason">Each file becomes evidence first, then transcript intelligence.</div></section>';
+}
+function teachValUploadTranscripts(){
+  var input=document.getElementById('teachValTranscriptFiles'),status=document.getElementById('teachValTranscriptUploadStatus'),files=Array.prototype.slice.call((input&&input.files)||[]);
+  if(!files.length){if(status)status.textContent='Choose one or more transcript files first.';return;}
+  if(status)status.textContent='Uploading '+files.length+' transcript file'+(files.length===1?'':'s')+'...';
+  var done=0,ok=0,errors=[];
+  files.forEach(function(f){
+    var fd=new FormData();
+    fd.append('file',f,f.name);
+    fd.append('docType','transcript');
+    fd.append('uploadedVia','teach_val_transcript_upload');
+    fd.append('processTranscript','true');
+    apiFetch(FILES_URL,{method:'POST',body:fd}).then(function(data){
+      ok++;
+      if(data&&data.processed===false&&data.processingError)errors.push(f.name+': '+data.processingError);
+    }).catch(function(e){errors.push(f.name+': '+e.message);}).finally(function(){
+      done++;
+      if(status)status.textContent='Uploaded '+done+' of '+files.length+'. '+ok+' saved as transcript evidence.'+(errors.length?' Needs review: '+errors.join(' | '):'');
+      if(done>=files.length){
+        if(typeof loadTranscripts==='function')loadTranscripts(false).catch(function(){});
+        if(input)input.value='';
+      }
+    });
+  });
+}
 function teachValVoiceTurn(payload){
   if(!teachValOnboarding||!teachValOnboarding.session)return Promise.reject(new Error('Open Teach VAL About You first.'));
   return apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/voice-turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})})
@@ -6158,7 +6185,7 @@ function teachValRailHtml(current){
 }
 function teachValWelcomeStageHtml(){
   var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
-  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>You do not need to fill out a long form. I will guide you one step at a time, and you can bring in what your previous AI tools already know.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div></main>';
+  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>You do not need to fill out a long form. I will guide you one step at a time, and you can bring in what your previous AI tools already know.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div>'+teachValTranscriptUploadHtml()+'</main>';
 }
 function teachValVoiceStageHtml(){
   return '<main class="teach-val-stage"><div><h2>Voice Interview</h2><p>Have a warm conversation with VAL, then save the transcript before bringing in your existing AI context.</p></div>'+teachValVoiceHtml().replace('class="exec-card" style="grid-column:1/-1"','class="exec-card"')+'<div class="teach-val-action-row"><button class="alert-btn" onclick="teachValOpenPrompt(\'current_projects\')">Skip to AI Prompts</button></div></main>';
@@ -6418,8 +6445,9 @@ function uploadFileToVAL(f){
 
   var fd=new FormData();
   fd.append('file',f,f.name);
+  var uploadLower=(f.name||'').toLowerCase();
   if(isBookEditorMode()){
-    var lower=(f.name||'').toLowerCase();
+    var lower=uploadLower;
     var docType='manuscript';
     if(/\bchapter\b/.test(lower))docType='chapter';
     else if(/\boutline|map|structure\b/.test(lower))docType='outline';
@@ -6432,6 +6460,10 @@ function uploadFileToVAL(f){
     fd.append('docType',docType);
     if(chapterMatch)fd.append('chapterNumber',chapterMatch[1]);
     fd.append('chapterTitle',f.name.replace(/\.[^.]+$/,''));
+  }else if(/\b(transcript|meeting notes?|call notes?|recording|krisp|zoom|teams|meet)\b/.test(uploadLower)){
+    fd.append('docType','transcript');
+    fd.append('uploadedVia','chat_transcript_upload');
+    fd.append('processTranscript','true');
   }
 
   apiFetch(FILES_URL,{
@@ -6439,11 +6471,16 @@ function uploadFileToVAL(f){
     body:fd
   })
   .then(function(data){
+    var isTranscript=data.docType==='transcript'||data.type==='processed_transcript';
+    var detail=isTranscript
+      ? 'Extracted '+(data.chars||0)+' characters. VAL saved this as transcript evidence and '+(data.processed?'processed the summary, observations, and related actions.':'will show it for processing/review.')
+      : 'Extracted '+(data.chars||0)+' characters. VAL can now answer questions about this document.';
     msgEl.querySelector('.cmsg-bubble').innerHTML=
-      '<p>✅ <strong>'+f.name+'</strong> saved to VAL memory.</p>'
-      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Extracted '+(data.chars||0)+' characters. VAL can now answer questions about this document.</p>';
-    setUploadStatus('Saved '+f.name+' to VAL memory. VAL can now read it.','success');
-    chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to VAL memory. You can now ask me questions about it.'});
+      '<p>✅ <strong>'+f.name+'</strong> saved to VAL '+(isTranscript?'transcripts':'memory')+'.</p>'
+      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">'+detail+'</p>';
+    setUploadStatus('Saved '+f.name+' to VAL '+(isTranscript?'transcripts.':'memory.'),'success');
+    chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to VAL '+(isTranscript?'transcripts. Open Transcript Intelligence to review it.':'memory. You can now ask me questions about it.')});
+    if(isTranscript&&typeof loadTranscripts==='function')loadTranscripts(false).catch(function(){});
     finishUploadItem(true);
   })
   .catch(function(err){

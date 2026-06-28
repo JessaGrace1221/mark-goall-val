@@ -107,6 +107,22 @@ test('pending transcript repair can reprocess stuck received rows',()=>{
   assert.match(ui,/api\/val\/transcripts\/repair/);
 });
 
+test('uploaded transcript files enter transcript intelligence instead of generic memory only',()=>{
+  assert.match(server,/function isUploadedTranscriptDocType/);
+  assert.match(server,/val_file_upload_transcript/);
+  assert.match(server,/type:isTranscriptUpload\?'processed_transcript':'knowledge_document'/);
+  assert.match(server,/processTranscriptPayload\(\{/);
+  assert.match(server,/uploadedVia:req\.body\.uploadedVia\|\|'val_file_upload'/);
+});
+
+test('Teach VAL can upload old transcript files into the transcript pipeline',()=>{
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValTranscriptUploadHtml/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/Upload Existing Transcripts/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/fd\.append\('docType','transcript'\)/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/teach_val_transcript_upload/);
+  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/loadTranscripts\(false\)/);
+});
+
 test('left navigation exposes live transcript, task, and draft badges',()=>{
   assert.match(ui,/function navBadge/);
   assert.match(ui,/data-badge-view/);

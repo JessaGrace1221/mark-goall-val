@@ -16598,7 +16598,11 @@ function inferBookDocTypeFromName(value, fallback='knowledge_document'){
   if(/\boutline\b/.test(text)) return 'outline';
   if(/\bprompt|ifs\b/.test(text)) return 'prompt_notes';
   if(/\blaunch|podcast\b/.test(text)) return 'launch_notes';
+  if(/\b(transcript|meeting notes?|call notes?|recording|krisp|zoom|teams|meet)\b/.test(text)) return 'transcript';
   return fallback;
+}
+function isUploadedTranscriptDocType(value){
+  return /^(transcript|meeting_transcript|call_transcript|processed_transcript)$/i.test(String(value||'').trim());
 }
 function uniqueBookDocRecords(records){
   const seen=new Set(), out=[];
@@ -16963,6 +16967,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
       const text=(await extractUploadedText(file)).trim();
       if(!text) throw new Error(`No readable text found in ${file.originalname}`);
       const inferredDocType=inferBookDocTypeFromName([req.body.title,file.originalname].filter(Boolean).join(' '),req.body.docType||'knowledge_document');
+      const isTranscriptUpload=isUploadedTranscriptDocType(inferredDocType);
       const metadata={
         fileName:file.originalname,
         mimeType:file.mimetype,
@@ -16973,18 +16978,37 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         chapterNumber:req.body.chapterNumber||'',
         chapterTitle:req.body.chapterTitle||'',
         canonicalManuscript:inferredDocType==='manuscript',
-        projectType:CLIENT_CONFIG.projectType||''
+        projectType:CLIENT_CONFIG.projectType||'',
+        uploadedVia:req.body.uploadedVia||'val_file_upload'
       };
       const saved=await saveTranscript({
-        type:'knowledge_document',
+        type:isTranscriptUpload?'processed_transcript':'knowledge_document',
         title:req.body.title||file.originalname,
         transcript:text,
+        rawText:text,
         timestamp:new Date().toISOString(),
-        source:'val_file_upload',
+        source:isTranscriptUpload?'val_file_upload_transcript':'val_file_upload',
         importance:isBookEditorProject()?4:3,
         metadata
       });
-      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata});
+      let processed=null,processingError='';
+      if(isTranscriptUpload&&String(req.body.processTranscript||'true')!=='false'){
+        try{
+          processed=await processTranscriptPayload({
+            source:'val_file_upload_transcript',
+            title:req.body.title||file.originalname,
+            transcript:text,
+            rawText:text,
+            savedTranscriptId:saved.id,
+            timestamp:new Date().toISOString(),
+            metadata
+          });
+        }catch(e){
+          processingError=e.message||String(e);
+          await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});
+        }
+      }
+      savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,processingError,counts:processed?.counts||null});
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
   }catch(e){res.status(500).json({error:e.message});}
