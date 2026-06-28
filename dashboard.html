@@ -1508,12 +1508,14 @@ html body .val-primary-nav{
 .val-nav-user small{display:block!important;font-size:.62rem!important;color:#7a8497!important}
 .center-welcome.val-home{display:block!important;text-align:left!important;padding:0 42px 126px!important;overflow:auto!important;background:#fbfaf7!important;color:var(--val-ink)!important;position:relative!important}
 .val-briefing-contract{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}
-.val-home-hero{min-height:190px!important;display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:30px!important;padding:54px 22px 42px 28px!important;position:relative!important;overflow:hidden!important}
-.val-home-hero:before{content:""!important;position:absolute!important;top:0!important;right:0!important;width:min(42%,680px)!important;height:226px!important;opacity:.98!important;background-image:linear-gradient(90deg,rgba(251,250,247,1) 0%,rgba(251,250,247,.55) 10%,rgba(251,250,247,0) 24%),var(--val-brand-banner-url)!important;background-size:cover!important;background-position:right center!important;background-repeat:no-repeat!important;clip-path:none!important}
-.time-morning .val-home-hero:before{--val-brand-banner-url:var(--val-banner-morning)}
-.time-afternoon .val-home-hero:before{--val-brand-banner-url:var(--val-banner-afternoon)}
-.time-evening .val-home-hero:before{--val-brand-banner-url:var(--val-banner-evening)}
-.time-night .val-home-hero:before{--val-brand-banner-url:var(--val-banner-night)}
+.val-home-hero{min-height:250px!important;display:grid!important;grid-template-rows:118px auto!important;gap:22px!important;padding:18px 22px 34px 28px!important;position:relative!important;overflow:hidden!important}
+.val-home-hero:before{content:none!important}
+.val-home-banner{width:100%!important;height:118px!important;background-image:var(--val-brand-banner-url)!important;background-size:contain!important;background-position:right center!important;background-repeat:no-repeat!important}
+.val-home-greeting{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:30px!important}
+.time-morning .val-home-banner{--val-brand-banner-url:var(--val-banner-morning)}
+.time-afternoon .val-home-banner{--val-brand-banner-url:var(--val-banner-afternoon)}
+.time-evening .val-home-banner{--val-brand-banner-url:var(--val-banner-evening)}
+.time-night .val-home-banner{--val-brand-banner-url:var(--val-banner-night)}
 .val-home-hero>*{position:relative!important;z-index:1!important}
 .val-home-hero h1{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;font-size:2.95rem!important;line-height:1!important;font-weight:600!important;letter-spacing:0!important;color:var(--val-ink)!important;margin:0 0 12px!important}
 .val-home-hero p{font-size:1.13rem!important;line-height:1.45!important;color:#26354d!important;max-width:680px!important;margin:0!important}
@@ -1581,7 +1583,7 @@ html body .val-primary-nav{
   html body .val-primary-nav.open{transform:translateX(0)!important}
   .val-mobile-nav-floating{display:grid!important;position:fixed!important;top:12px!important;left:12px!important;z-index:120!important;width:38px!important;height:38px!important;border-radius:999px!important;border:1px solid rgba(7,24,45,.12)!important;background:rgba(255,255,255,.92)!important;color:#07182d!important;place-items:center!important;box-shadow:0 10px 24px rgba(7,24,45,.12)!important;font-size:1.1rem!important}
   html body .body{height:100svh!important}.center-welcome.val-home{padding:0 16px 124px!important}
-  .val-home-hero{padding:34px 4px 28px!important;min-height:160px!important}.val-home-hero:before{width:55%!important;height:150px!important;opacity:.38!important;background-image:linear-gradient(90deg,rgba(251,250,247,1) 0%,rgba(251,250,247,.85) 18%,rgba(251,250,247,0) 42%),var(--val-brand-banner-url)!important;background-position:right center!important}
+  .val-home-hero{grid-template-rows:86px auto!important;gap:16px!important;padding:20px 4px 28px!important;min-height:210px!important}.val-home-banner{height:86px!important;background-position:center top!important}
   .val-home-hero h1{font-size:2.15rem!important}.val-home-hero p{font-size:.98rem!important}.val-hero-note{display:none!important}
   .val-dashboard-grid{grid-template-columns:1fr!important}.val-dash-card{min-height:auto!important;padding:18px!important}
   .val-presence-actions{grid-template-columns:1fr!important;gap:10px!important;margin-top:16px!important}.val-presence-btn{min-height:72px!important;padding:13px 15px!important;grid-template-columns:34px minmax(0,1fr)!important}.val-presence-icon{width:34px!important;height:34px!important;font-size:.98rem!important}
@@ -1896,8 +1898,9 @@ html body .val-primary-nav{
     <!-- Welcome state -->
     <div class="center-welcome val-home time-morning" id="centerWelcome">
       <div class="val-home-hero">
-        <div><h1>Good morning, Jessa.</h1><p>I’ve been paying attention. Here’s what <em>matters</em> today.</p></div>
-        <div class="val-hero-note">You’ve got this. <span>♡</span></div>
+        <div class="val-home-banner" aria-label="Velocity Alignment Leverage. AI that moves you forward."></div>
+        <div class="val-home-greeting"><div><h1>Good morning, Jessa.</h1><p>I’ve been paying attention. Here’s what <em>matters</em> today.</p></div>
+        <div class="val-hero-note">You’ve got this. <span>♡</span></div></div>
       </div>
       <section class="val-dashboard-grid">
         <article class="val-dash-card what-changed">
