@@ -82,13 +82,15 @@ test('left navigation exposes live transcript, task, and draft badges',()=>{
   assert.match(ui,/function openTaskCount/);
   assert.match(ui,/function transcriptAttentionCount/);
   assert.match(ui,/window\.syncCommandCenterDrafts/);
-  assert.match(css,/\.val-nav-badge\{/);
-  assert.match(css,/\.val-nav-badge\.empty\{display:none\}/);
-  assert.match(css,/\.val-nav-label/);
+  assert.match(ui,/navBadge/);
 });
 
-test('every transcript card exposes the four required actions',()=>{
-  for(const label of ['Open Transcript','Ask VAL','Create Task','Draft Follow-Up'])assert.ok(ui.includes(label));
+test('every transcript card exposes the simple user-facing actions',()=>{
+  for(const label of ['Open Transcript','Chat'])assert.ok(ui.includes(label));
+  assert.doesNotMatch(ui,/tasks extracted ·/);
+  assert.doesNotMatch(ui,/summary '\+safe\(t\.summaryStatus/);
+  assert.match(ui,/Saved conversations/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
   assert.match(server,/action===\'draft_followup\'/);

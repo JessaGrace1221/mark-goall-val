@@ -105,15 +105,22 @@ test('agency engine ranks discerning moves without turning observations into tas
 test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
-  assert.match(ui,/Participants & Match Confidence/);
-  assert.match(ui,/Action Log/);
+  assert.match(ui,/Saved conversations/);
+  assert.match(ui,/Chat About This Meeting/);
+  assert.match(ui,/Processing details/);
   assert.match(ui,/Approve & Create/);
 });
 
-test('transcript detail exposes recap workflow sections and actions',()=>{
-  for(const label of ['Summary','Key Points','Decisions','Action Items','Created Tasks','Recap Draft','Processing Status','Review Recap Draft','Regenerate Recap Draft','Ask VAL About This Transcript']){
+test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
+  for(const label of ['Summary','Transcript','Chat About This Meeting','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
+  assert.match(ui,/api\/val\/transcripts\/'\+encodeURIComponent\(t\.id\)\+'\/chat/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
+  assert.match(server,/Do not say you need an email, document, Gmail, Drive, or external source/);
+  assert.match(server,/function cleanTranscriptForUi/);
+  assert.match(server,/function cleanTranscriptSummaryForUi/);
+  assert.match(server,/function cleanTranscriptTitleForUi/);
   assert.match(server,/transcript\.drafts=\(await listDrafts\(\)\)\.filter/);
   assert.match(server,/req\.query\.transcriptId/);
 });

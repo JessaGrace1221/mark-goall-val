@@ -12524,7 +12524,39 @@ function transcriptDetailFromIndex(data,transcript){
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
   const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
   const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
-  return {...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
+  return cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+}
+function transcriptLooksLikeProcessingPrompt(text=''){
+  return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
+}
+function cleanTranscriptTitleForUi(title='',rawText='',createdAt=''){
+  let clean=dashboardCleanText(title||'');
+  clean=clean.replace(/\bUser\/Time\/Date\b/gi,'').replace(/\bunknown\b\s*·?/gi,'').replace(/[·\s-]+$/,'').trim();
+  const text=String(rawText||'');
+  const meeting=text.match(/\bMeeting:\s*([^\n.]+?)(?:\s+Time:|\s+Date:|$)/i);
+  if(meeting&&meeting[1])clean=dashboardCleanText(meeting[1]).replace(/[|]/g,' / ');
+  if(!clean||/^(user|time|date|unknown|untitled transcript)$/i.test(clean)){
+    const topic=transcriptTopicTitleFromText(text);
+    clean=topic||'Transcript';
+  }
+  const d=transcriptDateLabel(createdAt);
+  return clean+(d&&!clean.includes(d)?` · ${d}`:'');
+}
+function cleanTranscriptSummaryForUi(summary,rawText=''){
+  const executive=summary&&typeof summary==='object'?(summary.executiveSummary||summary.clientSummary||summary.internalNotes||''):String(summary||'');
+  let clean=dashboardCleanText(executive);
+  if(!clean||transcriptLooksLikeProcessingPrompt(clean)){
+    const lines=String(rawText||'').split(/\n+/).map(x=>dashboardCleanText(x)).filter(Boolean);
+    const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40)||lines.find(line=>line.length>20)||'Transcript saved. Open it to review the conversation.';
+    clean=dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360);
+  }
+  return dashboardShortText(clean,'Transcript saved. Open it to review the conversation.',420);
+}
+function cleanTranscriptForUi(t={}){
+  const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
+  const title=cleanTranscriptTitleForUi(t.title||t.meetingTitle||'',raw,t.createdAt||t.meetingDatetime||'');
+  const cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
+  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
 }
 async function clearTranscriptStaging(transcriptId){
   await clearEvidenceLinksForTranscript(transcriptId);
@@ -16061,10 +16093,12 @@ async function saveTranscriptEvidenceObservations({sourceId,title,transcript,par
   return (await runObservationEngine(evidence,{candidates,replace:true})).observations;
 }
 function fallbackTranscriptSummary(transcript,notes='Processing fallback summary; transcript retained for review.'){
-  const text=String(transcript||'').replace(/\s+/g,' ').trim();
-  const lines=String(transcript||'').split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  const raw=String(transcript||'');
+  const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
+  const usefulLines=lines.filter(line=>!transcriptLooksLikeProcessingPrompt(line));
+  const text=(usefulLines.join(' ')||raw).replace(/\s+/g,' ').trim();
   return {
-    executiveSummary:text.slice(0,900)||'Summary unavailable.',
+    executiveSummary:dashboardShortText(text,'Summary unavailable.',900),
     clientSummary:'',
     internalNotes:notes,
     keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
@@ -16155,8 +16189,8 @@ app.get('/api/val/transcripts',async(req,res)=>{
     const data=await transcriptIndexData();
     const archive=await transcriptArchiveRecords(days,limit);
     const transcripts=mergeTranscriptMigrationRecords(archive,data).slice(0,limit).map(record=>{
-      if(record.detail){const detail={...record.detail};delete detail.transcriptText;return detail;}
-      return transcriptUiRecord(record);
+      if(record.detail){const detail=cleanTranscriptForUi({...record.detail});delete detail.transcriptText;return detail;}
+      return cleanTranscriptForUi(transcriptUiRecord(record));
     });
     res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
@@ -16170,8 +16204,35 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=transcriptUiRecord(record,{includeText:true});transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
+    const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
+  try{
+    const id=decodeURIComponent(req.params.transcriptId),question=String(req.body.question||req.body.message||'').trim();
+    if(!question)return res.status(400).json({ok:false,error:'Ask a question about this transcript.'});
+    const data=await transcriptIndexData(id);
+    let transcript=null;
+    if(data.transcripts[0])transcript=transcriptDetailFromIndex(data,data.transcripts[0]);
+    else{
+      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
+    }
+    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
+    const summary=transcript.summary?.executiveSummary||transcript.summaryPreview||'';
+    const system=[
+      VAL_SYSTEM_PROMPT,
+      'You are answering about one selected transcript only.',
+      'Use the supplied transcript and summary as the source of truth.',
+      'Do not say you need an email, document, Gmail, Drive, or external source.',
+      'If the transcript does not contain the answer, say that plainly and explain what is visible.',
+      'Keep the answer simple, clean, and directly useful.'
+    ].join('\n\n');
+    const user=`Transcript title: ${transcript.title}\nSummary: ${summary}\n\nTranscript:\n${String(transcript.transcriptText||'').slice(0,26000)}\n\nQuestion: ${question}`;
+    const answer=await callValModel({system,user,maxTokens:900,temperature:0.25}).catch(e=>`I could not complete transcript chat right now: ${e.message}`);
+    await auditLog({req,action:'transcript_chat_asked',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240)},success:true}).catch(()=>{});
+    res.json({ok:true,message:{role:'assistant',content:answer},transcript:{id:transcript.id,title:transcript.title}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts',async(req,res)=>{
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
