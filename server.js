@@ -12536,6 +12536,8 @@ function cleanTranscriptTitleForUi(title='',rawText='',createdAt=''){
   const text=String(rawText||'');
   const meeting=text.match(/\bMeeting:\s*([^\n.]+?)(?:\s+Time:|\s+Date:|$)/i);
   if(meeting&&meeting[1])clean=dashboardCleanText(meeting[1]).replace(/[|]/g,' / ');
+  const task=text.match(/\bTask:\s*([^\n]{3,140})/i);
+  if(task&&task[1])clean='Planning: '+dashboardShortText(task[1],'conversation',100);
   if(!clean||/^(user|time|date|unknown|untitled transcript)$/i.test(clean)){
     const topic=transcriptTopicTitleFromText(text);
     clean=topic||'Transcript';
@@ -12546,12 +12548,25 @@ function cleanTranscriptTitleForUi(title='',rawText='',createdAt=''){
 function cleanTranscriptSummaryForUi(summary,rawText=''){
   const executive=summary&&typeof summary==='object'?(summary.executiveSummary||summary.clientSummary||summary.internalNotes||''):String(summary||'');
   let clean=dashboardCleanText(executive);
+  const valConversation=valConversationSummaryFromText(rawText);
+  if(valConversation&&(!clean||/^User:\s*/i.test(clean)||transcriptLooksLikeProcessingPrompt(clean)))clean=valConversation;
   if(!clean||transcriptLooksLikeProcessingPrompt(clean)){
     const lines=String(rawText||'').split(/\n+/).map(x=>dashboardCleanText(x)).filter(Boolean);
     const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40)||lines.find(line=>line.length>20)||'Transcript saved. Open it to review the conversation.';
     clean=dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360);
   }
   return dashboardShortText(clean,'Transcript saved. Open it to review the conversation.',420);
+}
+function valConversationSummaryFromText(rawText=''){
+  const raw=String(rawText||'');
+  const val=raw.match(/\bVAL:\s*([\s\S]+)/i);
+  if(!val||!val[1])return '';
+  const text=dashboardCleanText(val[1])
+    .replace(/\b#+\s*/g,'')
+    .replace(/\bClear steps\b[\s\S]*/i,'')
+    .replace(/\bGoal of this task\b[\s\S]*/i,'')
+    .trim();
+  return dashboardShortText(text,'',420);
 }
 function cleanTranscriptForUi(t={}){
   const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
@@ -12660,14 +12675,6 @@ function isMeetingPrepMemoryText(text=''){
     || /\bUse all known attendees\. If the data is thin\b/i.test(raw)
     || /\bVAL:\s*I could not find a matching email\b/i.test(raw);
 }
-function isValCommandConversationText(text=''){
-  const raw=String(text||'');
-  return /\bUser:\s*Help me brainstorm and plan this task\b/i.test(raw)
-    || (/\bTask:\s*/i.test(raw)&&/\bBreak it into clear steps, flag anything I might be missing\b/i.test(raw))
-    || /\bUser:\s*Summarize this past meeting and extract unresolved follow-ups\/tasks\b/i.test(raw)
-    || /\bUser:\s*Prepare me for this upcoming meeting\b/i.test(raw)
-    || /\bVAL:\s*This task is really about\b/i.test(raw);
-}
 function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
@@ -12675,12 +12682,11 @@ function isUsableTranscriptArchiveRecord(record={}){
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
-  if(isValCommandConversationText(raw)) return false;
   return true;
 }
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
-  return !!raw&&!isMeetingPrepMemoryText(raw)&&!isValCommandConversationText(raw);
+  return !!raw&&!isMeetingPrepMemoryText(raw);
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
@@ -12688,7 +12694,6 @@ function isTranscriptMemoryRecord(item={}){
   const raw=item.rawText||item.raw_text||'';
   if(['transcript_insight','relationship_memory','chat_memory'].includes(kind)) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
-  if(isValCommandConversationText(raw)) return false;
   return /(^|_)transcript($|_)/.test(kind)||!!metadata.transcriptId;
 }
 async function transcriptArchiveRecords(days=3650,limit=500){

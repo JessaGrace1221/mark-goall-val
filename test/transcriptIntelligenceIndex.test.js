@@ -106,13 +106,13 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
   assert.match(ui,/Saved conversations/);
-  assert.match(ui,/Chat About This Meeting/);
+  assert.match(ui,/Chat About This Transcript/);
   assert.match(ui,/Processing details/);
   assert.match(ui,/Approve & Create/);
 });
 
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
-  for(const label of ['Summary','Transcript','Chat About This Meeting','Processing details']){
+  for(const label of ['Summary','Transcript','Chat About This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
   assert.match(ui,/api\/val\/transcripts\/'\+encodeURIComponent\(t\.id\)\+'\/chat/);

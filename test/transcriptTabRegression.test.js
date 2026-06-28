@@ -35,15 +35,21 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
 
 test('transcript retrieval excludes meeting prep prompts and chat memory',()=>{
   assert.match(server,/function isMeetingPrepMemoryText/);
-  assert.match(server,/function isValCommandConversationText/);
   assert.match(server,/Prepare me for this upcoming meeting using attendee intelligence/);
-  assert.match(server,/Help me brainstorm and plan this task/);
-  assert.match(server,/Break it into clear steps, flag anything I might be missing/);
   assert.match(server,/function isUsableTranscriptArchiveRecord/);
   assert.match(server,/String\(type\|\|''\)\.toLowerCase\(\)===\'chat_memory\'/);
   assert.match(server,/function isUsableTranscriptIndexRow/);
   assert.match(server,/filter\(isUsableTranscriptIndexRow\)/);
   assert.match(server,/saveTranscriptIndexRaw[\s\S]{0,260}isUsableTranscriptArchiveRecord/);
+});
+
+test('transcript page includes VAL conversation transcripts without calling them meetings',()=>{
+  assert.match(server,/const task=text\.match\(/);
+  assert.match(server,/Planning: /);
+  assert.match(server,/function valConversationSummaryFromText/);
+  assert.match(ui,/Chat About This Transcript/);
+  assert.doesNotMatch(ui,/Chat About This Meeting/);
+  assert.match(ui,/meeting, voice, or VAL conversation transcripts/);
 });
 
 test('transcript titles reject command labels and prefer real topics',()=>{
@@ -65,7 +71,7 @@ test('frontend distinguishes loading failure from a successful empty archive',()
   assert.match(ui,/data\.ok===false\|\|!Array\.isArray\(data\.transcripts\)/);
   assert.match(ui,/Unable to load transcripts/);
   assert.match(ui,/Check the transcript retrieval endpoint or server logs/);
-  assert.match(ui,/No true meeting transcripts are available yet/);
+  assert.match(ui,/No transcripts are available yet/);
   assert.match(ui,/renderTranscriptLoading/);
 });
 
