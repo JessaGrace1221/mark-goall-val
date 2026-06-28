@@ -36,3 +36,14 @@ test('voice defaults to Deepgram Aura 2 Cora and visible fallback warnings',()=>
   assert.match(dashboard,/voiceTtsWarnedAt/);
   assert.match(dashboard,/endpointing=800/);
 });
+
+test('dashboard exposes obvious voice chat and meeting mode entry points',()=>{
+  assert.match(dashboard,/Voice Chat/);
+  assert.match(dashboard,/Meeting Mode/);
+  assert.match(dashboard,/startVoiceChatMode\(\)/);
+  assert.match(dashboard,/startMeetingPresenceMode\(\)/);
+  assert.match(dashboard,/what would you like to discuss or brainstorm/);
+  assert.match(dashboard,/who are we meeting with today/);
+  assert.match(dashboard,/I'll sit here quietly until you need me/);
+  assert.doesNotMatch(dashboard,/document\.getElementById\('voiceBtn'\)\.classList/);
+});
