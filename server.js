@@ -12660,6 +12660,14 @@ function isMeetingPrepMemoryText(text=''){
     || /\bUse all known attendees\. If the data is thin\b/i.test(raw)
     || /\bVAL:\s*I could not find a matching email\b/i.test(raw);
 }
+function isValCommandConversationText(text=''){
+  const raw=String(text||'');
+  return /\bUser:\s*Help me brainstorm and plan this task\b/i.test(raw)
+    || (/\bTask:\s*/i.test(raw)&&/\bBreak it into clear steps, flag anything I might be missing\b/i.test(raw))
+    || /\bUser:\s*Summarize this past meeting and extract unresolved follow-ups\/tasks\b/i.test(raw)
+    || /\bUser:\s*Prepare me for this upcoming meeting\b/i.test(raw)
+    || /\bVAL:\s*This task is really about\b/i.test(raw);
+}
 function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
@@ -12667,11 +12675,12 @@ function isUsableTranscriptArchiveRecord(record={}){
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
+  if(isValCommandConversationText(raw)) return false;
   return true;
 }
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
-  return !!raw&&!isMeetingPrepMemoryText(raw);
+  return !!raw&&!isMeetingPrepMemoryText(raw)&&!isValCommandConversationText(raw);
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
@@ -12679,6 +12688,7 @@ function isTranscriptMemoryRecord(item={}){
   const raw=item.rawText||item.raw_text||'';
   if(['transcript_insight','relationship_memory','chat_memory'].includes(kind)) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
+  if(isValCommandConversationText(raw)) return false;
   return /(^|_)transcript($|_)/.test(kind)||!!metadata.transcriptId;
 }
 async function transcriptArchiveRecords(days=3650,limit=500){

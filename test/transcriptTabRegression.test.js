@@ -35,7 +35,10 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
 
 test('transcript retrieval excludes meeting prep prompts and chat memory',()=>{
   assert.match(server,/function isMeetingPrepMemoryText/);
+  assert.match(server,/function isValCommandConversationText/);
   assert.match(server,/Prepare me for this upcoming meeting using attendee intelligence/);
+  assert.match(server,/Help me brainstorm and plan this task/);
+  assert.match(server,/Break it into clear steps, flag anything I might be missing/);
   assert.match(server,/function isUsableTranscriptArchiveRecord/);
   assert.match(server,/String\(type\|\|''\)\.toLowerCase\(\)===\'chat_memory\'/);
   assert.match(server,/function isUsableTranscriptIndexRow/);
@@ -62,7 +65,7 @@ test('frontend distinguishes loading failure from a successful empty archive',()
   assert.match(ui,/data\.ok===false\|\|!Array\.isArray\(data\.transcripts\)/);
   assert.match(ui,/Unable to load transcripts/);
   assert.match(ui,/Check the transcript retrieval endpoint or server logs/);
-  assert.match(ui,/No transcripts have arrived yet/);
+  assert.match(ui,/No true meeting transcripts are available yet/);
   assert.match(ui,/renderTranscriptLoading/);
 });
 
