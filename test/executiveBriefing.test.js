@@ -62,6 +62,33 @@ test('executive briefing visibly reflects Teach VAL onboarding',()=>{
   assert.match(commandCenter,/Array\.isArray\(b\.readyForYou\)/);
 });
 
+test('dashboard intelligence layer cleans raw evidence before cards render',()=>{
+  assert.match(server,/function buildDashboardIntelligence/);
+  assert.match(server,/function dashboardCleanText/);
+  assert.match(server,/function dashboardMergeEntityRows/);
+  assert.match(server,/function dashboardLooksLikeFakePerson/);
+  assert.match(server,/function dashboardProjectsFromEvidence/);
+  assert.match(server,/function dashboardDraftQuality/);
+  assert.match(server,/dashboardEntities/);
+  assert.match(server,/dashboardQuality:dashboardDraftQuality\(d\)/);
+  assert.match(server,/Possible\\s/);
+  assert.match(server,new RegExp('User\\\\/Time\\\\/Date'));
+});
+
+test('dashboard cards route to exact entities and drafts',()=>{
+  assert.match(commandCenter,/function dashboardTargetAction/);
+  assert.match(commandCenter,/window\.openDashboardTarget/);
+  assert.match(commandCenter,/type==='person'/);
+  assert.match(commandCenter,/type==='project'/);
+  assert.match(commandCenter,/type==='draft'/);
+  assert.match(commandCenter,/openDashboardTarget\('/);
+  assert.match(commandCenter,/dashboardEntities/);
+  assert.match(dashboard,/function openDraftsPage\(focusDraftId\)/);
+  assert.match(dashboard,/function draftIsDashboardReady/);
+  assert.match(dashboard,/Drafts needing cleanup/);
+  assert.match(dashboard,/No client-ready drafts yet/);
+});
+
 test('chat receives executive briefing source context for why questions',()=>{
   assert.match(server,/executiveBriefingChatContext/);
   assert.match(server,/Executive Briefing source context/);

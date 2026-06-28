@@ -130,6 +130,41 @@ function compactText(value,fallback){return safe(String(value||fallback||'').rep
 function firstMoveTitle(move,fallback){return compactText(move&&move.title,fallback);}
 function firstMoveCopy(move,fallback){return compactText(move&&(move.why||move.whatChanged||move.content),fallback);}
 function cardLink(label,view){return '<button class="val-card-link" onclick="commandCenterNavigate(\''+view+'\')">'+safe(label)+'</button>';}
+function jsString(value){return String(value==null?'':value).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
+function dashboardTargetAction(target,fallback){
+  target=target||{};
+  var type=target.type||'',id=target.id||'';
+  if(type&&id)return "openDashboardTarget('"+jsString(type)+"','"+jsString(id)+"')";
+  return "commandCenterNavigate('"+jsString(fallback||'evidence')+"')";
+}
+window.openDashboardTarget=function(type,id){
+  var b=executiveBriefingState.data||{},entities=b.dashboardEntities||{};
+  function all(list){return Array.isArray(list)?list:[];}
+  var item=null,title='VAL Detail';
+  if(type==='person')item=all(entities.people).find(function(x){return String(x.id||x.profileKey||x.email||x.name)===String(id);});
+  else if(type==='project')item=all(entities.projects).find(function(x){return String(x.id||x.profileKey||x.name)===String(id);});
+  else if(type==='draft'){if(typeof openDraftsPage==='function')openDraftsPage(id);return;}
+  else if(type==='move')item=[b.highestLeverageMove].concat(all(b.alsoImportant),all(b.watching)).find(function(x){return x&&String(x.id)===String(id);});
+  if(!item){
+    item=all(entities.whatChanged).concat(all(entities.momentum),all(entities.readyForYou)).find(function(x){return String(x.id||'')===String(id);});
+  }
+  if(type==='person')title=(item&&item.name?item.name:'Relationship')+' Profile';
+  else if(type==='project')title=(item&&item.name?item.name:'Project')+' Workspace';
+  else if(type==='move')title='Why This Matters';
+  if(!item){commandCenterNavigate(type==='project'?'projects':(type==='person'?'relationships':'evidence'));return;}
+  var evidence=(item.evidence||[]).slice(0,8).map(function(e){return '<li><strong>'+safe(e.title||e.type||'Evidence')+'</strong><br><span>'+safe(e.summary||'')+'</span></li>';}).join('');
+  var loops=(item.openLoops||[]).slice(0,6).map(function(x){return '<li>'+safe(x)+'</li>';}).join('');
+  var risks=(item.risks||[]).slice(0,6).map(function(x){return '<li>'+safe(x)+'</li>';}).join('');
+  var opps=(item.opportunities||[]).slice(0,6).map(function(x){return '<li>'+safe(x)+'</li>';}).join('');
+  var body='<div class="relationship-profile-grid">'
+    +'<section class="exec-card"><h3>'+safe(item.name||item.title||'Signal')+'</h3><p>'+safe(item.summary||item.why||item.detail||'VAL is watching this from evidence.')+'</p><p><strong>Status:</strong> '+safe(item.state||item.impact||item.priorityBand||'Observed')+'</p></section>'
+    +'<section class="exec-card"><h3>What Needs Attention</h3><ul>'+(loops||risks||opps||'<li>No urgent open loop attached yet.</li>')+'</ul></section>'
+    +'<section class="exec-card"><h3>Risks</h3><ul>'+(risks||'<li>No explicit risk attached.</li>')+'</ul></section>'
+    +'<section class="exec-card"><h3>Opportunities</h3><ul>'+(opps||'<li>No explicit opportunity attached.</li>')+'</ul></section>'
+    +'<section class="exec-card relationship-profile-wide"><h3>Evidence Trail</h3><ul class="relationship-timeline">'+(evidence||'<li>Evidence IDs are stored, but no display summary is attached yet.</li>')+'</ul></section>'
+    +'</div>';
+  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'dashboardEntityOverlay',title:title,body:body,footer:"<button class=\"alert-btn primary\" onclick=\"commandCenterNavigate('relationships')\">Relationship Review</button><button class=\"alert-btn\" onclick=\"closeExecutiveWorkspace('dashboardEntityOverlay')\">Close</button>"});
+};
 function whatChangedRows(b){
   var items=(b&&Array.isArray(b.whatChanged)?b.whatChanged:[]).slice(0,4);
   if(!items.length)items=(b&&Array.isArray(b.valNoticed)?b.valNoticed:[]).slice(0,4).map(function(n){return{title:n,type:'relationship_signal'};});
@@ -142,7 +177,7 @@ function whatChangedRows(b){
   return items.map(function(item){
     var title=typeof item==='string'?item:(item.title||item.content||item.summary||'Something changed');
     var type=typeof item==='string'?'default':(item.type||item.observationType||'default');
-    return '<div class="val-dash-row"><span class="val-row-icon '+safe(type)+'">'+safe(lineIcon(type))+'</span><span>'+compactText(title)+'</span></div>';
+    return '<button class="val-dash-row" onclick="'+dashboardTargetAction(item.target,'evidence')+'"><span class="val-row-icon '+safe(type)+'">'+safe(lineIcon(type))+'</span><span>'+compactText(title)+'</span></button>';
   }).join('');
 }
 function peopleRows(b){
@@ -151,7 +186,7 @@ function peopleRows(b){
   return people.map(function(p){
     var trend=String(p.trend||p.state||'steady').toLowerCase();
     var cls=/risk|waiting|needs|cool|slow/.test(trend)?'risk':(/warm|momentum|increas|build/.test(trend)?'up':'steady');
-    return '<button class="val-person-row" onclick="commandCenterNavigate(\'relationships\')"><span class="val-person-avatar">'+safe((p.name||'R').slice(0,1).toUpperCase())+'</span><span><strong>'+safe(p.name||'Relationship')+'</strong><small class="'+cls+'">'+safe(p.state||p.summary||'Observed')+'</small></span><em class="'+cls+'">'+(cls==='risk'?'↘':(cls==='up'?'↗':'→'))+'</em></button>';
+    return '<button class="val-person-row" onclick="'+dashboardTargetAction(p.target||{type:'person',id:p.id||p.profileKey||p.email||p.name},'relationships')+'"><span class="val-person-avatar">'+safe((p.name||'R').slice(0,1).toUpperCase())+'</span><span><strong>'+safe(p.name||'Relationship')+'</strong><small class="'+cls+'">'+safe(p.state||p.summary||'Observed')+'</small></span><em class="'+cls+'">'+(cls==='risk'?'↘':(cls==='up'?'↗':'→'))+'</em></button>';
   }).join('');
 }
 function projectRows(b){
@@ -163,7 +198,7 @@ function projectRows(b){
   ];
   return projects.map(function(p){
     var cls=/risk|slow|stall|watch/i.test(String(p.state||''))?'risk':'up';
-    return '<button class="val-project-row" onclick="commandCenterNavigate(\'projects\')"><span class="val-project-icon '+cls+'">↗</span><span><strong>'+safe(p.name||p.title||'Project')+'</strong><small>'+safe(p.summary||p.description||'Current priority')+'</small></span><em class="'+cls+'">'+safe(p.state||'Momentum')+'</em></button>';
+    return '<button class="val-project-row" onclick="'+dashboardTargetAction(p.target||{type:'project',id:p.id||p.profileKey||p.name},'projects')+'"><span class="val-project-icon '+cls+'">↗</span><span><strong>'+safe(p.name||p.title||'Project')+'</strong><small>'+safe(p.summary||p.description||'Current priority')+'</small></span><em class="'+cls+'">'+safe(p.state||'Momentum')+'</em></button>';
   }).join('');
 }
 function momentumRows(b){
@@ -176,16 +211,16 @@ function momentumRows(b){
   ];
   return momentum.map(function(m){
     var cls=/risk|at risk/i.test(String(m.state||m.title||''))?'risk':(/slow|watch/i.test(String(m.state||m.title||''))?'watch':(/recover/i.test(String(m.state||m.title||''))?'recover':'up'));
-    return '<div class="val-momentum-row '+cls+'"><span>'+safe(cls==='risk'?'↓':(cls==='watch'?'↘':(cls==='recover'?'↻':'↗')))+'</span><div><strong>'+safe(m.title||'Momentum signal')+'</strong><small>'+safe(m.detail||m.summary||'VAL is watching the pattern.')+'</small></div></div>';
+    return '<button class="val-momentum-row '+cls+'" onclick="'+dashboardTargetAction(m.target,'relationships')+'"><span>'+safe(cls==='risk'?'↓':(cls==='watch'?'↘':(cls==='recover'?'↻':'↗')))+'</span><div><strong>'+safe(m.title||'Momentum signal')+'</strong><small>'+safe(m.detail||m.summary||'VAL is watching the pattern.')+'</small></div></button>';
   }).join('');
 }
 function readyRows(b){
   var ready=[];
-  (b&&Array.isArray(b.readyForYou)?b.readyForYou:[]).slice(0,3).forEach(function(r){ready.push({title:r.title||'VAL is ready',view:r.view||'teach_val'});});
-  (draftSignalState.drafts||[]).slice(0,3).forEach(function(d){ready.push({title:d.subject||'Draft prepared',view:'drafts'});});
+  (b&&Array.isArray(b.readyForYou)?b.readyForYou:[]).slice(0,3).forEach(function(r){ready.push({title:r.title||'VAL is ready',view:r.view||'teach_val',target:r.target});});
+  (draftSignalState.drafts||[]).filter(function(d){return !d.dashboardQuality||d.dashboardQuality.ready!==false;}).slice(0,3).forEach(function(d){ready.push({title:d.subject||'Draft prepared',view:'drafts',target:{type:'draft',id:d.id}});});
   (b&&Array.isArray(b.alsoImportant)?b.alsoImportant:[]).slice(0,3).forEach(function(m){ready.push({title:m.title||'Suggested move ready',view:'tasks'});});
   if(!ready.length)ready=[{title:'VAL is not forcing action yet',view:'tasks'},{title:'Evidence pipeline is ready',view:'evidence'},{title:'Relationship signals will surface here',view:'relationships'}];
-  return ready.slice(0,5).map(function(r){return '<div class="val-ready-row"><span>✓</span><strong>'+safe(r.title)+'</strong>'+cardLink('View',r.view||'tasks')+'</div>';}).join('');
+  return ready.slice(0,5).map(function(r){return '<div class="val-ready-row"><span>✓</span><strong>'+safe(r.title)+'</strong><button class="val-card-link" onclick="'+dashboardTargetAction(r.target,r.view||'tasks')+'">View</button></div>';}).join('');
 }
 function executiveBriefingHtml(bookMode){
   if(bookMode)return '';
@@ -195,7 +230,7 @@ function executiveBriefingHtml(bookMode){
   var highest=b.highestLeverageMove||{};
   return '<div class="val-briefing-contract" aria-hidden="true">People Create Velocity · Highest Leverage Move · Also Important · Quietly Handled · VAL Noticed</div><section class="val-dashboard-grid">'
     +'<article class="val-dash-card what-changed"><div class="val-card-title"><span class="val-card-symbol">⌾</span><h2>What Changed</h2>'+cardLink('View all','evidence')+'</div><div class="val-row-list">'+whatChangedRows(b)+'</div></article>'
-    +'<article class="val-dash-card highest"><div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2>'+cardLink('Why this?','tasks')+'</div><h3>'+firstMoveTitle(highest,'No major move is ready yet')+'</h3><p>'+firstMoveCopy(highest,'VAL is watching without forcing action.')+'</p><div class="val-leverage-meta"><span>Estimated impact <strong>'+safe(highest.impact||highest.priorityBand||'Quiet')+'</strong></span><span>Confidence <strong>'+safe(highest.confidence!=null?pct(highest.confidence):'--')+'</strong></span></div><button class="val-primary-action" onclick="commandCenterNavigate(\'tasks\')">'+safe(highest.title?'Review Move':'Keep Watching')+'</button></article>'
+    +'<article class="val-dash-card highest"><div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2><button class="val-card-link" onclick="'+dashboardTargetAction(highest.target,'tasks')+'">Why this?</button></div><h3>'+firstMoveTitle(highest,'No major move is ready yet')+'</h3><p>'+firstMoveCopy(highest,'VAL is watching without forcing action.')+'</p><div class="val-leverage-meta"><span>Estimated impact <strong>'+safe(highest.impact||highest.priorityBand||'Quiet')+'</strong></span><span>Confidence <strong>'+safe(highest.confidence!=null?pct(highest.confidence):'--')+'</strong></span></div><button class="val-primary-action" onclick="'+dashboardTargetAction(highest.target,'tasks')+'">'+safe(highest.title?'Review Move':'Keep Watching')+'</button></article>'
     +'<article class="val-dash-card people"><div class="val-card-title"><span class="val-card-symbol">♙</span><h2>People</h2>'+cardLink('View all','relationships')+'</div><div class="val-people-list">'+peopleRows(b)+'</div></article>'
     +'<article class="val-dash-card projects"><div class="val-card-title"><span class="val-card-symbol">□</span><h2>Projects</h2>'+cardLink('View all','projects')+'</div><div class="val-project-list">'+projectRows(b)+'</div></article>'
     +'<article class="val-dash-card momentum"><div class="val-card-title"><span class="val-card-symbol">◷</span><h2>Momentum</h2>'+cardLink('View analysis','relationships')+'</div><div class="val-momentum-list">'+momentumRows(b)+'</div></article>'

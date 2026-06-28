@@ -9140,6 +9140,7 @@ app.get('/api/val/drafts',async(req,res)=>{
   try{
     let drafts=await listDrafts(req.query.status||'');
     if(req.query.transcriptId)drafts=drafts.filter(d=>String(d.sourceContext?.transcriptId||'')===String(req.query.transcriptId));
+    drafts=drafts.map(d=>({...d,dashboardQuality:dashboardDraftQuality(d)}));
     res.json({ok:true,drafts});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
@@ -12037,6 +12038,15 @@ async function listRelationshipProfiles({limit=80}={}){
   }
   return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
 }
+async function listDashboardEvidenceItems({limit=180}={}){
+  if(DEMO_MODE)return (transcriptDemoArray('evidenceItems')||[]).slice().sort((a,b)=>interactionDate(b.occurredAt||b.capturedAt||b.createdAt)-interactionDate(a.occurredAt||a.capturedAt||a.createdAt)).slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select * from evidence_items where tenant_id=$1 order by coalesce(occurred_at,captured_at,created_at) desc limit $2`,[tenantId(),limit]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'evidenceItems').slice().sort((a,b)=>interactionDate(b.occurredAt||b.capturedAt||b.createdAt)-interactionDate(a.occurredAt||a.capturedAt||a.createdAt)).slice(0,limit);
+}
 async function executiveBriefingCounts(){
   if(DEMO_MODE){
     const evidence=(transcriptDemoArray('evidenceItems')||[]).length,observations=(transcriptDemoArray('evidenceObservations')||[]).length,moves=(transcriptDemoArray('agencyMoves')||[]).length;
@@ -12086,6 +12096,193 @@ function uniqueNamedRows(rows=[],key='name',limit=6){
     if(out.length>=limit)break;
   }
   return out;
+}
+function dashboardCleanText(value='',fallback=''){
+  let text=String(value||fallback||'').replace(/\r/g,'\n');
+  text=text
+    .replace(/\[relationship_memory\]|\[chat_memory\]|\[processed_transcript\]/gi,'')
+    .replace(/#{1,6}\s*/g,'')
+    .replace(/\*\*/g,'')
+    .replace(/\bUser\/Time\/Date\b/gi,'')
+    .replace(/\bHi\s+User\b/gi,'')
+    .replace(/\bPossible\s+(risk|opportunity|signal)\s*:\s*/gi,'')
+    .replace(/\bRisk areas\s*-\s*/gi,'')
+    .replace(/\bData is thin,?\s*so avoid assuming[^.]*\.?/gi,'')
+    .replace(/\bVAL:\s*I can start[^.]*live web access[^.]*\.?/gi,'')
+    .replace(/\s+/g,' ')
+    .trim();
+  text=text.replace(/^[-:;,\s]+|[-:;,\s]+$/g,'');
+  return text||fallback||'';
+}
+function dashboardShortText(value='',fallback='',limit=160){
+  const text=dashboardCleanText(value,fallback);
+  if(text.length<=limit)return text;
+  return text.slice(0,limit-3).replace(/\s+\S*$/,'')+'...';
+}
+function dashboardNameKey(name=''){
+  return String(name||'').toLowerCase().replace(/[^a-z0-9@.]+/g,' ').trim();
+}
+function dashboardLooksLikeFakePerson(name='',email=''){
+  const clean=dashboardNameKey(name);
+  if(email)return /^(no.?reply|notifications?|mailer-daemon)@/i.test(email);
+  if(!clean||clean==='unknown'||clean==='user'||clean==='jessa grace')return true;
+  if(/\b(time|date|day|meeting|call|session|task|financial strategist|open|unknown|organizer|attendee)\b/.test(clean))return true;
+  if(clean.length<2)return true;
+  return false;
+}
+function dashboardLooksLikeFakeProject(name=''){
+  const clean=dashboardNameKey(name);
+  if(!clean||clean==='unknown'||clean==='user'||clean==='thinking day')return true;
+  if(/\b(time date|meeting|call|session|attendee|organizer)\b/.test(clean))return true;
+  return false;
+}
+function dashboardMergeEntityRows(rows=[],{type='person',limit=8}={}){
+  const good=[];
+  for(const row of rows){
+    const name=dashboardCleanText(row.name||row.displayName||row.title||'');
+    const email=normalizeContextEmail(row.email||row.matchedEmail||'');
+    if(type==='person'&&dashboardLooksLikeFakePerson(name,email))continue;
+    if(type==='project'&&dashboardLooksLikeFakeProject(name))continue;
+    good.push({...row,name:name||email,email});
+  }
+  const byKey=new Map();
+  for(const row of good){
+    let key=row.email?`email:${row.email}`:`name:${dashboardNameKey(row.name)}`;
+    if(type==='person'&&!row.email){
+      const lower=dashboardNameKey(row.name);
+      for(const existing of byKey.values()){
+        const existingName=dashboardNameKey(existing.name);
+        if(existingName&&lower&&existingName!==lower&&(existingName.startsWith(lower+' ')||lower.startsWith(existingName+' '))){
+          key=existing._mergeKey;break;
+        }
+      }
+    }
+    const prior=byKey.get(key);
+    if(!prior){
+      byKey.set(key,{...row,_mergeKey:key,aliases:Array.from(new Set([row.name].filter(Boolean))),score:Number(row.score||0),evidence:[...(row.evidence||[])],openLoops:[...(row.openLoops||[])],risks:[...(row.risks||[])],opportunities:[...(row.opportunities||[])]});
+      continue;
+    }
+    const betterName=(String(row.name||'').split(/\s+/).length>String(prior.name||'').split(/\s+/).length)?row.name:prior.name;
+    prior.name=betterName||prior.name;
+    prior.summary=dashboardShortText(prior.summary||row.summary||row.reason||'');
+    prior.state=prior.state||row.state;
+    prior.score=Math.max(Number(prior.score||0),Number(row.score||0));
+    prior.aliases=Array.from(new Set([...(prior.aliases||[]),row.name].filter(Boolean)));
+    prior.evidence=[...(prior.evidence||[]),...(row.evidence||[])].slice(0,12);
+    prior.openLoops=Array.from(new Set([...(prior.openLoops||[]),...(row.openLoops||[])].filter(Boolean))).slice(0,8);
+    prior.risks=Array.from(new Set([...(prior.risks||[]),...(row.risks||[])].filter(Boolean))).slice(0,8);
+    prior.opportunities=Array.from(new Set([...(prior.opportunities||[]),...(row.opportunities||[])].filter(Boolean))).slice(0,8);
+  }
+  return Array.from(byKey.values()).sort((a,b)=>(Number(b.score||0)-Number(a.score||0))||interactionDate(b.lastObservedAt)-interactionDate(a.lastObservedAt)).slice(0,limit).map(({_mergeKey,...row})=>row);
+}
+function dashboardEvidenceSummary(evidence={}){
+  return {
+    id:evidence.id||'',
+    type:evidence.sourceType||evidence.source_type||'evidence',
+    title:dashboardShortText(evidence.title||evidence.summary||'Evidence', 'Evidence', 120),
+    summary:dashboardShortText(evidence.summary||evidence.rawText||evidence.raw_text||'', '', 180),
+    occurredAt:evidence.occurredAt||evidence.occurred_at||evidence.capturedAt||evidence.captured_at||evidence.createdAt||evidence.created_at||''
+  };
+}
+function dashboardPeopleFromEvidence(evidenceItems=[]){
+  const rows=[];
+  for(const e of evidenceItems){
+    const participants=evidenceJsonValue(e.participantsJson||e.participants_json,[]);
+    for(const p of Array.isArray(participants)?participants:[]){
+      const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
+      const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',email);
+      if(dashboardLooksLikeFakePerson(name,email))continue;
+      rows.push({id:p.personId||p.contactId||p.matchedContactId||email||name,name:name||email,email,state:'Observed recently',summary:`Recent evidence: ${dashboardShortText(e.title||e.summary||'', 'interaction', 90)}`,score:24+(email?8:0),lastObservedAt:e.occurredAt||e.capturedAt||e.createdAt,evidence:[dashboardEvidenceSummary(e)],target:{type:'person',id:p.personId||p.contactId||p.matchedContactId||email||name}});
+    }
+  }
+  return rows;
+}
+function dashboardProjectsFromEvidence(evidenceItems=[]){
+  const rows=[];
+  const add=(name,e,reason='Mentioned in evidence')=>{
+    name=dashboardCleanText(name);
+    if(dashboardLooksLikeFakeProject(name))return;
+    rows.push({id:normalizeContextName(name),name,state:'Watched',summary:reason,score:30,lastObservedAt:e.occurredAt||e.capturedAt||e.createdAt,evidence:[dashboardEvidenceSummary(e)],target:{type:'project',id:normalizeContextName(name)}});
+  };
+  const known=/\b(GOALL|HelpByShopping|FinServe360|Baby VAL|Aric'?s VAL|Jessa VAL|VAL Platform|Email Intelligence|Relationship Engine)\b/g;
+  for(const e of evidenceItems){
+    const entities=evidenceJsonValue(e.entitiesJson||e.entities_json,{})||{};
+    if(entities.project||entities.projectName||entities.project_name)add(entities.project||entities.projectName||entities.project_name,e,'Named project in evidence');
+    const text=[e.title,e.summary,String(e.rawText||e.raw_text||'').slice(0,1200)].filter(Boolean).join(' ');
+    for(const match of text.matchAll(known))add(match[1],e,'Mentioned in recent evidence');
+    const proposal=text.match(/\b([A-Z][A-Za-z0-9&' -]{2,60})\s+(?:proposal|project|rollout|platform|book)\b/);
+    if(proposal)add(proposal[1],e,'Project or proposal language');
+  }
+  return rows;
+}
+function dashboardProfileScore(profile={}){
+  return (Number(profile.openLoopCount)||0)*10+(Number(profile.riskCount)||0)*12+(Number(profile.opportunityCount)||0)*12+(Number(profile.observationCount)||0);
+}
+function dashboardEntityFromProfile(profile={}){
+  const state=profileVelocity(profile);
+  const topSignal=(profile.risks?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.openLoops?.[0]?.content)||profile.summary;
+  return {id:profile.id||profile.profileKey,name:profile.displayName,state,summary:dashboardShortText(topSignal,profile.summary||state,140),score:dashboardProfileScore(profile),profileKey:profile.profileKey,profileType:profile.profileType,lastObservedAt:profile.lastObservedAt,openLoops:(profile.openLoops||[]).map(x=>dashboardShortText(x.content||x, '', 140)),risks:(profile.risks||[]).map(x=>dashboardShortText(x.content||x, '', 140)),opportunities:(profile.opportunities||[]).map(x=>dashboardShortText(x.content||x, '', 140)),confidence:profile.confidence,target:{type:profile.profileType,id:profile.id||profile.profileKey}};
+}
+function dashboardConclusionFromMove(move={},profilesById=new Map()){
+  const rawTitle=dashboardCleanText(move.title||'');
+  const rawWhy=dashboardCleanText(move.whatChanged||move.why||'');
+  const type=move.moveType||'wait';
+  let verb='Review';
+  if(type==='draft_reply')verb='Draft reply';
+  else if(type==='send_follow_up'||type==='close_open_loop')verb='Close loop';
+  else if(type==='answer_question')verb='Answer question';
+  else if(type==='prepare'||type==='prepare_meeting')verb='Prepare';
+  else if(type==='schedule_meeting')verb='Schedule';
+  else if(type==='send_document')verb='Send document';
+  else if(type==='nurture_relationship')verb='Nurture';
+  const profile=profilesById.get(move.personId)||profilesById.get(move.projectId)||null;
+  const subject=profile?.displayName||dashboardCleanText(rawTitle.replace(/^(Review risk|Prepare opportunity move|Close loop|Draft reply|Prepare answer|Review signal)\s*:\s*/i,''),rawWhy);
+  const title=dashboardShortText(`${verb}: ${subject}`, rawTitle||'Review this signal', 92);
+  const why=dashboardShortText(rawWhy||move.why||`VAL found a ${type.replace(/_/g,' ')} signal.`, '', 220);
+  const impact=move.priorityBand==='top_recommended'?'Highest':move.priorityBand==='also_important'?'Important':move.priorityBand==='watching'?'Watching':'Quiet';
+  return {...move,title,why,summary:why,impact,target:{type:profile?.profileType||'move',id:move.id},evidenceIds:move.sourceEvidenceIds||[],observationIds:move.sourceObservationIds||[]};
+}
+function dashboardDraftQuality(draft={}){
+  const body=String(draft.body||''),subject=String(draft.subject||'');
+  const problems=[];
+  if(/\bHi\s+User\b/i.test(body))problems.push('missing_recipient');
+  if(/\bUser\/Time\/Date\b/i.test(body+subject))problems.push('placeholder_title');
+  if(/\[(relationship_memory|chat_memory|processed_transcript)\]/i.test(body))problems.push('internal_memory_labels');
+  if(/VAL:\s*I can start[^.]*live web access/i.test(body))problems.push('tool_fragment');
+  if((body.match(/Next steps:/gi)||[]).length>1||body.length>3500)problems.push('too_noisy');
+  const ctx=draft.sourceContext||{};
+  const recipient=ctx.recipient||ctx.recipientEmail||ctx.to||(Array.isArray(ctx.recipients)?ctx.recipients.join(', '):'');
+  const ready=!problems.length&&!!dashboardCleanText(subject||body);
+  return {ready,problems,recipient:dashboardCleanText(recipient||ctx.contactName||''),context:dashboardShortText(ctx.transcriptTitle||ctx.meetingTitle||ctx.source||draft.draftType||'Draft', 'Draft', 90)};
+}
+function dashboardReadyDraft(draft={}){
+  const quality=dashboardDraftQuality(draft);
+  if(!quality.ready)return null;
+  const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
+  return {id:draft.id,title:dashboardShortText(label,'Draft ready',80),summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),view:'drafts',target:{type:'draft',id:draft.id},draftType:draft.draftType,status:draft.status,quality};
+}
+function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[]}={}){
+  const profilesById=new Map();
+  for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
+  const conclusions=moves.map(m=>dashboardConclusionFromMove(m,profilesById)).filter(m=>dashboardCleanText(m.title));
+  const profilePeople=profiles.filter(p=>p.profileType==='person').map(dashboardEntityFromProfile);
+  const profileProjects=profiles.filter(p=>p.profileType==='project').map(dashboardEntityFromProfile);
+  const people=dashboardMergeEntityRows([...(onboarding?.people||[]),...profilePeople,...dashboardPeopleFromEvidence(evidenceItems)],{type:'person',limit:12});
+  const projects=dashboardMergeEntityRows([...(onboarding?.projects||[]),...profileProjects,...dashboardProjectsFromEvidence(evidenceItems)],{type:'project',limit:10});
+  const top=conclusions.find(m=>m.priorityBand==='top_recommended')||conclusions.find(m=>m.priorityBand==='also_important')||onboarding?.recommendedMove||conclusions[0]||null;
+  const changed=conclusions.filter(m=>!['ignored','quiet'].includes(m.priorityBand)).slice(0,8).map(m=>({id:m.id,title:m.title,summary:m.summary,type:m.metadata?.observationType||m.moveType,target:m.target,evidenceIds:m.evidenceIds,confidence:m.confidence,createdAt:m.createdAt}));
+  const whatChanged=[...(onboarding?.whatChanged||[]),...changed].slice(0,8);
+  const momentum=people.concat(projects).filter(e=>e.name).slice(0,8).map(e=>{
+    const hasRisk=(e.risks||[]).length||/down|risk|waiting|slow/i.test(e.state||'');
+    const hasUp=(e.opportunities||[]).length||/up|momentum|front|observed/i.test(e.state||'');
+    const state=hasRisk&&hasUp?'mixed':hasRisk?'risk':hasUp?'up':'watch';
+    const title=state==='mixed'?`${e.name}: warm relationship, watch the open loop`:state==='risk'?`${e.name}: needs attention`:`${e.name}: momentum signal`;
+    const detail=dashboardShortText((e.risks||[])[0]||(e.opportunities||[])[0]||e.summary||e.state,'Evidence-backed momentum signal.',120);
+    return {id:e.id,title,detail,state,target:e.target||{type:'entity',id:e.id}};
+  }).slice(0,4);
+  const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
+  const ready=[...(onboarding?.ready||[]),...readyDrafts].slice(0,5);
+  return {people,projects,whatChanged,highestLeverageMove:top,momentum,readyForYou:ready,alsoImportant:conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8),watching:conclusions.filter(m=>m.priorityBand==='watching').slice(0,8),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people,projects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:top}};
 }
 function teachValOnboardingReflection(items=[]){
   const memories=Array.isArray(items)?items:[];
@@ -12148,32 +12345,33 @@ function profileVelocity(profile={}){
   return 'Observed';
 }
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:80}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[])]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[])]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
-  const top=moves.filter(m=>m.priorityBand==='top_recommended').slice(0,3);
-  const also=moves.filter(m=>m.priorityBand==='also_important').slice(0,8);
-  const watching=moves.filter(m=>m.priorityBand==='watching').slice(0,8);
+  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts});
+  const top=dashboard.highestLeverageMove?[dashboard.highestLeverageMove]:[];
+  const also=dashboard.alsoImportant;
+  const watching=dashboard.watching;
   const quiet=moves.filter(m=>m.priorityBand==='quiet').slice(0,8);
-  const ignored=moves.filter(m=>m.priorityBand==='ignored').slice(0,8);
-  const people=uniqueNamedRows(onboarding.people.concat(profiles.filter(p=>p.profileType==='person').map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoops:p.openLoops.slice(0,3),risks:p.risks.slice(0,2),opportunities:p.opportunities.slice(0,2),confidence:p.confidence,lastObservedAt:p.lastObservedAt}))), 'name', 8);
-  const projects=uniqueNamedRows(onboarding.projects.concat(profiles.filter(p=>p.profileType==='project').map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoopCount:p.openLoopCount,riskCount:p.riskCount,opportunityCount:p.opportunityCount,lastObservedAt:p.lastObservedAt}))), 'name', 6);
+  const ignored=dashboard.ignored;
+  const people=dashboard.people;
+  const projects=dashboard.projects;
   const up=profiles.filter(p=>p.opportunityCount>0||p.relationshipSignals.length).slice(0,5).map(p=>p.displayName);
   const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
-  const whatChanged=onboarding.whatChanged.concat(moves.slice(0,8).map(m=>({title:m.title,summary:m.whatChanged||m.why,priorityBand:m.priorityBand,confidence:m.confidence,createdAt:m.createdAt}))).slice(0,8);
+  const whatChanged=dashboard.whatChanged;
   const theme=executiveThemeFromMoves(moves,profiles);
   const highest=top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
-  const momentum=onboarding.momentum.length?onboarding.momentum:[
+  const momentum=dashboard.momentum.length?dashboard.momentum:(onboarding.momentum.length?onboarding.momentum:[
     up.length?{title:'Momentum Increasing',detail:up.slice(0,3).join(', '),state:'up'}:null,
     down.length?{title:'Momentum Needs Attention',detail:down.slice(0,3).join(', '),state:'risk'}:null,
     quiet.length?{title:'Quiet Handling',detail:`${quiet.length} lower-priority update${quiet.length===1?'':'s'} stayed out of your way.`,state:'recover'}:null
-  ].filter(Boolean);
+  ].filter(Boolean));
   const valNoticed=[
     onboarding.active?`Teach VAL is active: ${onboarding.count} onboarding truth${onboarding.count===1?'':'s'} are now part of dashboard and chat context.`:'',
     people.length?`People are the leverage point: ${people.slice(0,3).map(p=>p.name).join(', ')} currently carry the most relationship signal.`:'',
     down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
-  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:onboarding.ready};
+  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';

@@ -1531,7 +1531,7 @@ html body .val-primary-nav{
 .val-card-symbol.gold{color:#f0a000!important;background:#fff7dc!important;border-color:#f5db9a!important}
 .val-card-link{border:0!important;background:transparent!important;color:#0c477b!important;font-size:.78rem!important;font-weight:600!important;padding:0!important;white-space:nowrap!important}
 .val-row-list,.val-people-list,.val-project-list,.val-momentum-list,.val-ready-list{display:grid!important;gap:15px!important}
-.val-dash-row{display:grid!important;grid-template-columns:28px minmax(0,1fr)!important;gap:13px!important;align-items:center!important;font-size:.95rem!important;color:#08172d!important;line-height:1.35!important}
+.val-dash-row{display:grid!important;grid-template-columns:28px minmax(0,1fr)!important;gap:13px!important;align-items:center!important;font-size:.95rem!important;color:#08172d!important;line-height:1.35!important;background:transparent!important;border:0!important;padding:0!important;text-align:left!important;width:100%!important;cursor:pointer!important}
 .val-row-icon{width:20px!important;height:20px!important;border-radius:5px!important;display:grid!important;place-items:center!important;background:#5bae57!important;color:#fff!important;font-size:.75rem!important;font-weight:900!important}
 .val-row-icon.risk{background:#f1663d!important}.val-row-icon.deadline{background:#2876c8!important}.val-row-icon.relationship_signal,.val-row-icon.relationship{background:#54a85a!important}
 .val-dash-card.highest h3{font:700 1.42rem Inter,system-ui,sans-serif!important;color:var(--val-ink)!important;line-height:1.25!important;margin:0 0 14px!important}
@@ -1550,7 +1550,7 @@ html body .val-primary-nav{
 .val-project-icon{width:34px!important;height:34px!important;border-radius:999px!important;background:#e2f3dc!important;color:#319236!important;display:grid!important;place-items:center!important;font-weight:900!important}
 .val-project-icon.risk{background:#ffeadf!important;color:#f05a2a!important}
 .val-project-row em{font-size:.78rem!important;font-weight:700!important;white-space:nowrap!important}
-.val-momentum-row{display:grid!important;grid-template-columns:34px minmax(0,1fr)!important;gap:12px!important;align-items:start!important}
+.val-momentum-row{display:grid!important;grid-template-columns:34px minmax(0,1fr)!important;gap:12px!important;align-items:start!important;background:transparent!important;border:0!important;padding:0!important;text-align:left!important;width:100%!important;cursor:pointer!important}
 .val-momentum-row>span{width:30px!important;height:30px!important;border-radius:999px!important;display:grid!important;place-items:center!important;border:2px solid currentColor!important;font-weight:900!important}
 .val-momentum-row strong{display:block!important;color:#319236!important;font-size:.92rem!important;line-height:1.2!important}.val-momentum-row small{display:block!important;color:#596376!important;font-size:.83rem!important;line-height:1.35!important}
 .val-momentum-row.watch,.val-momentum-row.watch strong{color:#f0a000!important}.val-momentum-row.risk,.val-momentum-row.risk strong{color:#f05a2a!important}.val-momentum-row.recover,.val-momentum-row.recover strong{color:#1c6ec4!important}.val-momentum-row.up,.val-momentum-row.up strong{color:#319236!important}
@@ -2420,28 +2420,38 @@ function saveMeetingRecapTemplate(){
 function draftTypeLabel(type){
   return String(type||'draft').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
 }
-function openDraftsPage(){
+function openDraftsPage(focusDraftId){
   openExecutiveWorkspace({id:'draftsWorkspace',title:'Communications / Drafts',body:'<div id="draftsWorkspaceBody"><div class="exec-card"><p>Loading drafts...</p></div></div>',footer:'<button class="alert-btn primary" onclick="loadBackendDrafts()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'draftsWorkspace\')">Close</button>'});
-  loadBackendDrafts();
+  loadBackendDrafts(focusDraftId);
 }
-function loadBackendDrafts(){
+function draftIsDashboardReady(dr){return !dr.dashboardQuality||dr.dashboardQuality.ready!==false;}
+function loadBackendDrafts(focusDraftId){
   apiFetch(PROXY+'/api/val/drafts').then(function(d){
     var drafts=(d.drafts||[]).concat((window.valDocs||[]).filter(function(doc){return doc.status==='draft';}).map(function(doc){return {id:doc.id,draftType:doc.type||'document',status:doc.status||'draft',subject:doc.title||'Untitled draft',body:doc.body||'',createdAt:doc.createdAt,sourceContext:{source:'browser_draft',recipient:doc.recipient||'',recipientEmail:doc.recipientEmail||''}};}));
     var body=document.getElementById('draftsWorkspaceBody');if(!body)return;
-    body.innerHTML='<div class="exec-workspace-grid">'+(drafts.length?drafts.map(function(dr){
+    var hidden=drafts.filter(function(dr){return !draftIsDashboardReady(dr);});
+    var visible=drafts.filter(draftIsDashboardReady);
+    if(focusDraftId){
+      var focused=drafts.find(function(dr){return String(dr.id)===String(focusDraftId);});
+      visible=focused?[focused]:visible;
+    }
+    var hiddenNote=hidden.length&&!focusDraftId?'<section class="exec-card"><h3>Drafts needing cleanup</h3><p>'+hidden.length+' draft'+(hidden.length===1?' is':'s are')+' hidden from the ready queue because VAL found placeholders, internal memory labels, or unclear recipients. They are preserved, but not presented as client-ready.</p></section>':'';
+    body.innerHTML='<div class="exec-workspace-grid">'+hiddenNote+(visible.length?visible.map(function(dr){
       var ctx=dr.sourceContext||{},created=dr.createdAt?new Date(dr.createdAt).toLocaleString():'';
       var recipients=Array.isArray(ctx.recipients)?ctx.recipients.join(', '):(ctx.recipient||ctx.recipientEmail||ctx.to||'');
       var relatedTranscript=ctx.transcriptTitle||ctx.transcriptId||'';
       var relatedMeeting=ctx.meetingTitle||ctx.calendarEventTitle||ctx.transcriptTitle||'';
+      var quality=dr.dashboardQuality||{};
       var meta=[
         'Status: '+(dr.status||'draft'),
+        quality.context?'Context: '+quality.context:'',
         relatedTranscript?'Transcript: '+relatedTranscript:'',
         relatedMeeting?'Meeting: '+relatedMeeting:'',
         recipients?'Recipients: '+recipients:''
       ].filter(Boolean).map(function(x){return '<div>'+docSafe(x)+'</div>';}).join('');
       var html=ctx.htmlBody?'<details style="margin-top:10px"><summary>HTML version</summary><div style="background:#fff;color:#111827;border:1px solid #d8dee6;border-radius:8px;padding:10px;margin-top:8px;max-height:220px;overflow:auto">'+ctx.htmlBody+'</div></details>':'';
       return '<section class="exec-card"><div class="alert-kicker">'+docSafe(draftTypeLabel(dr.draftType))+' · '+docSafe(created)+'</div><h3>'+docSafe(dr.subject||'Untitled draft')+'</h3><div style="font-size:12px;line-height:1.55;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:9px;margin:8px 0 10px">'+(meta||'<div>Status: '+docSafe(dr.status||'draft')+'</div>')+'</div><pre style="white-space:pre-wrap;background:#fff;color:#111827;border:1px solid #d8dee6;border-radius:8px;padding:10px;max-height:260px;overflow:auto">'+docSafe(dr.body||'')+'</pre>'+html+'<div class="alert-actions" style="margin-top:10px"><button class="alert-btn" onclick="copyDraftBody(\''+docSafe(dr.id)+'\')">Copy Text</button></div></section>';
-    }).join(''):'<section class="exec-card"><h3>No drafts yet</h3><p>Transcript recaps, introductions, proposals, and follow-up drafts will appear here after VAL creates them.</p></section>')+'</div>';
+    }).join(''):'<section class="exec-card"><h3>No client-ready drafts yet</h3><p>Drafts will appear here only after VAL knows who they are for, why they exist, and passes the quality gate.</p></section>')+'</div>';
     window._backendDrafts=drafts;
   }).catch(function(e){var body=document.getElementById('draftsWorkspaceBody');if(body)body.innerHTML='<div class="exec-card"><h3>Could not load drafts</h3><p>'+docSafe(e.message)+'</p></div>';});
 }
