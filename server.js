@@ -2871,6 +2871,72 @@ function teachValCompiledPayload({session,imports,items,testMode=false}){
     }
   };
 }
+function teachValObservationType(category='',item={}){
+  const text=[category,item?.title,item?.summary,item?.data?.category,item?.data?.type].filter(Boolean).join(' ').toLowerCase();
+  if(/\b(relationship|people|client|partner|contact|referral|stakeholder)\b/.test(text))return 'relationship_signal';
+  if(/\b(frustration|blocker|problem|risk|gap|stuck|overwhelm|burnout|capacity|drift|concern)\b/.test(text))return 'risk';
+  if(/\b(preference|tone|style|work|communicate|decision|remind|meeting|boundary)\b/.test(text))return 'preference';
+  if(/\b(opportunity|offer|partnership|lead|revenue|strategy|product|service|growth)\b/.test(text))return 'opportunity';
+  if(/\b(remember|never forget|value|mission|identity|priority|need|important)\b/.test(text))return 'need';
+  return 'idea';
+}
+function teachValMemoryImportance(category='',item={}){
+  const text=[category,item?.title,item?.summary,item?.data?.category].filter(Boolean).join(' ').toLowerCase();
+  if(/\b(things_to_remember|never forget|important_people|relationship|boundary|value|mission|preference)\b/.test(text))return 5;
+  if(/\b(current_projects|projects|opportunities|frustrations|lessons|process_gaps)\b/.test(text))return 4;
+  return 3;
+}
+function teachValMemoryRawText(item={}){
+  const structured={category:item.category||'',summary:item.summary||'',data:item.data||{}};
+  return [item.summary||'',JSON.stringify(structured,null,2)].filter(Boolean).join('\n\n').slice(0,8000);
+}
+function teachValEvidenceCandidates(items=[]){
+  return (Array.isArray(items)?items:[]).map(item=>({
+    observationType:teachValObservationType(item.category,item),
+    content:[item.title,item.summary].filter(Boolean).join(': ').slice(0,1200),
+    exactQuote:item.summary||item.title||'',
+    confidence:Math.max(0.35,Math.min(1,Number(item.confidence)||0.72)),
+    status:'observed'
+  })).filter(x=>x.content);
+}
+async function promoteTeachValOnboardingToCoreMemory({session,imports,items,payload}){
+  const included=Array.isArray(items)?items:[];
+  let memoryCount=0;
+  for(const item of included){
+    await saveMemoryItem({
+      kind:`teach_val_${String(item.category||'memory').replace(/[^a-z0-9_]+/gi,'_').toLowerCase()}`,
+      summary:[item.title,item.summary].filter(Boolean).join(': ').slice(0,500),
+      rawText:teachValMemoryRawText(item),
+      importance:teachValMemoryImportance(item.category,item),
+      metadata:{
+        source:'teach_val_onboarding',
+        sessionId:session.id,
+        category:item.category||'',
+        confidence:Number(item.confidence||0.72),
+        sourceItemId:item.data?.itemId||'',
+        importId:item.data?.importId||''
+      }
+    });
+    memoryCount++;
+  }
+  const voice=session.state?.voiceInterview||{};
+  const evidence=await saveEvidenceItem({
+    sourceType:'teach_val_onboarding',
+    sourceId:session.id,
+    occurredAt:session.createdAt||session.created_at||null,
+    capturedAt:new Date().toISOString(),
+    title:'Teach VAL onboarding profile',
+    rawText:JSON.stringify(payload,null,2).slice(0,50000),
+    summary:`Teach VAL onboarding committed with ${included.length} reviewed memory item${included.length===1?'':'s'}.`,
+    participantsJson:[{name:CLIENT_CONFIG.clientName||'User',role:'owner'}],
+    entitiesJson:{source:'teach_val_onboarding',categories:[...new Set(included.map(i=>i.category).filter(Boolean))],voiceInterview:!!voice.transcript},
+    confidence:0.86,
+    status:'processed',
+    metadataJson:{source:'teach_val_onboarding',sessionId:session.id,importCount:Array.isArray(imports)?imports.length:0,itemCount:included.length}
+  });
+  const intelligence=evidence?await runObservationEngine(evidence,{candidates:teachValEvidenceCandidates(included),replace:true}).catch(e=>({ok:false,error:e.message,count:0,observations:[]})):null;
+  return {memoryCount,evidenceItemId:evidence?.id||'',observationCount:intelligence?.count||0,intelligence};
+}
 function normalizeBabyStudioSettings(input={}){
   const links=Array.isArray(input.importantLinks)?input.importantLinks:String(input.importantLinks||'').split('\n').map(line=>{
     const parts=line.split('|');
@@ -4160,8 +4226,10 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     const payload=teachValCompiledPayload({session,imports,items:included,testMode});
     const state=normalizeTeachValState(session.state);
     let webhook={status:testMode?'test_mode':'not_configured',message:testMode?'Test mode: payload built but not sent to production memory.':'No external onboarding webhook configured. Stored in local VAL onboarding memory.'};
+    let promotion={memoryCount:0,evidenceItemId:'',observationCount:0,intelligence:null};
     if(!testMode){
       await insertTeachValMemoryItems(included);
+      promotion=await promoteTeachValOnboardingToCoreMemory({session,imports,items:included,payload});
       const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
       if(url){
         try{
@@ -4185,8 +4253,8 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     session.status=testMode?'test_completed':'committed';
     session.state=state;
     await saveTeachValSession(session);
-    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status},success:webhook.status!=='failed'}).catch(()=>{});
-    res.json({ok:true,payload,webhook,memory:testMode?[]:await listTeachValMemory(session.id),state});
+    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status,promotion},success:webhook.status!=='failed'}).catch(()=>{});
+    res.json({ok:true,payload,webhook,promotion,memory:testMode?[]:await listTeachValMemory(session.id),state});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
