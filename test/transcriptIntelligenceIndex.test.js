@@ -174,6 +174,19 @@ test('exposes transcript intake diagnostics for webhook and upload tracing',()=>
   assert.match(ui,/Recent intake audit/);
 });
 
+test('recovers transcript-shaped content from existing VAL storage',()=>{
+  assert.match(server,/function storedTextLooksLikeTranscript/);
+  assert.match(server,/async function storedTranscriptRecoveryCandidates/);
+  assert.match(server,/recentEvidenceTextRows/);
+  assert.match(server,/recentConversationTextRows/);
+  assert.match(server,/recentTeachValTextRows/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/recover-existing'/);
+  assert.match(server,/stored_transcript_recovery_run/);
+  assert.match(ui,/Recover Existing/);
+  assert.match(ui,/recoverStoredTranscripts/);
+  assert.match(ui,/Scanning VAL memory, evidence, conversations, uploads, and Teach VAL records/);
+});
+
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
   for(const label of ['Summary','Transcript','Chat About This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);

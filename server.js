@@ -13100,6 +13100,121 @@ async function transcriptArchiveRecords(days=3650,limit=500){
   }
   return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
 }
+function stableRecoveredTranscriptId(sourceType='',sourceId='',rawText=''){
+  const raw=[tenantId(),sourceType,sourceId,rawText.slice(0,2000)].join('|');
+  return 'recovered_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
+}
+function storedTextLooksLikeTranscript({title='',text='',sourceType='',metadata={}}={}){
+  const raw=String(text||'').trim();
+  if(raw.length<240)return false;
+  if(isNonTranscriptArtifact({type:sourceType,title,rawText:raw,metadata}))return false;
+  const hay=[title,sourceType,JSON.stringify(metadata||{}),raw.slice(0,4000)].join('\n');
+  if(/\b(krisp|transcript|recording transcript|meeting transcript|call transcript|zoom transcript|otter|fireflies|fathom|read\.ai|tl;dv)\b/i.test(hay))return true;
+  if(/\b(speaker|host|participant|attendee)\b[\s\S]{0,80}\b(transcript|summary)\b/i.test(hay))return true;
+  const speakerLines=(raw.match(/^\s*([A-Z][A-Za-z .'-]{1,60}|Speaker\s*\d+|Participant\s*\d+|Host|Guest|Jessa|Aric|Mark|Greg|Ed):\s+\S/gm)||[]).length;
+  if(speakerLines>=4)return true;
+  if(raw.length>1800&&/\b(meeting|call|conversation|attendees?|speaker|said|asked|discussed|follow[- ]?up|action item)\b/i.test(hay))return true;
+  return false;
+}
+async function recentEvidenceTextRows(days=3650,limit=500){
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState||{};
+    return (state.evidenceItems||[]).slice(0,limit);
+  }
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select id,source_type,source_id,title,raw_text,summary,metadata_json,captured_at,occurred_at,created_at from evidence_items where tenant_id=$1 and coalesce(captured_at,created_at) >= $2 order by coalesce(captured_at,created_at) desc limit $3',[tenantId(),since,Math.min(Number(limit)||500,1000)]);
+    return r.rows.map(row=>({id:row.id,sourceType:row.source_type,sourceId:row.source_id,title:row.title||'',rawText:row.raw_text||'',summary:row.summary||'',metadata:row.metadata_json||{},createdAt:row.captured_at?.toISOString?.()||row.created_at?.toISOString?.()||row.created_at||'',occurredAt:row.occurred_at?.toISOString?.()||row.occurred_at||''}));
+  }
+  return (valStore().evidenceItems||[]).filter(row=>new Date(row.capturedAt||row.createdAt||0)>=new Date(since)).slice(0,limit);
+}
+async function recentConversationTextRows(days=3650,limit=250){
+  if(DEMO_MODE)return [];
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery(`
+      select c.id,c.title,c.source,c.metadata,c.created_at,c.updated_at,
+             string_agg(coalesce(m.role,'') || ': ' || coalesce(m.content,''), E'\n\n' order by m.created_at asc) as transcript_text
+      from val_conversations c
+      left join val_messages m on m.conversation_id=c.id
+      where c.user_id=$1 and c.tenant_id=$2 and c.updated_at >= $3
+      group by c.id,c.title,c.source,c.metadata,c.created_at,c.updated_at
+      order by c.updated_at desc
+      limit $4
+    `,[VAL_USER_ID,tenantId(),since,Math.min(Number(limit)||250,500)]);
+    return r.rows.map(row=>({id:row.id,title:row.title||'',sourceType:row.source||'conversation',rawText:row.transcript_text||'',metadata:row.metadata||{},createdAt:row.updated_at?.toISOString?.()||row.created_at?.toISOString?.()||''}));
+  }
+  const store=valStore(),messages=store.messages||[];
+  return (store.conversations||[]).filter(c=>new Date(c.updatedAt||c.createdAt||0)>=new Date(since)).slice(0,limit).map(c=>({id:c.id,title:c.title||'',sourceType:c.source||'conversation',rawText:messages.filter(m=>m.conversationId===c.id).map(m=>`${m.role||''}: ${m.content||''}`).join('\n\n'),metadata:c.metadata||{},createdAt:c.updatedAt||c.createdAt||''}));
+}
+async function recentTeachValTextRows(days=3650,limit=250){
+  if(DEMO_MODE)return [];
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const imports=await dbQuery('select id,category,raw_response,structured_json,items_json,created_at from teach_val_imports where tenant_id=$1 and user_id=$2 and created_at >= $3 order by created_at desc limit $4',[tenantId(),VAL_USER_ID,since,Math.min(Number(limit)||250,500)]).catch(()=>({rows:[]}));
+    const memory=await dbQuery('select id,category,title,summary,data_json,created_at from teach_val_memory_items where tenant_id=$1 and user_id=$2 and created_at >= $3 order by created_at desc limit $4',[tenantId(),VAL_USER_ID,since,Math.min(Number(limit)||250,500)]).catch(()=>({rows:[]}));
+    return [
+      ...imports.rows.map(row=>({id:row.id,title:`Teach VAL ${row.category||'import'}`,sourceType:'teach_val_import',rawText:row.raw_response||JSON.stringify(row.items_json||row.structured_json||{}),metadata:{category:row.category},createdAt:row.created_at?.toISOString?.()||''})),
+      ...memory.rows.map(row=>({id:row.id,title:row.title||`Teach VAL ${row.category||'memory'}`,sourceType:'teach_val_memory',rawText:[row.summary,JSON.stringify(row.data_json||{})].filter(Boolean).join('\n\n'),metadata:{category:row.category},createdAt:row.created_at?.toISOString?.()||''}))
+    ];
+  }
+  const store=valStore();
+  return []
+    .concat(store.teachValImports||[])
+    .concat(store.teachValMemoryItems||[])
+    .filter(row=>new Date(row.createdAt||0)>=new Date(since))
+    .slice(0,limit)
+    .map(row=>({id:row.id,title:row.title||row.category||'Teach VAL record',sourceType:row.source||'teach_val',rawText:row.rawResponse||row.raw_response||row.summary||JSON.stringify(row.items||row.data||{}),metadata:row.metadata||{},createdAt:row.createdAt||''}));
+}
+async function storedTranscriptRecoveryCandidates({days=3650,limit=500}={}){
+  const [memory,evidence,conversations,teach]=await Promise.all([
+    recentMemoryItems(days,Math.max(limit,500)).catch(()=>[]),
+    recentEvidenceTextRows(days,Math.max(limit,500)).catch(()=>[]),
+    recentConversationTextRows(days,Math.min(limit,300)).catch(()=>[]),
+    recentTeachValTextRows(days,Math.min(limit,300)).catch(()=>[])
+  ]);
+  const rows=[];
+  const push=(row,sourceType)=>{
+    const metadata=row.metadata||row.metadataJson||row.metadata_json||{};
+    const rawText=String(row.rawText||row.raw_text||row.text||row.content||'').trim();
+    const title=row.title||row.summary||metadata.fileName||metadata.title||`${sourceType} transcript candidate`;
+    const actualSource=row.sourceType||row.source_type||row.kind||row.type||sourceType;
+    if(!storedTextLooksLikeTranscript({title,text:rawText,sourceType:actualSource,metadata}))return;
+    rows.push({sourceType:actualSource,sourceId:String(row.sourceId||row.source_id||row.id||''),title,rawText,metadata:{...metadata,recoveredFrom:sourceType,originalSourceType:actualSource,originalSourceId:row.sourceId||row.source_id||row.id||''},createdAt:row.createdAt||row.created_at||row.occurredAt||row.occurred_at||metadata.timestamp||''});
+  };
+  memory.forEach(row=>push(row,'val_memory_items'));
+  evidence.forEach(row=>push(row,'evidence_items'));
+  conversations.forEach(row=>push(row,'val_conversations'));
+  teach.forEach(row=>push(row,'teach_val'));
+  const seen=new Set();
+  return rows.filter(row=>{
+    const key=crypto.createHash('sha1').update([row.sourceType,row.sourceId,row.rawText.slice(0,1200)].join('|')).digest('hex');
+    if(seen.has(key))return false;seen.add(key);return true;
+  }).sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+}
+async function recoverStoredTranscripts({days=3650,limit=100,dryRun=false}={}){
+  const candidates=await storedTranscriptRecoveryCandidates({days,limit});
+  const [rawIndex,archive]=await Promise.all([recentTranscriptIndexRowsRaw(days,1000).catch(()=>[]),transcriptArchiveRecords(days,1000).catch(()=>[])]);
+  const existingIds=new Set([...rawIndex.map(row=>String(row.transcriptId||row.id||'')),...archive.map(row=>String(row.id||''))].filter(Boolean));
+  const imported=[],skipped=[],errors=[];
+  for(const candidate of candidates){
+    const id=stableRecoveredTranscriptId(candidate.sourceType,candidate.sourceId,candidate.rawText);
+    if(existingIds.has(id)){skipped.push({...candidate,id,reason:'already_recovered'});continue;}
+    if(dryRun){imported.push({...candidate,id,dryRun:true});continue;}
+    try{
+      const saved=await saveTranscript({id,type:'processed_transcript',title:candidate.title,transcript:candidate.rawText,rawText:candidate.rawText,source:`recovered:${candidate.sourceType}`,timestamp:candidate.createdAt||new Date().toISOString(),metadata:candidate.metadata,reviewStatus:'needs_review',importance:3});
+      let processed=null,processingError='';
+      try{processed=await processTranscriptPayload({source:`recovered:${candidate.sourceType}`,title:candidate.title,transcript:candidate.rawText,rawText:candidate.rawText,savedTranscriptId:saved.id,timestamp:candidate.createdAt||new Date().toISOString(),metadata:candidate.metadata});}
+      catch(e){processingError=e.message;await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});}
+      imported.push({...candidate,id:saved.id,processed:!!processed,processingError});
+      existingIds.add(saved.id);
+    }catch(e){errors.push({id,sourceType:candidate.sourceType,sourceId:candidate.sourceId,title:candidate.title,error:e.message});}
+  }
+  return {ok:true,days,limit,dryRun,candidates:candidates.length,imported:imported.length,skipped:skipped.length,errors,importedSamples:imported.slice(0,12).map(row=>({id:row.id,title:row.title,sourceType:row.sourceType,processed:row.processed,processingError:row.processingError||'',characters:row.rawText.length})),skippedSamples:skipped.slice(0,8).map(row=>({id:row.id,title:row.title,reason:row.reason}))};
+}
 async function countTranscriptMeetingLinks(days=7){
   await valDbReady;
   const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
@@ -16810,6 +16925,20 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
       recentMemory:transcriptMemory.slice(0,12).map(row=>({id:row.id,kind:row.kind||row.type,title:row.summary||row.title||row.metadata?.fileName||'',docType:row.metadata?.docType||'',uploadedVia:row.metadata?.uploadedVia||'',createdAt:row.createdAt,characters:String(row.rawText||'').length}))
     });
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
+    const limit=Math.max(1,Math.min(250,Number(req.body?.limit)||100));
+    const dryRun=req.body?.dryRun===true||req.body?.dryRun==='true';
+    const result=await recoverStoredTranscripts({days,limit,dryRun});
+    await auditLog({req,action:dryRun?'stored_transcript_recovery_previewed':'stored_transcript_recovery_run',resourceType:'transcript_recovery',metadata:{days,limit,candidates:result.candidates,imported:result.imported,skipped:result.skipped,errors:result.errors.length},success:!result.errors.length}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'stored_transcript_recovery_failed',resourceType:'transcript_recovery',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
