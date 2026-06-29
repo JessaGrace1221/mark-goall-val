@@ -17093,6 +17093,13 @@ function parseTranscriptWebhookRequestBody(input={}){
   if(input&&typeof input==='object')return input;
   return {};
 }
+function transcriptWebhookBodyPreview(input){
+  try{
+    if(Buffer.isBuffer(input))return input.toString('utf8').slice(0,900);
+    if(typeof input==='string')return input.slice(0,900);
+    return JSON.stringify(input||{}).slice(0,900);
+  }catch(e){return '';}
+}
 function normalizedTranscriptWebhookPayload(body={}){
   body=parseTranscriptWebhookRequestBody(body);
   const root=(body.payload&&typeof body.payload==='object'?body.payload:null)||(body.data&&typeof body.data==='object'?body.data:null)||(body.event&&typeof body.event==='object'?body.event:null)||body;
@@ -17156,7 +17163,9 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
       countTranscriptMeetingLinks(days).catch(()=>0)
     ]);
     const transcriptMemory=memoryRows.filter(row=>/transcript|knowledge_document/i.test(String(row.kind||row.type||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload');
-    const transcriptAudit=auditRows.filter(row=>/transcript|val_file_uploaded/i.test(String(row.action||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload').slice(0,40);
+    const allTranscriptAudit=auditRows.filter(row=>/transcript|val_file_uploaded/i.test(String(row.action||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload');
+    const transcriptAudit=allTranscriptAudit.slice(0,40);
+    const noTextWebhookAudit=allTranscriptAudit.filter(row=>String(row.action||'')==='transcript_webhook_received_without_text');
     const hiddenIndex=rawIndex.filter(row=>!isUsableTranscriptIndexRow(row));
     const hiddenLegacy=legacyRows.filter(row=>!isUsableTranscriptArchiveRecord(row));
     const allRawRows=rawIndex.concat(legacyRows).concat(memoryRows);
@@ -17174,6 +17183,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
         hiddenLegacyRows:hiddenLegacy.length,
         transcriptMemoryRows:transcriptMemory.length,
         transcriptAuditEvents:transcriptAudit.length,
+        webhookAcceptedWithoutTranscriptText:noTextWebhookAudit.length,
         krispLinkedRows:krispLinkedRows.length,
         meetingLinks,
         purgedRecoveredTrash:purge.deleted||0
@@ -17181,6 +17191,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
       latestRawTranscript:latestRaw?{id:latestRaw.transcriptId||latestRaw.id||'',title:latestRaw.meetingTitle||latestRaw.title||'',source:latestRaw.source||latestRaw.type||'',createdAt:latestRaw.createdAt||latestRaw.created_at||'',characters:String(latestRaw.rawTranscript||latestRaw.raw_transcript||latestRaw.rawText||'').length}:null,
       hiddenSamples:hiddenIndex.concat(hiddenLegacy).slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.title||'',source:row.source||row.type||'',reason:isNonTranscriptArtifact({title:row.meetingTitle||row.title||'',rawText:row.rawTranscript||row.raw_transcript||row.rawText||'',type:row.type||'transcript'})?'filtered as prompt/artifact':'filtered as unusable transcript',createdAt:row.createdAt||row.created_at||''})),
       krispSamples:krispLinkedRows.slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.meeting_title||row.title||row.summary||'',source:row.source||row.type||row.kind||'',createdAt:row.createdAt||row.created_at||'',characters:String(row.rawTranscript||row.raw_transcript||row.rawText||row.raw_text||'').length})),
+      recentNoTextWebhooks:noTextWebhookAudit.slice(0,12).map(row=>({createdAt:row.createdAt,metadata:row.metadata||{}})),
       recentAudit:transcriptAudit.map(row=>({action:row.action,success:row.success,resourceType:row.resourceType,resourceId:row.resourceId,createdAt:row.createdAt,metadata:row.metadata||{}})).slice(0,12),
       recentMemory:transcriptMemory.slice(0,12).map(row=>({id:row.id,kind:row.kind||row.type,title:row.summary||row.title||row.metadata?.fileName||'',docType:row.metadata?.docType||'',uploadedVia:row.metadata?.uploadedVia||'',createdAt:row.createdAt,characters:String(row.rawText||'').length}))
     });
@@ -17254,7 +17265,8 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
   if(!transcriptText.trim()){
-    await auditLog({req,action:'transcript_webhook_received_without_text',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',eventId:payload.id||payload.eventId||payload.event_id||'',krispDetected:!!payload.metadata?.krispDetected,keys:Object.keys(req.body||{}).slice(0,40)},success:true}).catch(()=>{});
+    const parsedBody=parseTranscriptWebhookRequestBody(req.body||{});
+    await auditLog({req,action:'transcript_webhook_received_without_text',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',eventId:payload.id||payload.eventId||payload.event_id||'',krispDetected:!!payload.metadata?.krispDetected,contentType:req.headers['content-type']||'',contentLength:req.headers['content-length']||'',bodyType:Buffer.isBuffer(req.body)?'buffer':typeof req.body,keys:Object.keys(parsedBody||{}).slice(0,40),preview:transcriptWebhookBodyPreview(req.body)},success:true}).catch(()=>{});
     return res.status(200).json({ok:true,accepted:true,saved:false,processed:false,needsTranscriptText:true,message:'Webhook received, but no transcript or note text was present in the payload. VAL accepted the event so the sender does not retry it as failed.'});
   }
   try{

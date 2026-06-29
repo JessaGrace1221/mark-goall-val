@@ -176,8 +176,13 @@ test('exposes transcript intake diagnostics for webhook and upload tracing',()=>
   assert.match(server,/transcriptTextFromNoteValue/);
   assert.match(server,/transcript_webhook_received_without_text/);
   assert.match(server,/needsTranscriptText/);
+  assert.match(server,/webhookAcceptedWithoutTranscriptText/);
+  assert.match(server,/recentNoTextWebhooks/);
+  assert.match(server,/transcriptWebhookBodyPreview/);
   assert.match(ui,/renderTranscriptIntakeStatus/);
   assert.match(ui,/Raw canonical rows/);
+  assert.match(ui,/Accepted webhooks without transcript text/);
+  assert.match(ui,/Accepted, no transcript text/);
   assert.match(ui,/Recent intake audit/);
 });
 
