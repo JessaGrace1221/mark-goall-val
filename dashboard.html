@@ -4546,7 +4546,7 @@ var BOOK_STATE_URL = PROXY+'/api/val/book-state';
 var chatHistory=[],selFile=null,voiceOn=false,recording=false,uploadBatchState=null,uploadAudioCtx=null;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
 var keepAlive=null,meetingMode=false,meetingLog=[],meetingIntroPending=false,savedChat=false,activeConversationId=null;
-var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0,voiceAudioCache={};
+var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0,voiceAudioCache={},voicePlaybackToken=0;
 var dashData={};
 var leadResearchState=null;
 var pendingLeadImport=null;
@@ -5287,9 +5287,15 @@ function speechCleanText(text){
   return String(text||'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\[(.*?)\]\(.*?\)/g,'$1').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim().substring(0,2000);
 }
 function fetchDeepgramTtsBlob(clean){
+  var controller=null,timer=null;
+  if(window.AbortController){
+    controller=new AbortController();
+    timer=setTimeout(function(){try{controller.abort();}catch(e){}},2500);
+  }
   return fetch((window.PROXY||'')+'/api/val/tts',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:clean})
+    body:JSON.stringify({text:clean}),
+    signal:controller?controller.signal:undefined
   }).then(function(r){
     if(!r.ok){
       return r.json().catch(function(){return{};}).then(function(d){throw new Error(d.detail||d.error||('Deepgram TTS failed: '+r.status));});
@@ -5297,7 +5303,7 @@ function fetchDeepgramTtsBlob(clean){
     var ct=r.headers.get('content-type')||'';
     if(ct.indexOf('audio/')===-1)throw new Error('Deepgram TTS did not return audio.');
     return r.blob();
-  });
+  }).finally(function(){if(timer)clearTimeout(timer);});
 }
 function preloadSpeech(text){
   var clean=speechCleanText(text);
@@ -5316,28 +5322,45 @@ function speak(text,btn,onDone){
     return;
   }
   voiceLastSpoken=clean;voiceLastSpokenAt=now;
+  var token=++voicePlaybackToken,finished=false,fellBack=false,fallbackTimer=null;
+  function finish(){
+    if(finished||token!==voicePlaybackToken)return;
+    finished=true;
+    if(fallbackTimer)clearTimeout(fallbackTimer);
+    setTimeout(function(){if(token!==voicePlaybackToken)return;speaking=false;resumeListen();onDone();},450);
+  }
+  function fallbackOnce(){
+    if(fellBack||finished||token!==voicePlaybackToken)return;
+    fellBack=true;
+    fallbackSpeak(clean,finish,token);
+  }
   speaking=true;pauseListen();
   if(curAudio){curAudio.pause();curAudio=null;}
+  try{speechSynthesis.cancel();}catch(e){}
+  fallbackTimer=setTimeout(fallbackOnce,900);
   (voiceAudioCache[clean]||preloadSpeech(clean))
   .then(function(b){
+    if(fellBack||finished||token!==voicePlaybackToken)return;
+    if(fallbackTimer)clearTimeout(fallbackTimer);
     delete voiceAudioCache[clean];
     var url=URL.createObjectURL(b);curAudio=new Audio(url);
-    curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;setTimeout(function(){speaking=false;resumeListen();onDone();},700);};
-    curAudio.onerror=function(){curAudio=null;speaking=false;resumeListen();onDone();};
-    curAudio.play().catch(function(){fallbackSpeak(clean,onDone);});
+    curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;finish();};
+    curAudio.onerror=function(){URL.revokeObjectURL(url);curAudio=null;fallbackOnce();};
+    curAudio.play().catch(function(){URL.revokeObjectURL(url);curAudio=null;fallbackOnce();});
   }).catch(function(e){
+    if(fellBack||finished||token!==voicePlaybackToken)return;
     var warnNow=Date.now();
     if(warnNow-voiceTtsWarnedAt>60000){
       voiceTtsWarnedAt=warnNow;
       if(typeof addSys==='function')addSys('VAL voice is using temporary browser audio for this turn.');
     }
-    fallbackSpeak(clean,onDone);
+    fallbackOnce();
   });
 }
 function pauseListen(){if(!deepgramWS||!voiceOn)return;listenPaused=true;if(mediaRec&&mediaRec.state==='recording')mediaRec.pause();}
 function resumeListen(){if(!deepgramWS||!voiceOn||!listenPaused)return;listenPaused=false;if(mediaRec&&mediaRec.state==='paused')mediaRec.resume();}
-function fallbackSpeak(t,onDone){onDone=typeof onDone==='function'?onDone:function(){};try{speaking=true;pauseListen();var u=new SpeechSynthesisUtterance(t);u.rate=.94;u.pitch=1.02;u.onend=function(){setTimeout(function(){speaking=false;resumeListen();onDone();},600);};u.onerror=function(){speaking=false;resumeListen();onDone();};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){speaking=false;resumeListen();onDone();}}
-function stopSpeak(){if(curAudio){curAudio.pause();curAudio=null;}try{speechSynthesis.cancel();}catch(e){}speaking=false;resumeListen();}
+function fallbackSpeak(t,onDone,token){onDone=typeof onDone==='function'?onDone:function(){};try{speaking=true;pauseListen();var u=new SpeechSynthesisUtterance(t);u.rate=.98;u.pitch=1.02;u.onend=function(){if(token&&token!==voicePlaybackToken)return;onDone();};u.onerror=function(){if(token&&token!==voicePlaybackToken)return;onDone();};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){if(!token||token===voicePlaybackToken)onDone();}}
+function stopSpeak(){voicePlaybackToken++;if(curAudio){curAudio.pause();curAudio=null;}try{speechSynthesis.cancel();}catch(e){}speaking=false;resumeListen();}
 
 // ── STT ────────────────────────────────────────────────
 function startSTT(){
@@ -5973,6 +5996,7 @@ var teachValVoiceStatus=null;
 var teachValVoiceMode='idle';
 var teachValVoicePendingText='';
 var teachValVoiceSendTimer=null;
+var teachValVoiceStarted=false;
 var teachValVoiceStarterPrompt='I am here with you. We will take this slowly. Start with just this: what are you building or carrying right now? You can answer in whatever order feels natural.';
 function teachValCardStatus(label,status){
   var good=/Imported|Reviewed|Sent|Tested|complete/i.test(status||''),wait=/Waiting|Started|Ready|In Progress/i.test(status||'');
@@ -6127,6 +6151,8 @@ function teachValPersistVoiceStart(){
     .catch(function(){});
 }
 function teachValStartVoiceInterview(){
+  if(teachValVoiceStarted&&teachValVoiceMode!=='paused')return;
+  teachValVoiceStarted=true;
   var starter=teachValVoiceStarterPrompt;
   var primary=document.getElementById('teachValVoicePrimary');if(primary)primary.remove();
   teachValPersistVoiceStart();
@@ -6146,7 +6172,7 @@ function teachValQueueVoiceAnswer(text){
   var box=document.getElementById('teachValVoiceAnswer');
   if(box)box.value=teachValVoicePendingText;
   clearTimeout(teachValVoiceSendTimer);
-  teachValVoiceSendTimer=setTimeout(function(){teachValSendVoiceAnswer();},1600);
+  teachValVoiceSendTimer=setTimeout(function(){teachValSendVoiceAnswer();},750);
 }
 function teachValRecordVoiceAnswer(){
   var Speech=window.SpeechRecognition||window.webkitSpeechRecognition, box=document.getElementById('teachValVoiceAnswer'), status=document.getElementById('teachValVoiceStatus');
@@ -6176,6 +6202,7 @@ function teachValPauseVoiceInterview(){
 function teachValStopVoiceInterview(){
   clearTimeout(teachValVoiceSendTimer);
   teachValStopVoiceAnswer();
+  teachValVoiceStarted=false;
   var pending=teachValVoicePendingText;
   if(pending){
     teachValSetVoiceMode('thinking','Saving');
