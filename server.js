@@ -1772,6 +1772,39 @@ function publicUser(user){
   if(!user) return null;
   return {id:user.id,email:user.email,name:user.name,role:user.role||'owner'};
 }
+function ownerLoginEmails(){
+  return [...new Set([
+    process.env.ADMIN_EMAIL,
+    process.env.VAL_OWNER_EMAIL,
+    process.env.GMAIL_USER_EMAIL,
+    process.env.OUTLOOK_USER_EMAIL,
+    ...(String(process.env.VAL_OWNER_EMAILS||'').split(','))
+  ].map(e=>String(e||'').trim().toLowerCase()).filter(Boolean))];
+}
+function isOwnerLoginEmail(email){
+  return ownerLoginEmails().includes(String(email||'').trim().toLowerCase());
+}
+async function createOwnerUserForEmail(email){
+  const normalized=String(email||'').trim().toLowerCase();
+  if(!normalized||!isOwnerLoginEmail(normalized))return null;
+  const existing=await findUserByEmail(normalized);
+  if(existing)return existing;
+  const name=process.env.ADMIN_NAME || CLIENT_CONFIG.clientName || 'VAL Admin';
+  const password=String(process.env.ADMIN_PASSWORD||'');
+  const passwordHash=password?await hashPassword(password):null;
+  const passwordSetAt=password?new Date().toISOString():null;
+  const id=uuid('usr');
+  if(pgPool){
+    await dbQuery('insert into val_users (id,client_slug,tenant_id,name,email,password_hash,password_set_at,role) values ($1,$2,$3,$4,$5,$6,$7,$8)',[id,CLIENT_CONFIG.clientSlug,tenantId(),name,normalized,passwordHash,passwordSetAt,'owner']);
+  }else{
+    const store=valStore();
+    store.users=store.users||[];
+    store.users.push({id,clientSlug:CLIENT_CONFIG.clientSlug,tenantId:tenantId(),name,email:normalized,passwordHash,passwordSetAt,role:'owner',createdAt:new Date().toISOString()});
+    saveValStore(store);
+  }
+  authLog(password?'Created owner login from trusted email':'Created owner login pending password setup',{email:normalized,userId:id,clientSlug:CLIENT_CONFIG.clientSlug});
+  return findUserByEmail(normalized);
+}
 async function seedAdminUser(){
   const email=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
   const password=String(process.env.ADMIN_PASSWORD||'');
@@ -4090,13 +4123,24 @@ app.post('/api/auth/login',async(req,res)=>{
   await valDbReady;
   const email=String(req.body.email||'').trim().toLowerCase();
   authLog('login requested',{email});
-  const user=await findUserByEmail(email);
+  const user=await findUserByEmail(email)||await createOwnerUserForEmail(email);
   if(!user){authLog('login failed: unknown email',{email});await auditLog({req,tenantId:tenantId(),userId:'',action:'login',resourceType:'user',metadata:{email,reason:'unknown_email'},success:false}).catch(()=>{});return res.status(401).json({ok:false,error:'Invalid email or password'});}
-  if(!user.passwordHash){authLog('login requires password setup',{email,userId:user.id});return res.status(403).json({ok:false,requiresPasswordSetup:true,message:'Password setup required'});}
+  if(!user.passwordHash){
+    const adminPassword=String(process.env.ADMIN_PASSWORD||'');
+    if(adminPassword&&isOwnerLoginEmail(email)&&String(req.body.password||'')===adminPassword){
+      const repairedHash=await hashPassword(adminPassword);
+      await setUserPassword(user.id,repairedHash);
+      user.passwordHash=repairedHash;
+      authLog('login filled owner password from env',{email,userId:user.id});
+    }else{
+      authLog('login requires password setup',{email,userId:user.id});
+      return res.status(403).json({ok:false,requiresPasswordSetup:true,message:'Password setup required'});
+    }
+  }
   if(!(await verifyPassword(req.body.password,user.passwordHash))){
     const adminEmail=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
     const adminPassword=String(process.env.ADMIN_PASSWORD||'');
-    if(adminEmail&&adminPassword&&email===adminEmail&&String(req.body.password||'')===adminPassword){
+    if(adminPassword&&isOwnerLoginEmail(email)&&String(req.body.password||'')===adminPassword){
       await setUserPassword(user.id,await hashPassword(adminPassword));
       authLog('login repaired admin password from env',{email,userId:user.id});
     }else{
@@ -4117,7 +4161,7 @@ app.post('/api/auth/request-password-setup',async(req,res)=>{
   const generic={ok:true,message:'If that email exists, a setup link has been created.'};
   authLog('password setup requested',{email,hasEmail:!!email});
   if(!email) return res.status(400).json({ok:false,error:'Email is required'});
-  const user=await findUserByEmail(email);
+  const user=await findUserByEmail(email)||await createOwnerUserForEmail(email);
   if(!user){
     authLog('password setup requested for unknown email',{email});
     return res.json(generic);
