@@ -334,6 +334,29 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .teach-val-summary-card{background:#fff;border:1px solid #dfe4e9;border-radius:8px;padding:13px;color:#111827;text-align:center}
 .teach-val-summary-card strong{display:block;font:800 1.5rem var(--serif);color:#172740}
 .teach-val-summary-card span{font-size:.72rem;color:#475569}
+.teach-val-voice-room{min-height:520px;background:#fff;border:1px solid rgba(16,22,51,.1);border-radius:8px;display:grid;grid-template-rows:1fr auto;align-items:center;justify-items:center;padding:34px;color:var(--navy);box-shadow:var(--shadow-sm)}
+.teach-val-voice-center{display:grid;justify-items:center;gap:22px;text-align:center;max-width:560px}
+.teach-val-agent-bubble{position:relative;width:154px;height:154px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ffffff 0 9%,#7dd3fc 18%,#5b5de8 36%,#11172f 72%,#070b18 100%);box-shadow:0 0 0 10px rgba(16,22,51,.04),0 22px 60px rgba(16,22,51,.18);overflow:hidden;transition:transform .25s var(--ease)}
+.teach-val-agent-bubble:before,.teach-val-agent-bubble:after{content:"";position:absolute;inset:14px;border-radius:50%;border:2px solid rgba(255,255,255,.42);filter:blur(.2px);animation:teachValOrbDrift 6s ease-in-out infinite}
+.teach-val-agent-bubble:after{inset:28px;border-color:rgba(251,191,36,.42);animation-duration:4.5s;animation-direction:reverse}
+.teach-val-agent-glow{position:absolute;inset:18px;border-radius:50%;background:conic-gradient(from 40deg,rgba(56,189,248,.0),rgba(56,189,248,.75),rgba(217,70,239,.75),rgba(251,191,36,.78),rgba(56,189,248,.0));filter:blur(12px);opacity:.8;animation:teachValOrbSpin 5.2s linear infinite}
+.teach-val-agent-core{position:absolute;inset:46px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#27314f 50%,#101633 100%);box-shadow:inset 0 0 16px rgba(255,255,255,.2)}
+.teach-val-agent-bubble.listening{animation:teachValListenPulse 2.4s ease-in-out infinite}
+.teach-val-agent-bubble.speaking .teach-val-agent-glow{animation-duration:1.6s;opacity:1}
+.teach-val-agent-bubble.paused{filter:saturate(.35);opacity:.68}
+.teach-val-voice-state{font:800 .78rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--navy)}
+.teach-val-voice-hint{font-size:.9rem;line-height:1.5;color:var(--text-2)!important;max-width:430px}
+.teach-val-voice-controls{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.teach-val-voice-control{min-width:102px;height:38px;border-radius:999px;border:1px solid rgba(16,22,51,.13);background:#fff;color:var(--navy);font-weight:800;cursor:pointer}
+.teach-val-voice-control.primary{background:var(--gold);border-color:var(--gold)}
+.teach-val-voice-control.danger{background:#fff5f5;border-color:rgba(184,50,40,.22);color:#7f1d1d}
+.teach-val-voice-hidden{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.teach-val-shell.voice-only{display:block;min-height:640px}
+.teach-val-shell.voice-only .teach-val-stage{min-height:640px;padding:0!important;border:0!important;box-shadow:none!important;background:#fff!important}
+.exec-workspace-modal.teach-val-voice-active .exec-workspace-footer{display:none!important}
+@keyframes teachValOrbSpin{to{transform:rotate(360deg)}}
+@keyframes teachValOrbDrift{0%,100%{transform:rotate(0deg) scale(.98)}50%{transform:rotate(24deg) scale(1.05)}}
+@keyframes teachValListenPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 10px rgba(16,22,51,.04),0 22px 60px rgba(16,22,51,.18)}50%{transform:scale(1.035);box-shadow:0 0 0 18px rgba(91,93,232,.08),0 28px 72px rgba(16,22,51,.22)}}
 @media(max-width:900px){.teach-val-shell{grid-template-columns:1fr}.teach-val-rail{order:2}.teach-val-two{grid-template-columns:1fr}.teach-val-stage{min-height:auto}}
 .exec-workspace-body>.email-body{height:calc(100% - 51px);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden}
 .exec-workspace-body>.email-tabs{background:#111c2c;border:1px solid rgba(255,255,255,.08);border-bottom:0;border-radius:8px 8px 0 0}
@@ -1289,6 +1312,12 @@ html,body{background:var(--cream)!important;color:var(--navy)!important;font-fam
 .teach-val-prompt-btn{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important;box-shadow:var(--shadow-xs)!important}
 .teach-val-prompt-btn.active{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
 .teach-val-summary-card,.task-card,.exec-workspace-modal .task-card{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
+.teach-val-voice-room{background:#fff!important;border:1px solid rgba(16,22,51,.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
+.teach-val-agent-bubble,.teach-val-agent-bubble *{color:inherit!important}
+.teach-val-agent-bubble{border-radius:50%!important;background:radial-gradient(circle at 32% 28%,#ffffff 0 9%,#7dd3fc 18%,#5b5de8 36%,#11172f 72%,#070b18 100%)!important;box-shadow:0 0 0 10px rgba(16,22,51,.04),0 22px 60px rgba(16,22,51,.18)!important}
+.exec-workspace-modal .teach-val-voice-control{height:38px!important;border-radius:999px!important;text-transform:none!important;letter-spacing:0!important}
+.exec-workspace-modal .teach-val-voice-control.primary{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.exec-workspace-modal .teach-val-voice-control.danger{background:#fff5f5!important;border-color:rgba(184,50,40,.22)!important;color:#7f1d1d!important}
 .task-column-head{background:#fff!important;border-color:rgba(16,22,51,0.08)!important}
 .task-count-pill{border-color:var(--gold-border)!important;color:var(--navy)!important;text-transform:none!important;letter-spacing:0!important}
 .task-check{border-radius:8px!important;border-color:var(--gold-border)!important}
@@ -5300,7 +5329,7 @@ function speak(text,btn,onDone){
     var warnNow=Date.now();
     if(warnNow-voiceTtsWarnedAt>60000){
       voiceTtsWarnedAt=warnNow;
-      if(typeof addSys==='function')addSys('Deepgram voice failed, using temporary browser voice: '+(e.message||e));
+      if(typeof addSys==='function')addSys('VAL voice is using temporary browser audio for this turn.');
     }
     fallbackSpeak(clean,onDone);
   });
@@ -5941,6 +5970,10 @@ var teachValOnboarding=null;
 var teachValActiveCategory='current_projects';
 var teachValSpeechRec=null;
 var teachValVoiceStatus=null;
+var teachValVoiceMode='idle';
+var teachValVoicePendingText='';
+var teachValVoiceSendTimer=null;
+var teachValVoiceStarterPrompt='I am here with you. We will take this slowly. Start with just this: what are you building or carrying right now? You can answer in whatever order feels natural.';
 function teachValCardStatus(label,status){
   var good=/Imported|Reviewed|Sent|Tested|complete/i.test(status||''),wait=/Waiting|Started|Ready|In Progress/i.test(status||'');
   return '<div class="rule-row"><strong>'+docSafe(label)+'</strong><div>'+docSafe(status||'Not Started')+'</div><span class="email-pill" style="background:'+(good?'rgba(34,197,94,.16)':wait?'rgba(245,158,11,.18)':'rgba(148,163,184,.16)')+';color:'+(good?'#14532d':wait?'#78350f':'#334155')+'">'+docSafe(status||'Not Started')+'</span></div>';
@@ -5965,7 +5998,7 @@ function teachValLoad(){
   });
 }
 function teachValStart(){
-  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();setTimeout(function(){teachValStartVoiceInterview();},120);}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
 }
 function teachValStartUpdate(){
   apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:false,testMode:true,mode:'update'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL update could not start: '+e.message);});
@@ -5996,42 +6029,40 @@ function teachValWelcomeHtml(){
   return '<section class="exec-card" style="grid-column:1/-1"><h3>'+(mode==='update'?'Update What VAL Knows':'Before VAL Can Support You Well')+'</h3><p>'+(mode==='update'?'Use this anytime your priorities, projects, relationships, or preferences change. You do not need to repeat the whole onboarding flow.':'VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. This should feel liberating: a 30-minute transfer of context, not a long intake form.')+'</p><div class="email-reason">Take your time. You can ramble. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start Voice Interview</button><button onclick="teachValStartUpdate()">I Am Updating VAL</button></div></section>';
 }
 function teachValLoadVoiceStatus(){
-  apiFetch(PROXY+'/api/val/voice/status').then(function(data){teachValVoiceStatus=data;teachValRender();}).catch(function(){teachValVoiceStatus={ok:false,ttsConfigured:false,error:'Voice status unavailable'};teachValRender();});
+  apiFetch(PROXY+'/api/val/voice/status').then(function(data){teachValVoiceStatus=data;}).catch(function(){teachValVoiceStatus={ok:false,ttsConfigured:false,error:'Voice status unavailable'};});
 }
 function teachValVoiceStatusHtml(){
-  var s=teachValVoiceStatus||{};
-  var label=s.ttsConfigured?'Deepgram voice connected':'Deepgram voice not connected';
-  var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')+' | source: '+(s.ttsModelSource||'unknown')+' | key: '+(s.ttsKeySource||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
-  var last=s.lastTtsDiagnostic&&s.lastTtsDiagnostic.error?(' Last TTS error: '+s.lastTtsDiagnostic.error+(s.lastTtsDiagnostic.detail?' - '+s.lastTtsDiagnostic.detail:'')):'';
-  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail+last)+'<br><span id="teachValDeepgramTestStatus">Run Test VAL Voice to confirm the exact voice.</span></div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
+  return '';
 }
 function teachValTestVoice(){
   var status=document.getElementById('teachValDeepgramTestStatus');
-  if(status)status.textContent='Testing Deepgram voice...';
-  apiFetch(PROXY+'/api/val/voice/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is the Deepgram voice VAL will use for onboarding.'})})
+  if(status)status.textContent='Testing VAL voice...';
+  apiFetch(PROXY+'/api/val/voice/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is the voice VAL will use for onboarding.'})})
     .then(function(diag){
-      if(status)status.textContent='Deepgram server test passed: '+(diag.model||'configured model')+' via '+(diag.keySource||'configured key')+'. Playing audio now...';
-      return fetchDeepgramTtsBlob('This is the Deepgram voice VAL will use for onboarding.').then(function(blob){return {blob:blob,diag:diag};});
+      if(status)status.textContent='VAL voice is ready. Playing audio now...';
+      return fetchDeepgramTtsBlob('This is the voice VAL will use for onboarding.').then(function(blob){return {blob:blob,diag:diag};});
     })
     .then(function(result){
       var blob=result.blob;
       var url=URL.createObjectURL(blob), audio=new Audio(url);
-      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram voice played successfully: '+((result.diag&&result.diag.model)||'configured model')+'.';};
+      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='VAL voice played successfully.';};
       audio.onerror=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram returned audio, but the browser could not play it.';};
       return audio.play().catch(function(e){URL.revokeObjectURL(url);throw new Error('Browser blocked Deepgram playback: '+(e.message||e));});
     })
-    .catch(function(e){if(status)status.textContent=(e.detail||e.message||'Deepgram voice test failed.');teachValLoadVoiceStatus();});
+    .catch(function(e){if(status)status.textContent=(e.detail||e.message||'VAL voice test failed.');teachValLoadVoiceStatus();});
 }
 function teachValVoiceTurnsHtml(turns){
-  turns=turns||[];
-  if(!turns.length)return '<div class="task-empty">Start the interview and VAL will ask the first question here.</div>';
-  return '<div class="michele-book-chat" style="max-height:260px">'+turns.map(function(t){
-    return '<div class="michele-book-chat-turn '+(t.role==='user'?'user':'assistant')+'"><div class="michele-book-chat-label">'+(t.role==='user'?'You':'VAL')+'</div>'+docSafe(t.content||'')+'</div>';
-  }).join('')+'</div>';
+  return '';
 }
 function teachValVoiceHtml(){
   var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, v=s.voiceInterview||{};
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p>'+teachValVoiceStatusHtml()+'<div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
+  var started=(v.turns||[]).length>0||/In Progress|Imported|Complete/i.test(v.status||'');
+  var mode=teachValVoiceMode||'idle';
+  var bubbleClass=mode==='paused'?'paused':(mode==='speaking'?'speaking':(mode==='listening'?'listening':''));
+  var label=mode==='speaking'?'VAL is speaking':(mode==='listening'?'VAL is listening':(mode==='paused'?'Paused':(started?'Ready to continue':'Ready when you are')));
+  var primary=started?'Resume':'Start';
+  var primaryButton=(started||mode==='speaking'||mode==='listening'||mode==='thinking')?'':'<button id="teachValVoicePrimary" class="teach-val-voice-control primary" onclick="teachValStartVoiceInterview()">'+primary+'</button>';
+  return '<section class="teach-val-voice-room"><div class="teach-val-voice-center"><div id="teachValVoiceBubble" class="teach-val-agent-bubble '+bubbleClass+'" aria-label="'+docSafe(label)+'"><span class="teach-val-agent-glow"></span><span class="teach-val-agent-core"></span></div><div id="teachValVoiceStatus" class="teach-val-voice-state teach-val-voice-hidden">'+docSafe(label)+'</div><textarea id="teachValVoiceAnswer" class="teach-val-voice-hidden" aria-hidden="true"></textarea><textarea id="teachValInterviewTranscript" class="teach-val-voice-hidden" aria-hidden="true">'+docSafe(v.transcript||'')+'</textarea></div><div class="teach-val-voice-controls">'+primaryButton+'<button class="teach-val-voice-control" onclick="teachValPauseVoiceInterview()">Pause</button><button class="teach-val-voice-control danger" onclick="teachValStopVoiceInterview()">Stop</button></div></section>';
 }
 function teachValTranscriptUploadHtml(){
   return '<section class="exec-card"><h3>Upload Existing Transcripts</h3><p>Bring in old Krisp, Zoom, meeting, or call transcripts. VAL will save them as transcript evidence, summarize them, and make them available on the Transcripts page.</p><input id="teachValTranscriptFiles" type="file" multiple onchange="teachValTranscriptFilesChanged()" accept=".txt,.md,.html,.json,.csv,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:#111827"><div class="email-actions"><button type="button" class="primary" onclick="teachValUploadTranscripts()">Upload Transcripts</button><button type="button" onclick="commandCenterNavigate(\'transcripts\')">Open Transcripts</button></div><div id="teachValTranscriptUploadStatus" class="email-reason">Each file becomes evidence first, then transcript intelligence.</div></section>';
@@ -6074,48 +6105,91 @@ window.teachValUploadTranscripts=function(){
 };
 function teachValVoiceTurn(payload){
   if(!teachValOnboarding||!teachValOnboarding.session)return Promise.reject(new Error('Open Teach VAL About You first.'));
+  payload=payload||{};
   return apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/voice-turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})})
-    .then(function(data){teachValOnboarding=data;teachValRender();if(data.reply&&typeof speak==='function')speak(data.reply);return data;});
+    .then(function(data){teachValOnboarding=data;teachValRender();if(!payload.silent&&data.reply&&typeof speak==='function')teachValSpeakReply(data.reply);return data;});
+}
+function teachValSetVoiceMode(mode,text){
+  teachValVoiceMode=mode||'idle';
+  var status=document.getElementById('teachValVoiceStatus'), bubble=document.getElementById('teachValVoiceBubble');
+  if(status)status.textContent=text||({idle:'Ready',listening:'VAL is listening',speaking:'VAL is speaking',paused:'Paused',thinking:'VAL is thinking'}[teachValVoiceMode]||'Ready');
+  if(bubble)bubble.className='teach-val-agent-bubble '+(teachValVoiceMode==='paused'?'paused':(teachValVoiceMode==='speaking'?'speaking':(teachValVoiceMode==='listening'?'listening':'')));
+}
+function teachValSpeakReply(text){
+  teachValSetVoiceMode('speaking','VAL is speaking');
+  if(teachValSpeechRec){try{teachValSpeechRec.stop();}catch(e){}teachValSpeechRec=null;}
+  if(typeof speak==='function')speak(text,null,function(){teachValRecordVoiceAnswer();});
+}
+function teachValPersistVoiceStart(){
+  if(!teachValOnboarding||!teachValOnboarding.session)return;
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/voice-turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:true})})
+    .then(function(data){teachValOnboarding=data;})
+    .catch(function(){});
 }
 function teachValStartVoiceInterview(){
-  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='Starting...';
-  teachValVoiceTurn({start:true}).catch(function(e){addSys('Teach VAL voice could not start: '+e.message);});
+  var starter=teachValVoiceStarterPrompt;
+  var primary=document.getElementById('teachValVoicePrimary');if(primary)primary.remove();
+  teachValPersistVoiceStart();
+  teachValSpeakReply(starter);
 }
 function teachValSendVoiceAnswer(){
   var box=document.getElementById('teachValVoiceAnswer'), text=String((box&&box.value)||'').trim();
-  if(!text){addSys('Add an answer first.');return;}
-  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='VAL is thinking...';
-  teachValVoiceTurn({message:text}).then(function(){if(box)box.value='';}).catch(function(e){addSys('Teach VAL voice answer failed: '+e.message);});
+  if(!text)return;
+  teachValSetVoiceMode('thinking','VAL is thinking');
+  if(teachValSpeechRec){try{teachValSpeechRec.stop();}catch(e){}teachValSpeechRec=null;}
+  teachValVoiceTurn({message:text}).then(function(){if(box)box.value='';teachValVoicePendingText='';}).catch(function(e){addSys('Teach VAL voice answer failed: '+e.message);teachValRecordVoiceAnswer();});
+}
+function teachValQueueVoiceAnswer(text){
+  text=String(text||'').replace(/\s+/g,' ').trim();
+  if(!text)return;
+  teachValVoicePendingText=(teachValVoicePendingText+' '+text).trim();
+  var box=document.getElementById('teachValVoiceAnswer');
+  if(box)box.value=teachValVoicePendingText;
+  clearTimeout(teachValVoiceSendTimer);
+  teachValVoiceSendTimer=setTimeout(function(){teachValSendVoiceAnswer();},1600);
 }
 function teachValRecordVoiceAnswer(){
   var Speech=window.SpeechRecognition||window.webkitSpeechRecognition, box=document.getElementById('teachValVoiceAnswer'), status=document.getElementById('teachValVoiceStatus');
-  if(!Speech){if(status)status.textContent='Browser voice dictation is not available. Type your answer here.';return;}
+  if(teachValVoiceMode==='paused')return;
+  if(!Speech){if(status)status.textContent='Voice listening is not available in this browser.';return;}
   if(teachValSpeechRec){teachValStopVoiceAnswer();}
   var rec=new Speech();teachValSpeechRec=rec;rec.lang='en-US';rec.continuous=true;rec.interimResults=true;
-  var finalText='';
-  if(status)status.textContent='Listening...';
+  teachValSetVoiceMode('listening','VAL is listening');
   rec.onresult=function(e){
-    var interim='';
     for(var i=e.resultIndex;i<e.results.length;i++){
       var part=e.results[i][0].transcript;
-      if(e.results[i].isFinal)finalText+=' '+part;else interim+=' '+part;
+      if(e.results[i].isFinal)teachValQueueVoiceAnswer(part);
     }
-    if(box)box.value=(finalText+' '+interim).trim();
   };
-  rec.onerror=function(){if(status)status.textContent='Voice dictation paused. You can type instead.';teachValSpeechRec=null;};
-  rec.onend=function(){if(status)status.textContent='Recording stopped. Send the answer when ready.';teachValSpeechRec=null;};
-  try{rec.start();}catch(e){if(status)status.textContent='Could not start recording. Type your answer here.';teachValSpeechRec=null;}
+  rec.onerror=function(){teachValSetVoiceMode('paused','Paused');teachValSpeechRec=null;};
+  rec.onend=function(){teachValSpeechRec=null;if(teachValVoiceMode==='listening')setTimeout(function(){if(!teachValSpeechRec&&teachValVoiceMode==='listening')teachValRecordVoiceAnswer();},350);};
+  try{rec.start();}catch(e){teachValSetVoiceMode('paused','Paused');teachValSpeechRec=null;}
 }
 function teachValStopVoiceAnswer(){
   if(teachValSpeechRec){try{teachValSpeechRec.stop();}catch(e){}teachValSpeechRec=null;}
-  var status=document.getElementById('teachValVoiceStatus');if(status)status.textContent='Recording stopped. Send the answer when ready.';
+  teachValSetVoiceMode('paused','Paused');
 }
-function teachValSaveInterview(){
+function teachValPauseVoiceInterview(){
+  clearTimeout(teachValVoiceSendTimer);
+  teachValStopVoiceAnswer();
+}
+function teachValStopVoiceInterview(){
+  clearTimeout(teachValVoiceSendTimer);
+  teachValStopVoiceAnswer();
+  var pending=teachValVoicePendingText;
+  if(pending){
+    teachValSetVoiceMode('thinking','Saving');
+    teachValVoiceTurn({message:pending,silent:true}).then(function(){teachValVoicePendingText='';teachValSaveInterview(true);}).catch(function(e){addSys('Teach VAL voice answer failed: '+e.message);teachValSaveInterview(true);});
+  }else{
+    teachValSaveInterview(true);
+  }
+}
+function teachValSaveInterview(silent){
   var box=document.getElementById('teachValInterviewTranscript'), status=document.getElementById('teachValInterviewStatus');
   if(status)status.textContent='Saving...';
   apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/interview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:(box&&box.value)||''})})
     .then(function(data){teachValOnboarding=data;teachValActiveCategory='current_projects';teachValRender();})
-    .catch(function(e){if(status)status.textContent=e.message;});
+    .catch(function(e){if(status)status.textContent=e.message;if(!silent)addSys('Teach VAL could not save the interview: '+e.message);});
 }
 function teachValCardsNavHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[];
@@ -6200,7 +6274,7 @@ function teachValWelcomeStageHtml(){
   return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>You do not need to fill out a long form. I will guide you one step at a time, and you can bring in what your previous AI tools already know.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div>'+teachValTranscriptUploadHtml()+'</main>';
 }
 function teachValVoiceStageHtml(){
-  return '<main class="teach-val-stage"><div><h2>Voice Interview</h2><p>Have a warm conversation with VAL, then save the transcript before bringing in your existing AI context.</p></div>'+teachValVoiceHtml().replace('class="exec-card" style="grid-column:1/-1"','class="exec-card"')+teachValTranscriptUploadHtml()+'<div class="teach-val-action-row"><button class="alert-btn" onclick="teachValOpenPrompt(\'current_projects\')">Skip to AI Prompts</button></div></main>';
+  return '<main class="teach-val-stage">'+teachValVoiceHtml()+'</main>';
 }
 function teachValPromptStageHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0], imp=card?teachValImportFor(card.category):null;
@@ -6224,8 +6298,10 @@ function teachValRender(){
   if(stage==='current_projects'||stage==='important_people'||stage==='lessons_learned'||stage==='work_preferences'||stage==='frustrations'||stage==='opportunities'||stage==='things_to_remember')teachValActiveCategory=stage;
   var current=stage==='complete'?'complete':(stage==='review'?'review':(stage==='welcome'?'welcome':(stage==='voice_interview'?'voice_interview':'ai_prompts')));
   var stageHtml=current==='complete'?teachValCompleteStageHtml():(current==='review'?teachValReviewStageHtml():(current==='welcome'?teachValWelcomeStageHtml():(current==='voice_interview'?teachValVoiceStageHtml():teachValPromptStageHtml())));
-  el.innerHTML='<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
+  var modal=el.closest('.exec-workspace-modal');if(modal)modal.classList.toggle('teach-val-voice-active',current==='voice_interview');
+  el.innerHTML=current==='voice_interview'?'<div class="teach-val-shell voice-only">'+stageHtml+'</div>':'<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
 }
+Object.assign(window,{openTeachValOnboarding:openTeachValOnboarding,startOnboardingProfile:startOnboardingProfile,teachValStart:teachValStart,teachValStartUpdate:teachValStartUpdate,teachValStartOver:teachValStartOver,teachValSetStage:teachValSetStage,teachValStartVoiceInterview:teachValStartVoiceInterview,teachValPauseVoiceInterview:teachValPauseVoiceInterview,teachValStopVoiceInterview:teachValStopVoiceInterview,teachValRecordVoiceAnswer:teachValRecordVoiceAnswer,teachValStopVoiceAnswer:teachValStopVoiceAnswer,teachValSendVoiceAnswer:teachValSendVoiceAnswer,teachValSaveInterview:teachValSaveInterview,teachValOpenPrompt:teachValOpenPrompt,teachValCopyActivePrompt:teachValCopyActivePrompt,teachValSaveKnowledgeCard:teachValSaveKnowledgeCard,teachValReview:teachValReview,teachValToggleItem:teachValToggleItem,teachValCommit:teachValCommit,teachValLoadVoiceStatus:teachValLoadVoiceStatus,teachValTestVoice:teachValTestVoice});
 
 // ── COPY ───────────────────────────────────────────────
 function copyMsg(text,btn){

@@ -2604,11 +2604,11 @@ const DEFAULT_BABY_STUDIO_SETTINGS = {
 };
 const TEACH_VAL_VOICE_PROMPT = `You are VAL, a warm, intelligent Executive AI and Chief of Staff.
 
-This is your first conversation with your owner.
+This is your first conversation with your owner. It should feel like a patient voice agent, not an intake form.
 
 Your job is not just to collect information. Your job is to begin understanding how this person thinks.
 
-Be warm, thoughtful, encouraging, and organized.
+Be warm, thoughtful, encouraging, and organized. Move slowly.
 
 Let the user ramble. Do not rush them. Do not interrupt long answers. If they tell a story, listen for the meaning behind the story.
 
@@ -2629,10 +2629,12 @@ Avoid sounding like a questionnaire.
 
 You are helping this person teach VAL who they are, what they are building, who matters, what lessons they have learned, how they prefer to work, and where they need support.
 
-Move through these topics naturally:
-1. Who they are
-2. What they do
-3. Their company or work
+Ask for one small layer of context at a time. Never open with a compound question that asks who they are, what they are working on, and what they want all at once.
+
+Move through these topics naturally, one at a time:
+1. What they are building or carrying right now
+2. Who they are and what role they play in the work
+3. Their company, clients, or body of work
 4. Their current projects
 5. Their most important people
 6. Lessons learned
@@ -4128,19 +4130,20 @@ app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
     if(userMessage)voice.turns.push({role:'user',content:userMessage,createdAt:now});
     let reply='';
     if(req.body.start||!voice.turns.length){
-      reply='I am here with you. To start, tell me who you are, what you are building or carrying right now, and what you most want VAL to understand about you.';
+      reply='I am here with you. We will take this slowly. Start with just this: what are you building or carrying right now? You can answer in whatever order feels natural.';
       if(!voice.turns.some(t=>t.role==='assistant'&&t.content===reply))voice.turns.push({role:'assistant',content:reply,createdAt:now});
     }else{
       const recent=voice.turns.slice(-12).map(t=>(t.role==='user'?'Owner':'VAL')+': '+t.content).join('\n\n');
       const system=[
         TEACH_VAL_VOICE_PROMPT,
         'Continue the onboarding interview inside the dashboard.',
-        'Reply in under 90 words.',
-        'Briefly reflect what you heard, then ask exactly one warm follow-up question.',
+        'Reply in under 55 words.',
+        'Briefly reflect one thing you heard, then ask exactly one warm follow-up question about one topic only.',
+        'If the owner shared a lot, do not ask for a new category yet. First ask a patient clarifying question about the most important thread.',
         'Do not sound like a survey. Do not mention saving or setup unless the user asks.'
       ].join('\n\n');
-      reply=await callValModel({system,user:recent,maxTokens:360,temperature:0.45}).catch(()=>'That helps. What feels most important for VAL to remember or help with first?');
-      reply=String(reply||'That helps. What should VAL remember next?').trim();
+      reply=await callValModel({system,user:recent,maxTokens:220,temperature:0.38}).catch(()=>'That helps. What part of that feels most important for me to understand first?');
+      reply=String(reply||'That helps. What part of that feels most important for me to understand first?').trim();
       voice.turns.push({role:'assistant',content:reply,createdAt:now});
     }
     voice.transcript=voice.turns.map(t=>(t.role==='user'?'You':'VAL')+': '+t.content).join('\n\n');

@@ -28,11 +28,11 @@ test('voice status exposes safe diagnostics without leaking the Deepgram key',()
   assert.doesNotMatch(server,/apiKey:DEEPGRAM_API_KEY/);
 });
 
-test('voice defaults to Deepgram Aura 2 Cora and visible fallback warnings',()=>{
+test('voice defaults to Deepgram Aura 2 Cora without provider-facing fallback warnings',()=>{
   assert.match(server,/aura-2-cora-en/);
-  assert.match(dashboard,/Deepgram voice failed, using temporary browser voice/);
+  assert.match(dashboard,/VAL voice is using temporary browser audio for this turn/);
   assert.match(dashboard,/\/api\/val\/voice\/test/);
-  assert.match(dashboard,/Deepgram server test passed/);
+  assert.match(dashboard,/VAL voice is ready/);
   assert.match(dashboard,/voiceTtsWarnedAt/);
   assert.match(dashboard,/endpointing=800/);
 });
