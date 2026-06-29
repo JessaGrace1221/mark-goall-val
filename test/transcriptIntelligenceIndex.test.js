@@ -214,6 +214,12 @@ test('transcript inbox supports direct upload and clearing broken transcript arc
   assert.match(ui,/Clear Transcript Data/);
 });
 
+test('fallback summaries are not counted as hard processing failures',()=>{
+  assert.match(server,/function isHardTranscriptProcessingFailure/);
+  assert.match(server,/summary==='fallback_complete'&&processing==='complete'/);
+  assert.match(server,/failedProcessing:transcripts\.filter\(isHardTranscriptProcessingFailure\)\.length/);
+});
+
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
   for(const label of ['Summary','Transcript','Chat About This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);

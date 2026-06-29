@@ -13006,6 +13006,14 @@ function cleanTranscriptForUi(t={}){
   const cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
   return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
 }
+function isHardTranscriptProcessingFailure(t={}){
+  const processing=String(t.processingStatus||t.status||'').toLowerCase();
+  const summary=String(t.summaryStatus||'').toLowerCase();
+  if(['failed','error'].includes(processing))return true;
+  if(['failed','error'].includes(summary)&&processing!=='complete')return true;
+  if(summary==='fallback_complete'&&processing==='complete')return false;
+  return (t.actionLog||[]).some(a=>String(a.status||'').toLowerCase()==='failed'&&String(a.actionType||'')!=='failed_action');
+}
 async function clearTranscriptStaging(transcriptId){
   await clearEvidenceLinksForTranscript(transcriptId);
   await clearValDecisionsForSource('transcript',transcriptId).catch(()=>{});
@@ -17119,7 +17127,7 @@ app.get('/api/val/transcripts',async(req,res)=>{
       if(record.detail){const detail=cleanTranscriptForUi({...record.detail});delete detail.transcriptText;return detail;}
       return cleanTranscriptForUi(transcriptUiRecord(record));
     });
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(isHardTranscriptProcessingFailure).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
