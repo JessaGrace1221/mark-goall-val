@@ -13126,11 +13126,17 @@ function stableRecoveredTranscriptId(sourceType='',sourceId='',rawText=''){
   const raw=[tenantId(),sourceType,sourceId,rawText.slice(0,2000)].join('|');
   return 'recovered_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
 }
+function hasKrispTranscriptUrl(value){
+  if(!value)return false;
+  const text=typeof value==='string'?value:JSON.stringify(value);
+  return /https?:\/\/app\.krisp\.ai\/\S+/i.test(text);
+}
 function storedTextLooksLikeTranscript({title='',text='',sourceType='',metadata={}}={}){
   const raw=String(text||'').trim();
   if(raw.length<240)return false;
   if(isNonTranscriptArtifact({type:sourceType,title,rawText:raw,metadata}))return false;
   const hay=[title,sourceType,JSON.stringify(metadata||{}),raw.slice(0,4000)].join('\n');
+  if(hasKrispTranscriptUrl(hay))return true;
   const explicitTranscriptHint=/\b(krisp|transcript|recording transcript|meeting transcript|call transcript|zoom transcript|otter|fireflies|fathom|read\.ai|tl;dv)\b/i.test(hay)
     || /^(transcript|meeting_transcript|call_transcript|voice_session|processed_transcript)$/i.test(String(metadata.docType||metadata.type||sourceType||''))
     || /teach_val_transcript_upload|webhook_transcript|transcript_upload/i.test(String(metadata.uploadedVia||metadata.source||metadata.ingestionSource||''));
@@ -13219,7 +13225,12 @@ async function storedTranscriptRecoveryCandidates({days=3650,limit=500}={}){
   return rows.filter(row=>{
     const key=crypto.createHash('sha1').update([row.sourceType,row.sourceId,row.rawText.slice(0,1200)].join('|')).digest('hex');
     if(seen.has(key))return false;seen.add(key);return true;
-  }).sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+  }).sort((a,b)=>{
+    const aK=hasKrispTranscriptUrl([a.title,a.rawText,JSON.stringify(a.metadata||{})].join('\n'))?1:0;
+    const bK=hasKrispTranscriptUrl([b.title,b.rawText,JSON.stringify(b.metadata||{})].join('\n'))?1:0;
+    if(aK!==bK)return bK-aK;
+    return interactionDate(b.createdAt)-interactionDate(a.createdAt);
+  }).slice(0,limit);
 }
 async function recoverStoredTranscripts({days=3650,limit=20,dryRun=false}={}){
   const candidates=await storedTranscriptRecoveryCandidates({days,limit});
@@ -16928,6 +16939,8 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
     const transcriptAudit=auditRows.filter(row=>/transcript|val_file_uploaded/i.test(String(row.action||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload').slice(0,40);
     const hiddenIndex=rawIndex.filter(row=>!isUsableTranscriptIndexRow(row));
     const hiddenLegacy=legacyRows.filter(row=>!isUsableTranscriptArchiveRecord(row));
+    const allRawRows=rawIndex.concat(legacyRows).concat(memoryRows);
+    const krispLinkedRows=allRawRows.filter(row=>hasKrispTranscriptUrl([row.meetingTitle||row.meeting_title||row.title||row.summary||'',row.rawTranscript||row.raw_transcript||row.rawText||row.raw_text||'',JSON.stringify(row.metadata||row.metadataJson||row.metadata_json||{})].join('\n')));
     const latestRaw=rawIndex[0]||legacyRows[0]||null;
     res.json({
       ok:true,
@@ -16941,10 +16954,12 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
         hiddenLegacyRows:hiddenLegacy.length,
         transcriptMemoryRows:transcriptMemory.length,
         transcriptAuditEvents:transcriptAudit.length,
+        krispLinkedRows:krispLinkedRows.length,
         meetingLinks
       },
       latestRawTranscript:latestRaw?{id:latestRaw.transcriptId||latestRaw.id||'',title:latestRaw.meetingTitle||latestRaw.title||'',source:latestRaw.source||latestRaw.type||'',createdAt:latestRaw.createdAt||latestRaw.created_at||'',characters:String(latestRaw.rawTranscript||latestRaw.raw_transcript||latestRaw.rawText||'').length}:null,
       hiddenSamples:hiddenIndex.concat(hiddenLegacy).slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.title||'',source:row.source||row.type||'',reason:isNonTranscriptArtifact({title:row.meetingTitle||row.title||'',rawText:row.rawTranscript||row.raw_transcript||row.rawText||'',type:row.type||'transcript'})?'filtered as prompt/artifact':'filtered as unusable transcript',createdAt:row.createdAt||row.created_at||''})),
+      krispSamples:krispLinkedRows.slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.meeting_title||row.title||row.summary||'',source:row.source||row.type||row.kind||'',createdAt:row.createdAt||row.created_at||'',characters:String(row.rawTranscript||row.raw_transcript||row.rawText||row.raw_text||'').length})),
       recentAudit:transcriptAudit.map(row=>({action:row.action,success:row.success,resourceType:row.resourceType,resourceId:row.resourceId,createdAt:row.createdAt,metadata:row.metadata||{}})).slice(0,12),
       recentMemory:transcriptMemory.slice(0,12).map(row=>({id:row.id,kind:row.kind||row.type,title:row.summary||row.title||row.metadata?.fileName||'',docType:row.metadata?.docType||'',uploadedVia:row.metadata?.uploadedVia||'',createdAt:row.createdAt,characters:String(row.rawText||'').length}))
     });

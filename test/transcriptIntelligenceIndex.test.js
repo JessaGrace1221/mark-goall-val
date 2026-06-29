@@ -182,7 +182,10 @@ test('recovers transcript-shaped content from existing VAL storage',()=>{
   assert.match(server,/recentTeachValTextRows/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/recover-existing'/);
   assert.match(server,/stored_transcript_recovery_run/);
+  assert.match(server,/app\\.krisp\\.ai/);
+  assert.match(server,/krispLinkedRows/);
   assert.match(ui,/Recover Existing/);
+  assert.match(ui,/Krisp-linked records/);
   assert.match(ui,/recoverStoredTranscripts/);
   assert.match(ui,/Scanning VAL memory, evidence, conversations, uploads, and Teach VAL records/);
 });
