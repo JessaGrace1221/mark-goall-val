@@ -150,8 +150,11 @@ test('exposes inbox, detail, and review queue UI',()=>{
 
 test('hides planning artifacts from transcript inbox and review queue',()=>{
   assert.match(server,/function isNonTranscriptArtifact/);
+  assert.match(server,/chat\|relationship/);
+  assert.match(server,/Help me brainstorm and plan this task/);
   assert.match(server,/This task is really about/);
   assert.match(server,/Ask or document the current version of these steps/);
+  assert.match(server,/Break it into clear steps/);
   assert.match(server,/function transcriptReviewParticipantIsUseful/);
   assert.match(server,/function transcriptReviewData/);
   assert.match(server,/validIds\.has\(String\(row\.transcriptId/);

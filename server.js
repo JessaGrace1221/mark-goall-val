@@ -13001,17 +13001,23 @@ function isNonTranscriptArtifact(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
   const combined=`${title}\n${raw}`;
   if(['chat_memory','document_sent','planning','task','task_plan','draft','email_draft','relationship_memory','transcript_insight'].includes(type))return true;
+  if(/\[(chat|relationship)_memory\]/i.test(combined))return true;
   if(/^\s*(planning|task)\s*:/i.test(title))return true;
+  if(/\bHelp me brainstorm and plan this task\b/i.test(combined))return true;
   if(/\bThis task is really about\b/i.test(combined))return true;
   if(/\bGoal of this task\b/i.test(combined)&&/\bFor each step\b/i.test(combined))return true;
   if(/\bAsk or document the current version of these steps\b/i.test(combined))return true;
   if(/\bAfter you map the current process, the output should be simple\b/i.test(combined))return true;
+  if(/\bBreak it into clear steps\b/i.test(combined)&&/\bflag anything I might be missing\b/i.test(combined))return true;
   if(/\bCopy this prompt into\b/i.test(combined)&&/\bPaste Response\b/i.test(combined))return true;
   return false;
 }
 function isMeetingPrepMemoryText(text=''){
   const raw=String(text||'');
   return /\bPrepare me for this upcoming meeting using attendee intelligence\b/i.test(raw)
+    || /\bPrepare me for this upcoming meeting using attendee\b/i.test(raw)
+    || /\[(chat|relationship)_memory\]/i.test(raw)
+    || /\bHelp me brainstorm and plan this task\b/i.test(raw)
     || (/\bAttendee intelligence:\b/i.test(raw)&&/\bSaved memory:\b/i.test(raw))
     || /\bUse all known attendees\. If the data is thin\b/i.test(raw)
     || /\bVAL:\s*I could not find a matching email\b/i.test(raw);
