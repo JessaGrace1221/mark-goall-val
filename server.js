@@ -594,7 +594,18 @@ const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+function stableSessionSecret(){
+  if(process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if(process.env.VAL_SESSION_SECRET) return process.env.VAL_SESSION_SECRET;
+  return crypto.createHash('sha256').update([
+    process.env.DATABASE_URL||'',
+    process.env.ADMIN_EMAIL||'',
+    process.env.ADMIN_PASSWORD||'',
+    CLIENT_CONFIG.clientSlug||'',
+    CLIENT_CONFIG.publicBaseUrl||''
+  ].join('|')).digest('hex');
+}
+const SESSION_SECRET = stableSessionSecret();
 const SESSION_COOKIE = 'val_session';
 const VAL_USER_ID = process.env.VAL_USER_ID || CLIENT_CONFIG.clientSlug || 'default';
 const MEMORY_CHUNK_SIZE = Number(process.env.MEMORY_CHUNK_SIZE) || 1800;
@@ -1085,12 +1096,12 @@ function verifySignedSession(value){
 }
 function setSessionCookie(res,sessionId){
   const secure=process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
-  const sameSite=process.env.VAL_COOKIE_SAMESITE || (secure?'None':'Lax');
+  const sameSite=process.env.VAL_COOKIE_SAMESITE || 'Lax';
   res.setHeader('Set-Cookie',`${SESSION_COOKIE}=${encodeURIComponent(signedSessionValue(sessionId))}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${60*60*24*14}${secure?'; Secure':''}`);
 }
 function clearSessionCookie(res){
   const secure=process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
-  const sameSite=process.env.VAL_COOKIE_SAMESITE || (secure?'None':'Lax');
+  const sameSite=process.env.VAL_COOKIE_SAMESITE || 'Lax';
   res.setHeader('Set-Cookie',`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure?'; Secure':''}`);
 }
 async function hashPassword(password){
@@ -13120,11 +13131,15 @@ function storedTextLooksLikeTranscript({title='',text='',sourceType='',metadata=
   if(raw.length<240)return false;
   if(isNonTranscriptArtifact({type:sourceType,title,rawText:raw,metadata}))return false;
   const hay=[title,sourceType,JSON.stringify(metadata||{}),raw.slice(0,4000)].join('\n');
-  if(/\b(krisp|transcript|recording transcript|meeting transcript|call transcript|zoom transcript|otter|fireflies|fathom|read\.ai|tl;dv)\b/i.test(hay))return true;
+  const explicitTranscriptHint=/\b(krisp|transcript|recording transcript|meeting transcript|call transcript|zoom transcript|otter|fireflies|fathom|read\.ai|tl;dv)\b/i.test(hay)
+    || /^(transcript|meeting_transcript|call_transcript|voice_session|processed_transcript)$/i.test(String(metadata.docType||metadata.type||sourceType||''))
+    || /teach_val_transcript_upload|webhook_transcript|transcript_upload/i.test(String(metadata.uploadedVia||metadata.source||metadata.ingestionSource||''));
+  if(explicitTranscriptHint)return true;
+  if(/^val_conversations?$|^conversation$|^chat$/i.test(String(sourceType||'')))return false;
   if(/\b(speaker|host|participant|attendee)\b[\s\S]{0,80}\b(transcript|summary)\b/i.test(hay))return true;
   const speakerLines=(raw.match(/^\s*([A-Z][A-Za-z .'-]{1,60}|Speaker\s*\d+|Participant\s*\d+|Host|Guest|Jessa|Aric|Mark|Greg|Ed):\s+\S/gm)||[]).length;
   if(speakerLines>=4)return true;
-  if(raw.length>1800&&/\b(meeting|call|conversation|attendees?|speaker|said|asked|discussed|follow[- ]?up|action item)\b/i.test(hay))return true;
+  if(raw.length>1800&&/\b(meeting recording|call recording|attendees?|speaker \d|participant \d)\b/i.test(hay))return true;
   return false;
 }
 async function recentEvidenceTextRows(days=3650,limit=500){
