@@ -19,10 +19,11 @@ const {
 const app     = express();
 
 app.use(cors());
-app.use(express.json({limit:'10mb'}));
-app.use(express.urlencoded({extended:true,limit:'10mb'}));
+app.use(express.json({limit:'50mb'}));
+app.use(express.urlencoded({extended:true,limit:'50mb'}));
+app.use(express.text({type:['text/*','application/xml','application/*+xml'],limit:'50mb'}));
 app.set('trust proxy',1);
-const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:25*1024*1024}});
+const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:50*1024*1024}});
 
 function normalizePublicBaseUrl(value){
   let raw=String(value||'').trim();
@@ -17068,7 +17069,24 @@ function transcriptParticipantsFromPayload(...values){
   values.forEach(push);
   return participants.filter(p=>p.name||p.email);
 }
+function parseTranscriptWebhookRequestBody(input={}){
+  if(Buffer.isBuffer(input))input=input.toString('utf8');
+  if(typeof input==='string'){
+    const text=input.trim();
+    if(!text)return {};
+    try{return JSON.parse(text);}catch(e){}
+    if(text.includes('=')&&text.length<200000){
+      const params=new URLSearchParams(text),body={};
+      for(const [key,value] of params.entries())body[key]=value;
+      if(Object.keys(body).length)return body;
+    }
+    return {text,rawText:text,title:'Webhook transcript'};
+  }
+  if(input&&typeof input==='object')return input;
+  return {};
+}
 function normalizedTranscriptWebhookPayload(body={}){
+  body=parseTranscriptWebhookRequestBody(body);
   const root=(body.payload&&typeof body.payload==='object'?body.payload:null)||(body.data&&typeof body.data==='object'?body.data:null)||(body.event&&typeof body.event==='object'?body.event:null)||body;
   const transcriptObject=root.transcript&&typeof root.transcript==='object'?root.transcript:{};
   const meeting=transcriptNestedObject(root,'meeting','meetingInfo','meeting_info','recording');
@@ -17224,7 +17242,7 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
     res.json({ok:true,message:{role:'assistant',content:answer},transcript:{id:transcript.id,title:transcript.title}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts',async(req,res)=>{
+app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req,res)=>{
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
   if(!transcriptText.trim()){
