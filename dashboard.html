@@ -3031,12 +3031,25 @@ function bindEmailListRows(){
 }
 function selectEmail(id){
   emailIntel.selected=(emailIntel.emails||[]).find(function(e){return e.messageId===id||emailMessageKey(e)===id;})||emailIntel.selected;
-  renderEmailIntelligence();
+  renderSelectedEmailDetail();
 }
 function selectEmailAt(index){
   var rows=emailIntel.currentRows||emailsForTab(emailIntel.tab);
   emailIntel.selected=rows[index]||emailIntel.selected;
-  renderEmailIntelligence();
+  renderSelectedEmailDetail(index);
+}
+function renderSelectedEmailDetail(index){
+  if(index==null){
+    var rows=emailIntel.currentRows||emailsForTab(emailIntel.tab);
+    index=rows.findIndex(function(e){return emailMessageKey(e)===emailMessageKey(emailIntel.selected);});
+  }
+  var list=document.getElementById('emailList');
+  if(list){
+    list.querySelectorAll('[data-email-index]').forEach(function(row){
+      row.classList.toggle('active',Number(row.getAttribute('data-email-index'))===Number(index));
+    });
+  }
+  renderEmailDetail(emailIntel.selected);
 }
 function emailDecisionLabel(e){
   var map={needs_attention:'Decision',needs_reply:'Reply needed',waiting_on_response:'Follow up',forward_to_team:'Delegate',appointment_recap_needed:'Recap',relationship_context:'Relationship'};

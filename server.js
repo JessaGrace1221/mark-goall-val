@@ -5891,7 +5891,7 @@ function classifyEmail(email,rules=[]){
   if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)){
     return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
   }
-  if(/\b(intro|introduction|referral|connect you|introduce you|warm intro|warm introduction)\b/.test(text)&&/\b(send me|send over|share|tight version|blurb|language|one paragraph|paragraph|bio|overview|reply|respond)\b/.test(text)){
+  if(/\b(intro|introduction|referral|connect you|introduce you|introduced|warm intro|warm introduction)\b/.test(text)){
     return {classification:'needs_reply',reason:'Warm introduction opportunity asks for reply language.',recommendedAction:'Draft the intro response for approval.',confidence:'high',requiresApproval:true};
   }
   if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)){

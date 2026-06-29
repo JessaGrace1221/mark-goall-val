@@ -31,6 +31,8 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/function selectEmailAt/);
   assert.match(dashboard,/onclick="selectEmailAt\(\$\{i\}\)"/);
   assert.match(dashboard,/list\.addEventListener\('click'/);
+  assert.match(dashboard,/function renderSelectedEmailDetail/);
+  assert.match(dashboard,/renderEmailDetail\(emailIntel\.selected\)/);
   assert.match(dashboard,/function markEmailNotImportant/);
   assert.match(dashboard,/function saveManualEmailRule/);
   assert.match(dashboard,/Refresh Inbox/);
@@ -47,6 +49,7 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
+  assert.match(server,/intro\|introduction\|referral\|connect you/);
   assert.match(server,/source:'executive_inbox_auto_draft'/);
   assert.match(server,/email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
