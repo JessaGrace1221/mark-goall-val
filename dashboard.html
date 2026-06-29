@@ -5107,18 +5107,29 @@ var authRedirecting=false;
 function handleAuthExpired(){
   if(authRedirecting)return;
   authRedirecting=true;
-  try{addSys('Your VAL session expired. Opening login now...');}catch(_){}
-  setTimeout(function(){
-    window.location.href='/login?next='+encodeURIComponent(location.pathname+location.search);
-  },650);
+  var next=encodeURIComponent(location.pathname+location.search);
+  var loginUrl='/login?next='+next;
+  try{addSys('Your VAL session expired. Please sign back in to continue. <button class="pill" onclick="window.location.href=\''+loginUrl+'\'">Open Login</button>');}catch(_){}
+  var detail=document.getElementById('centerDetail');
+  var welcome=document.getElementById('centerWelcome');
+  if(detail){
+    detail.classList.add('on');
+    detail.innerHTML='<section class="val-auth-expired"><h2>Session expired</h2><p>VAL kept this page open instead of redirecting you mid-action. Sign back in, then return here and try again.</p><button class="primary" onclick="window.location.href=\''+loginUrl+'\'">Open Login</button></section>';
+  }
+  if(welcome)welcome.style.display='none';
 }
 function apiTextOrJson(r){
   if(r.status===401){
     handleAuthExpired();
     throw new Error('Session expired. Please log back in.');
   }
+  var contentType=(r.headers&&r.headers.get&&r.headers.get('content-type'))||'';
   if(!r.ok)return r.text().then(function(t){
     var message=t||('Request failed with status '+r.status);
+    if(/text\/html/i.test(contentType)||/<!doctype html|<html/i.test(message)){
+      if(/sign in|login/i.test(message)) message='Session expired. Please sign back in.';
+      else message='The server returned an HTML page instead of JSON.';
+    }
     try{
       var parsed=JSON.parse(t);
       if(parsed&&parsed.message) message=parsed.message;
@@ -5128,7 +5139,17 @@ function apiTextOrJson(r){
     }catch(_){}
     throw new Error(message);
   });
-  return r.text().then(function(t){return t&&t.trim()?JSON.parse(t):null;});
+  return r.text().then(function(t){
+    if(!t||!t.trim())return null;
+    if(/text\/html/i.test(contentType)||/<!doctype html|<html/i.test(t)){
+      if(/sign in|login/i.test(t)){
+        handleAuthExpired();
+        throw new Error('Session expired. Please sign back in.');
+      }
+      throw new Error('The server returned an HTML page instead of JSON.');
+    }
+    return JSON.parse(t);
+  });
 }
 function apiFetch(url,opts){
   opts=opts||{};
