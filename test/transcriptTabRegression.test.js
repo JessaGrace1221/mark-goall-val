@@ -8,10 +8,11 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 
-test('webhook accepts common transcript payload shapes and validates text',()=>{
+test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
   for(const field of ['rawText','raw_text','transcriptText','transcript_text','text','content','body','segments','sentences','utterances','speakerTurns'])assert.ok(server.includes(field));
-  assert.match(server,/A usable transcript text field is required/);
+  assert.match(server,/transcript_webhook_received_without_text/);
+  assert.match(server,/needsTranscriptText/);
   assert.match(server,/\[transcripts\] webhook received/);
   assert.match(server,/\[transcripts\] saved successfully/);
   assert.match(server,/\[transcripts\] save failed/);
@@ -125,9 +126,9 @@ test('Teach VAL can upload old transcript files into the transcript pipeline',()
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/window\.teachValTranscriptFilesChanged=function/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/fetch\(FILES_URL,\{method:'POST',credentials:'same-origin',body:fd\}/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/input\.click\(\)/);
-  assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValVoiceStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValPromptStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);
   assert.match(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValReviewStageHtml\(\)[\s\S]*teachValTranscriptUploadHtml\(\)/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root,'dashboard.html'),'utf8'),/function teachValVoiceStageHtml/);
 });
 
 test('left navigation exposes live transcript, task, and draft badges',()=>{

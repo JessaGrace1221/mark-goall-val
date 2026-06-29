@@ -20,6 +20,7 @@ const app     = express();
 
 app.use(cors());
 app.use(express.json({limit:'10mb'}));
+app.use(express.urlencoded({extended:true,limit:'10mb'}));
 app.set('trust proxy',1);
 const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:25*1024*1024}});
 
@@ -17006,6 +17007,17 @@ function transcriptFirstString(...values){
   }
   return '';
 }
+function transcriptTextFromNoteValue(value,depth=0){
+  if(depth>4||!value)return '';
+  if(typeof value==='string')return value.trim();
+  if(Array.isArray(value))return value.map(v=>transcriptTextFromNoteValue(v,depth+1)).filter(Boolean).join('\n');
+  if(typeof value==='object'){
+    const direct=transcriptFirstString(value.transcript,value.rawText,value.raw_text,value.text,value.content,value.body,value.plainText,value.plain_text,value.fullText,value.full_text,value.summary,value.notes,value.note,value.markdown,value.html,value.description,value.value);
+    if(direct)return direct;
+    return ['note','notes','summary','meetingNote','meeting_note','generatedNote','generated_note','memo','sections','items','bullets','actionItems','action_items'].map(k=>transcriptTextFromNoteValue(value[k],depth+1)).filter(Boolean).join('\n');
+  }
+  return '';
+}
 function transcriptTurnSpeaker(turn={}){
   const speaker=turn.speaker||turn.speakerName||turn.speaker_name||turn.name||turn.author||turn.participant||turn.user||turn.person||{};
   if(typeof speaker==='string')return speaker;
@@ -17059,11 +17071,13 @@ function transcriptParticipantsFromPayload(...values){
 function normalizedTranscriptWebhookPayload(body={}){
   const root=(body.payload&&typeof body.payload==='object'?body.payload:null)||(body.data&&typeof body.data==='object'?body.data:null)||(body.event&&typeof body.event==='object'?body.event:null)||body;
   const transcriptObject=root.transcript&&typeof root.transcript==='object'?root.transcript:{};
-  const meeting=transcriptNestedObject(root,'meeting','meetingInfo','meeting_info','note','notes','recording');
+  const meeting=transcriptNestedObject(root,'meeting','meetingInfo','meeting_info','recording');
+  const note=transcriptNestedObject(root,'note','notes','meetingNote','meeting_note','generatedNote','generated_note');
   const transcriptTurns=transcriptTurnsFromValue(root).concat(transcriptTurnsFromValue(transcriptObject)).filter(Boolean);
   const segmentText=[...new Set(transcriptTurns)].join('\n');
-  const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,segmentText);
-  const rawTitle=transcriptFirstString(root.title,root.meetingTitle,root.meeting_title,root.meetingName,root.meeting_name,root.callTitle,root.call_title,root.callName,root.call_name,root.name,transcriptObject.title,meeting.title,meeting.name,body.title);
+  const noteText=transcriptTextFromNoteValue(note)||transcriptFirstString(root.summary,root.notes,root.note,root.meetingNote,root.meeting_note,root.generatedNote,root.generated_note,meeting.summary,meeting.notes,meeting.note);
+  const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,segmentText,noteText);
+  const rawTitle=transcriptFirstString(root.title,root.meetingTitle,root.meeting_title,root.meetingName,root.meeting_name,root.callTitle,root.call_title,root.callName,root.call_name,root.name,transcriptObject.title,meeting.title,meeting.name,note.title,note.name,body.title);
   const source=transcriptFirstString(root.source,root.provider,root.platform,body.source)||(/krisp/i.test(JSON.stringify(body).slice(0,2000))?'krisp':'webhook');
   const participants=transcriptParticipantsFromPayload(root.participants,root.attendees,root.speakers,root.users,meeting.participants,meeting.attendees,transcriptObject.participants);
   const sourcePayloadMetadata={};
@@ -17071,7 +17085,7 @@ function normalizedTranscriptWebhookPayload(body={}){
     if(/^(transcript|raw_?text|transcript_?text|text|content|body|plain_?text|full_?text|segments|sentences|utterances|speaker_?turns|turns|items|entries|paragraphs)$/i.test(key))continue;
     sourcePayloadMetadata[key]=value&&typeof value==='object'?JSON.parse(JSON.stringify(value,(nestedKey,nestedValue)=>/^(transcript|raw_?text|transcript_?text|text|content|body|segments|sentences)$/i.test(nestedKey)?undefined:nestedValue)):value;
   }
-  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)};
+  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript'};
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
@@ -17213,7 +17227,10 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
 app.post('/api/val/transcripts',async(req,res)=>{
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
-  if(!transcriptText.trim())return res.status(400).json({ok:false,error:'A usable transcript text field is required. Accepted fields include transcript, rawText, transcriptText, text, content, body, or speaker segments.'});
+  if(!transcriptText.trim()){
+    await auditLog({req,action:'transcript_webhook_received_without_text',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',eventId:payload.id||payload.eventId||payload.event_id||'',krispDetected:!!payload.metadata?.krispDetected,keys:Object.keys(req.body||{}).slice(0,40)},success:true}).catch(()=>{});
+    return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,needsTranscriptText:true,message:'Webhook received, but no transcript or note text was present in the payload. VAL accepted the event so the sender does not retry it as failed.'});
+  }
   try{
     const saved=await saveTranscript({...payload,reviewStatus:payload.reviewStatus||payload.review_status||'new'});
     await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title:payload.title,source:payload.source},success:true}).catch(()=>{});

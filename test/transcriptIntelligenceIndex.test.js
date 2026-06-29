@@ -172,6 +172,10 @@ test('exposes transcript intake diagnostics for webhook and upload tracing',()=>
   assert.match(server,/app\.all\('\/api\/val\/transcripts\/ping'/);
   assert.match(server,/headers\.authorization/);
   assert.match(server,/x-webhook-token/);
+  assert.match(server,/express\.urlencoded/);
+  assert.match(server,/transcriptTextFromNoteValue/);
+  assert.match(server,/transcript_webhook_received_without_text/);
+  assert.match(server,/needsTranscriptText/);
   assert.match(ui,/renderTranscriptIntakeStatus/);
   assert.match(ui,/Raw canonical rows/);
   assert.match(ui,/Recent intake audit/);
