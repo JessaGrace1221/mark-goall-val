@@ -24,6 +24,9 @@ test('webhook accepts common transcript payload shapes and accepts note-only eve
 test('webhook normalizes Krisp-style speaker turn payloads',()=>{
   assert.match(server,/krispSamplePayload/);
   assert.match(server,/function transcriptTurnsFromValue/);
+  assert.match(server,/\['content','segments','sentences','utterances'/);
+  assert.match(server,/raw_content/);
+  assert.match(server,/raw_meeting/);
   assert.match(server,/speaker_turns/);
   assert.match(server,/utterances/);
   assert.match(server,/monologues/);

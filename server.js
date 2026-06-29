@@ -17033,7 +17033,7 @@ function transcriptTurnSpeaker(turn={}){
   return speaker.name||speaker.displayName||speaker.fullName||speaker.email||speaker.label||'';
 }
 function transcriptTurnTime(turn={}){
-  const raw=turn.start||turn.startTime||turn.start_time||turn.timestamp||turn.time||turn.offset||turn.startOffset||turn.start_offset||turn.startMs||turn.start_ms||turn.startSeconds||turn.start_seconds||'';
+  const raw=turn.start||turn.startTime||turn.start_time||turn.timestamp||turn.time||turn.offset||turn.startOffset||turn.start_offset||turn.startMs||turn.start_ms||turn.startSeconds||turn.start_seconds||turn.startTimeInSeconds||turn.start_time_seconds||'';
   if(raw===''||raw===null||raw===undefined)return '';
   if(typeof raw==='number'){
     const seconds=raw>10000?Math.floor(raw/1000):Math.floor(raw);
@@ -17059,7 +17059,7 @@ function transcriptTurnsFromValue(value,depth=0){
     return value.flatMap(item=>transcriptTurnsFromValue(item,depth+1));
   }
   if(typeof value!=='object')return [];
-  const keys=['segments','sentences','utterances','speakerTurns','speaker_turns','turns','items','entries','paragraphs','transcriptItems','transcript_items','monologues','phrases','results'];
+  const keys=['content','segments','sentences','utterances','speakerTurns','speaker_turns','turns','items','entries','paragraphs','transcriptItems','transcript_items','monologues','phrases','results'];
   for(const key of keys){
     const found=transcriptTurnsFromValue(value[key],depth+1);
     if(found.length)return found;
@@ -17109,7 +17109,7 @@ function normalizedTranscriptWebhookPayload(body={}){
   const transcriptTurns=transcriptTurnsFromValue(root).concat(transcriptTurnsFromValue(transcriptObject)).filter(Boolean);
   const segmentText=[...new Set(transcriptTurns)].join('\n');
   const noteText=transcriptTextFromNoteValue(note)||transcriptFirstString(root.summary,root.notes,root.note,root.meetingNote,root.meeting_note,root.generatedNote,root.generated_note,meeting.summary,meeting.notes,meeting.note);
-  const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,segmentText,noteText);
+  const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.rawContent,root.raw_content,root.rawMeeting,root.raw_meeting,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,meeting.rawContent,meeting.raw_content,segmentText,noteText);
   const rawTitle=transcriptFirstString(root.title,root.meetingTitle,root.meeting_title,root.meetingName,root.meeting_name,root.callTitle,root.call_title,root.callName,root.call_name,root.name,transcriptObject.title,meeting.title,meeting.name,note.title,note.name,body.title);
   const source=transcriptFirstString(root.source,root.provider,root.platform,body.source)||(/krisp/i.test(JSON.stringify(body).slice(0,2000))?'krisp':'webhook');
   const participants=transcriptParticipantsFromPayload(root.participants,root.attendees,root.speakers,root.users,meeting.participants,meeting.attendees,transcriptObject.participants);
