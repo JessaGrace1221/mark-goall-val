@@ -1920,7 +1920,8 @@ function transcriptWebhookToken(){
   return process.env.TRANSCRIPT_WEBHOOK_TOKEN || crypto.createHmac('sha256',SESSION_SECRET).update(`transcript:${tenantId()}`).digest('hex').slice(0,48);
 }
 function isValidTranscriptWebhookReq(req){
-  const token=String(req.query.token||req.headers['x-val-transcript-token']||'');
+  const auth=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();
+  const token=String(req.query.token||req.headers['x-val-transcript-token']||req.headers['x-webhook-token']||auth||req.body?.token||'');
   const expected=transcriptWebhookToken();
   if(!token||!expected)return false;
   try{return crypto.timingSafeEqual(Buffer.from(token),Buffer.from(expected));}
@@ -4035,7 +4036,7 @@ function setPasswordHtml(){
 function isPublicPath(req){
   const p=req.path;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
-  if(p==='/api/val/transcripts/ping'&&req.method==='POST') return true;
+  if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
   return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
@@ -4515,7 +4516,7 @@ app.get('/api/val/transcripts/webhook',async(req,res)=>{
     res.json({...transcriptWebhookInfo(req),recent30DaysCount:transcripts.length,matchedToMeetings30DaysCount:matched,lastReceivedAt:latest?.createdAt||'',lastTranscriptTitle:latest?.title||latest?.type||'',lastTranscriptId:latest?.id||''});
   }catch(e){res.status(500).json({ok:false,live:false,error:e.message});}
 });
-app.post('/api/val/transcripts/ping',(req,res)=>{
+app.all('/api/val/transcripts/ping',(req,res)=>{
   if(!isValidTranscriptWebhookReq(req)) return res.status(401).json({ok:false,live:false,error:'Invalid or missing transcript webhook token'});
   res.json({ok:true,live:true,status:'live',clientName:CLIENT_CONFIG.clientName,clientSlug:CLIENT_CONFIG.clientSlug,receivedAt:new Date().toISOString(),message:'Transcript webhook is live. Use the transcript URL for real transcript payloads.'});
 });
