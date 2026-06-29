@@ -12995,6 +12995,20 @@ function isTranscriptLikeType(type=''){
   const kind=String(type||'').toLowerCase();
   return !kind||['transcript','processed_transcript','voice_session','meeting_transcript','call_transcript','webhook'].includes(kind)||/(^|_)(transcript|recording)($|_)/.test(kind);
 }
+function isNonTranscriptArtifact(record={}){
+  const type=String(record.type||record.kind||record.metadata?.type||'').toLowerCase();
+  const title=String(record.title||record.meetingTitle||record.metadata?.title||'');
+  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
+  const combined=`${title}\n${raw}`;
+  if(['chat_memory','document_sent','planning','task','task_plan','draft','email_draft','relationship_memory','transcript_insight'].includes(type))return true;
+  if(/^\s*(planning|task)\s*:/i.test(title))return true;
+  if(/\bThis task is really about\b/i.test(combined))return true;
+  if(/\bGoal of this task\b/i.test(combined)&&/\bFor each step\b/i.test(combined))return true;
+  if(/\bAsk or document the current version of these steps\b/i.test(combined))return true;
+  if(/\bAfter you map the current process, the output should be simple\b/i.test(combined))return true;
+  if(/\bCopy this prompt into\b/i.test(combined)&&/\bPaste Response\b/i.test(combined))return true;
+  return false;
+}
 function isMeetingPrepMemoryText(text=''){
   const raw=String(text||'');
   return /\bPrepare me for this upcoming meeting using attendee intelligence\b/i.test(raw)
@@ -13006,6 +13020,7 @@ function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
   if(!raw) return false;
+  if(isNonTranscriptArtifact(record)) return false;
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
@@ -13013,15 +13028,34 @@ function isUsableTranscriptArchiveRecord(record={}){
 }
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
-  return !!raw&&!isMeetingPrepMemoryText(raw);
+  if(!raw) return false;
+  return isUsableTranscriptArchiveRecord({type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,metadata:{source:row.source||''}});
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
   const metadata=item.metadata||{};
   const raw=item.rawText||item.raw_text||'';
   if(['transcript_insight','relationship_memory','chat_memory'].includes(kind)) return false;
+  if(isNonTranscriptArtifact({type:kind,title:item.summary||metadata.title||'',rawText:raw,metadata})) return false;
   if(isMeetingPrepMemoryText(raw)) return false;
   return /(^|_)transcript($|_)/.test(kind)||!!metadata.transcriptId;
+}
+function transcriptReviewParticipantIsUseful(row={}){
+  const name=String(row.speakerNameRaw||'').trim();
+  if(!name||name.length<2||name.length>80)return false;
+  if(/^(user|task|val|better|later|more like|use this|unknown|the point is to find)$/i.test(name))return false;
+  if(/\b(for each|phase one|later phases|ask or document|a few pieces|after you map|you still need)\b/i.test(name))return false;
+  if(!row.matchedEmail&&!row.matchedContactId&&Number(row.matchConfidence||0)<0.35)return false;
+  return true;
+}
+function transcriptReviewData(data={}){
+  const validIds=new Set((data.transcripts||[]).filter(isUsableTranscriptIndexRow).map(row=>String(row.transcriptId)));
+  const belongs=row=>validIds.has(String(row.transcriptId||row.sourceId||''));
+  return {
+    participants:(data.participants||[]).filter(row=>row.needsReview&&belongs(row)&&transcriptReviewParticipantIsUseful(row)),
+    tasks:(data.tasks||[]).filter(row=>row.needsApproval&&belongs(row)),
+    contactUpdates:(data.contactUpdates||[]).filter(row=>!row.approved&&belongs(row))
+  };
 }
 async function transcriptArchiveRecords(days=3650,limit=500){
   const [stored,memory]=await Promise.all([recentTranscripts(days),recentMemoryItems(days,Math.max(limit*6,600))]);
@@ -16710,7 +16744,16 @@ app.get('/api/val/transcripts',async(req,res)=>{
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
-  try{const data=await transcriptIndexData();res.json({ok:true,participants:data.participants.filter(row=>row.needsReview),tasks:data.tasks.filter(row=>row.needsApproval),contactUpdates:data.contactUpdates.filter(row=>!row.approved),decisions:await valDecisionReviewQueue()});}catch(e){res.status(500).json({ok:false,error:e.message});}
+  try{
+    const data=await transcriptIndexData();
+    const review=transcriptReviewData(data);
+    const validIds=new Set((data.transcripts||[]).filter(isUsableTranscriptIndexRow).map(row=>String(row.transcriptId)));
+    const decisions=(await valDecisionReviewQueue()).filter(row=>{
+      if(String(row.sourceType||'')!=='transcript')return true;
+      return validIds.has(String(row.sourceId||''));
+    });
+    res.json({ok:true,...review,decisions,counts:{participants:review.participants.length,tasks:review.tasks.length,contactUpdates:review.contactUpdates.length,decisions:decisions.length}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
