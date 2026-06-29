@@ -141,6 +141,7 @@ test('agency engine ranks discerning moves without turning observations into tas
 test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
+  assert.match(ui,/Intake Status/);
   assert.match(ui,/Only real transcript records appear here/);
   assert.match(ui,/No real transcripts are available yet/);
   assert.match(ui,/Chat About This Transcript/);
@@ -160,6 +161,17 @@ test('hides planning artifacts from transcript inbox and review queue',()=>{
   assert.match(server,/validIds\.has\(String\(row\.transcriptId/);
   assert.match(server,/row\.meetingTitle\|\|row\.meeting_title/);
   assert.match(ui,/only uncertain items from real transcripts appear here/);
+});
+
+test('exposes transcript intake diagnostics for webhook and upload tracing',()=>{
+  assert.match(server,/app\.get\('\/api\/val\/transcripts\/intake-status'/);
+  assert.match(server,/recentTranscriptIndexRowsRaw/);
+  assert.match(server,/rawCanonicalRows/);
+  assert.match(server,/val_file_uploaded_transcript/);
+  assert.match(server,/tokenPreview/);
+  assert.match(ui,/renderTranscriptIntakeStatus/);
+  assert.match(ui,/Raw canonical rows/);
+  assert.match(ui,/Recent intake audit/);
 });
 
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{

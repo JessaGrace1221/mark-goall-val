@@ -12846,6 +12846,19 @@ async function transcriptIndexData(transcriptId=''){
   const store=valStore(),get=key=>transcriptFileArray(store,key).filter(row=>!transcriptId||row.transcriptId===transcriptId);
   return {transcripts:get('transcriptIndex').filter(isUsableTranscriptIndexRow),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
 }
+async function recentTranscriptIndexRowsRaw(days=3650,limit=250){
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('transcriptIndex')||[];
+    return rows.slice(0,limit);
+  }
+  await valDbReady;
+  const since=new Date(Date.now()-Number(days)*24*60*60*1000).toISOString();
+  if(pgPool){
+    const r=await dbQuery('select * from transcripts where user_id=$1 and created_at >= $2 order by created_at desc limit $3',[VAL_USER_ID,since,Math.min(Number(limit)||250,500)]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'transcriptIndex').filter(row=>new Date(row.createdAt||0)>=new Date(since)).slice(0,limit);
+}
 function transcriptDetailFromIndex(data,transcript){
   const id=transcript.transcriptId;
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
@@ -16761,6 +16774,43 @@ app.get('/api/val/transcripts/review',async(req,res)=>{
     res.json({ok:true,...review,decisions,counts:{participants:review.participants.length,tasks:review.tasks.length,contactUpdates:review.contactUpdates.length,decisions:decisions.length}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.get('/api/val/transcripts/intake-status',async(req,res)=>{
+  try{
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||3650));
+    const [visibleData,rawIndex,legacyRows,memoryRows,auditRows,meetingLinks]=await Promise.all([
+      transcriptIndexData().catch(()=>({transcripts:[]})),
+      recentTranscriptIndexRowsRaw(days,250).catch(()=>[]),
+      recentTranscripts(days).catch(()=>[]),
+      recentMemoryItems(days,250).catch(()=>[]),
+      listSecurityAuditLogs(250).catch(()=>[]),
+      countTranscriptMeetingLinks(days).catch(()=>0)
+    ]);
+    const transcriptMemory=memoryRows.filter(row=>/transcript|knowledge_document/i.test(String(row.kind||row.type||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload');
+    const transcriptAudit=auditRows.filter(row=>/transcript|val_file_uploaded/i.test(String(row.action||''))||row.metadata?.docType==='transcript'||row.metadata?.uploadedVia==='teach_val_transcript_upload').slice(0,40);
+    const hiddenIndex=rawIndex.filter(row=>!isUsableTranscriptIndexRow(row));
+    const hiddenLegacy=legacyRows.filter(row=>!isUsableTranscriptArchiveRecord(row));
+    const latestRaw=rawIndex[0]||legacyRows[0]||null;
+    res.json({
+      ok:true,
+      days,
+      webhook:{...transcriptWebhookInfo(req),tokenPreview:transcriptWebhookToken().slice(0,8)+'...'},
+      counts:{
+        visibleTranscripts:visibleData.transcripts.length,
+        rawCanonicalRows:rawIndex.length,
+        rawLegacyRows:legacyRows.length,
+        hiddenCanonicalRows:hiddenIndex.length,
+        hiddenLegacyRows:hiddenLegacy.length,
+        transcriptMemoryRows:transcriptMemory.length,
+        transcriptAuditEvents:transcriptAudit.length,
+        meetingLinks
+      },
+      latestRawTranscript:latestRaw?{id:latestRaw.transcriptId||latestRaw.id||'',title:latestRaw.meetingTitle||latestRaw.title||'',source:latestRaw.source||latestRaw.type||'',createdAt:latestRaw.createdAt||latestRaw.created_at||'',characters:String(latestRaw.rawTranscript||latestRaw.raw_transcript||latestRaw.rawText||'').length}:null,
+      hiddenSamples:hiddenIndex.concat(hiddenLegacy).slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.title||'',source:row.source||row.type||'',reason:isNonTranscriptArtifact({title:row.meetingTitle||row.title||'',rawText:row.rawTranscript||row.raw_transcript||row.rawText||'',type:row.type||'transcript'})?'filtered as prompt/artifact':'filtered as unusable transcript',createdAt:row.createdAt||row.created_at||''})),
+      recentAudit:transcriptAudit.map(row=>({action:row.action,success:row.success,resourceType:row.resourceType,resourceId:row.resourceId,createdAt:row.createdAt,metadata:row.metadata||{}})).slice(0,12),
+      recentMemory:transcriptMemory.slice(0,12).map(row=>({id:row.id,kind:row.kind||row.type,title:row.summary||row.title||row.metadata?.fileName||'',docType:row.metadata?.docType||'',uploadedVia:row.metadata?.uploadedVia||'',createdAt:row.createdAt,characters:String(row.rawText||'').length}))
+    });
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId);
@@ -17460,6 +17510,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
           await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});
         }
       }
+      await auditLog({req,action:isTranscriptUpload?'val_file_uploaded_transcript':'val_file_uploaded',resourceType:isTranscriptUpload?'transcript':'file',resourceId:saved?.id||'',metadata:{fileName:file.originalname,docType:inferredDocType,uploadedVia:metadata.uploadedVia,characters:text.length,processed:!!processed,processingError},success:!processingError}).catch(()=>{});
       savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata,docType:inferredDocType,processed:!!processed,processingError,counts:processed?.counts||null});
     }
     res.json({ok:true,...savedFiles[0],files:savedFiles,fileName:savedFiles[0]?.fileName,chars:savedFiles.reduce((n,f)=>n+(f.chars||0),0)});
