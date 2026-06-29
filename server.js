@@ -3865,7 +3865,7 @@ function loginHtml(){
   button{width:100%;margin-top:22px;border:1px solid rgba(201,164,93,.55);background:rgba(201,164,93,.18);color:var(--cream);border-radius:10px;padding:13px 14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
   .linkbtn{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.06);margin-top:12px;color:rgba(244,239,229,.84)}
   .err{min-height:22px;color:#ffb4a8;margin-top:14px;font-size:14px;line-height:1.45}.msg{color:rgba(244,239,229,.78);font-size:14px;line-height:1.5;margin-top:14px}.setup{display:none;margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12)}.setup a{color:var(--gold);word-break:break-all}
-  </style></head><body><main class="card"><form id="loginForm"><h1 class="brand">${CLIENT_CONFIG.brandName}</h1><p class="sub">Sign in to your private VAL dashboard.</p><label>Email</label><input id="email" type="email" autocomplete="email" required><label>Password</label><input id="password" type="password" autocomplete="current-password" required><button type="submit">Enter VAL</button><button class="linkbtn" type="button" id="showSetup">First time here? Set your password.</button><div class="err" id="err"></div></form><section class="setup" id="setupBox"><p class="msg">Enter your email and VAL will create a secure setup link. For testing, the link appears here.</p><label>Account Email</label><input id="setupEmail" type="email" autocomplete="email"><button type="button" id="requestSetup">Create Setup Link</button><div class="msg" id="setupMsg"></div></section></main><script>
+  </style></head><body><main class="card"><form id="loginForm"><h1 class="brand">${CLIENT_CONFIG.brandName}</h1><p class="sub">Sign in to your private VAL dashboard.</p><label>Email</label><input id="email" type="email" autocomplete="email" required><label>Password</label><input id="password" type="password" autocomplete="current-password" required><button type="submit">Enter VAL</button><button class="linkbtn" type="button" id="showSetup">Reset or set your password.</button><div class="err" id="err"></div></form><section class="setup" id="setupBox"><p class="msg">Enter your account email and VAL will create a secure setup link. For testing, the link appears here.</p><label>Account Email</label><input id="setupEmail" type="email" autocomplete="email"><button type="button" id="requestSetup">Create Setup Link</button><div class="msg" id="setupMsg"></div></section></main><script>
   const emailInput=document.getElementById('email');
   const passwordInput=document.getElementById('password');
   const setupEmailInput=document.getElementById('setupEmail');
@@ -4058,7 +4058,18 @@ app.post('/api/auth/login',async(req,res)=>{
   const user=await findUserByEmail(email);
   if(!user){authLog('login failed: unknown email',{email});await auditLog({req,tenantId:tenantId(),userId:'',action:'login',resourceType:'user',metadata:{email,reason:'unknown_email'},success:false}).catch(()=>{});return res.status(401).json({ok:false,error:'Invalid email or password'});}
   if(!user.passwordHash){authLog('login requires password setup',{email,userId:user.id});return res.status(403).json({ok:false,requiresPasswordSetup:true,message:'Password setup required'});}
-  if(!(await verifyPassword(req.body.password,user.passwordHash))){authLog('login failed: bad password',{email,userId:user.id});await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email,reason:'bad_password'},success:false}).catch(()=>{});return res.status(401).json({ok:false,error:'Invalid email or password'});}
+  if(!(await verifyPassword(req.body.password,user.passwordHash))){
+    const adminEmail=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
+    const adminPassword=String(process.env.ADMIN_PASSWORD||'');
+    if(adminEmail&&adminPassword&&email===adminEmail&&String(req.body.password||'')===adminPassword){
+      await setUserPassword(user.id,await hashPassword(adminPassword));
+      authLog('login repaired admin password from env',{email,userId:user.id});
+    }else{
+      authLog('login failed: bad password',{email,userId:user.id});
+      await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email,reason:'bad_password'},success:false}).catch(()=>{});
+      return res.status(401).json({ok:false,error:'Invalid email or password'});
+    }
+  }
   const sessionId=await createSession(user.id,req);
   setSessionCookie(res,sessionId);
   authLog('login succeeded',{email,userId:user.id});
@@ -13195,7 +13206,7 @@ async function storedTranscriptRecoveryCandidates({days=3650,limit=500}={}){
     if(seen.has(key))return false;seen.add(key);return true;
   }).sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
 }
-async function recoverStoredTranscripts({days=3650,limit=100,dryRun=false}={}){
+async function recoverStoredTranscripts({days=3650,limit=20,dryRun=false}={}){
   const candidates=await storedTranscriptRecoveryCandidates({days,limit});
   const [rawIndex,archive]=await Promise.all([recentTranscriptIndexRowsRaw(days,1000).catch(()=>[]),transcriptArchiveRecords(days,1000).catch(()=>[])]);
   const existingIds=new Set([...rawIndex.map(row=>String(row.transcriptId||row.id||'')),...archive.map(row=>String(row.id||''))].filter(Boolean));
@@ -13206,10 +13217,8 @@ async function recoverStoredTranscripts({days=3650,limit=100,dryRun=false}={}){
     if(dryRun){imported.push({...candidate,id,dryRun:true});continue;}
     try{
       const saved=await saveTranscript({id,type:'processed_transcript',title:candidate.title,transcript:candidate.rawText,rawText:candidate.rawText,source:`recovered:${candidate.sourceType}`,timestamp:candidate.createdAt||new Date().toISOString(),metadata:candidate.metadata,reviewStatus:'needs_review',importance:3});
-      let processed=null,processingError='';
-      try{processed=await processTranscriptPayload({source:`recovered:${candidate.sourceType}`,title:candidate.title,transcript:candidate.rawText,rawText:candidate.rawText,savedTranscriptId:saved.id,timestamp:candidate.createdAt||new Date().toISOString(),metadata:candidate.metadata});}
-      catch(e){processingError=e.message;await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'pending'}).catch(()=>{});}
-      imported.push({...candidate,id:saved.id,processed:!!processed,processingError});
+      await updateTranscriptIndexStatus(saved.id,{processingStatus:'received',summaryStatus:'pending'}).catch(()=>{});
+      imported.push({...candidate,id:saved.id,processed:false,processingError:'',deferredProcessing:true});
       existingIds.add(saved.id);
     }catch(e){errors.push({id,sourceType:candidate.sourceType,sourceId:candidate.sourceId,title:candidate.title,error:e.message});}
   }
@@ -16930,7 +16939,7 @@ app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
   try{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
-    const limit=Math.max(1,Math.min(250,Number(req.body?.limit)||100));
+    const limit=Math.max(1,Math.min(25,Number(req.body?.limit)||20));
     const dryRun=req.body?.dryRun===true||req.body?.dryRun==='true';
     const result=await recoverStoredTranscripts({days,limit,dryRun});
     await auditLog({req,action:dryRun?'stored_transcript_recovery_previewed':'stored_transcript_recovery_run',resourceType:'transcript_recovery',metadata:{days,limit,candidates:result.candidates,imported:result.imported,skipped:result.skipped,errors:result.errors.length},success:!result.errors.length}).catch(()=>{});
