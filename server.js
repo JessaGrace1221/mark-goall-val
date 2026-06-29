@@ -13335,6 +13335,22 @@ function storedTextLooksLikeTranscript({title='',text='',sourceType='',metadata=
   if(raw.length>1800&&/\b(meeting recording|call recording|attendees?|speaker \d|participant \d)\b/i.test(hay))return true;
   return false;
 }
+function storedTranscriptCandidatePayload(row={},sourceType='stored_record'){
+  const metadata=row.metadata||row.metadataJson||row.metadata_json||{};
+  const rawInput=String(row.rawText||row.raw_text||row.text||row.content||'').trim();
+  let parsed=null;
+  if(rawInput){
+    try{parsed=JSON.parse(rawInput);}catch(e){}
+  }
+  const normalized=parsed&&typeof parsed==='object'?normalizedTranscriptWebhookPayload(parsed):null;
+  const normalizedText=String(normalized?.transcript||'').trim();
+  const rawText=normalizedText||rawInput;
+  const title=normalized?.title||row.title||row.summary||metadata.fileName||metadata.title||`${sourceType} transcript candidate`;
+  const actualSource=normalized?.source||row.sourceType||row.source_type||row.kind||row.type||sourceType;
+  const mergedMetadata={...metadata,...(normalized?.metadata||{}),recoveredFrom:sourceType,originalSourceType:actualSource,originalSourceId:row.sourceId||row.source_id||row.id||'',originalRecordType:row.type||row.kind||''};
+  const createdAt=row.createdAt||row.created_at||row.occurredAt||row.occurred_at||normalized?.timestamp||metadata.timestamp||'';
+  return {sourceType:actualSource,sourceId:String(row.sourceId||row.source_id||row.id||normalized?.id||''),title,rawText,metadata:mergedMetadata,createdAt};
+}
 async function recentEvidenceTextRows(days=3650,limit=500){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState||{};
@@ -13389,7 +13405,8 @@ async function recentTeachValTextRows(days=3650,limit=250){
     .map(row=>({id:row.id,title:row.title||row.category||'Teach VAL record',sourceType:row.source||'teach_val',rawText:row.rawResponse||row.raw_response||row.summary||JSON.stringify(row.items||row.data||{}),metadata:row.metadata||{},createdAt:row.createdAt||''}));
 }
 async function storedTranscriptRecoveryCandidates({days=3650,limit=500}={}){
-  const [memory,evidence,conversations,teach]=await Promise.all([
+  const [archive,memory,evidence,conversations,teach]=await Promise.all([
+    recentTranscripts(days).catch(()=>[]),
     recentMemoryItems(days,Math.max(limit,500)).catch(()=>[]),
     recentEvidenceTextRows(days,Math.max(limit,500)).catch(()=>[]),
     recentConversationTextRows(days,Math.min(limit,300)).catch(()=>[]),
@@ -13397,13 +13414,11 @@ async function storedTranscriptRecoveryCandidates({days=3650,limit=500}={}){
   ]);
   const rows=[];
   const push=(row,sourceType)=>{
-    const metadata=row.metadata||row.metadataJson||row.metadata_json||{};
-    const rawText=String(row.rawText||row.raw_text||row.text||row.content||'').trim();
-    const title=row.title||row.summary||metadata.fileName||metadata.title||`${sourceType} transcript candidate`;
-    const actualSource=row.sourceType||row.source_type||row.kind||row.type||sourceType;
-    if(!storedTextLooksLikeTranscript({title,text:rawText,sourceType:actualSource,metadata}))return;
-    rows.push({sourceType:actualSource,sourceId:String(row.sourceId||row.source_id||row.id||''),title,rawText,metadata:{...metadata,recoveredFrom:sourceType,originalSourceType:actualSource,originalSourceId:row.sourceId||row.source_id||row.id||''},createdAt:row.createdAt||row.created_at||row.occurredAt||row.occurred_at||metadata.timestamp||''});
+    const candidate=storedTranscriptCandidatePayload(row,sourceType);
+    if(!storedTextLooksLikeTranscript({title:candidate.title,text:candidate.rawText,sourceType:candidate.sourceType,metadata:candidate.metadata}))return;
+    rows.push(candidate);
   };
+  archive.forEach(row=>push(row,'val_transcripts'));
   memory.forEach(row=>push(row,'val_memory_items'));
   evidence.forEach(row=>push(row,'evidence_items'));
   conversations.forEach(row=>push(row,'val_conversations'));

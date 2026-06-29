@@ -193,6 +193,10 @@ test('exposes transcript intake diagnostics for webhook and upload tracing',()=>
 test('recovers transcript-shaped content from existing VAL storage',()=>{
   assert.match(server,/function storedTextLooksLikeTranscript/);
   assert.match(server,/async function storedTranscriptRecoveryCandidates/);
+  assert.match(server,/function storedTranscriptCandidatePayload/);
+  assert.match(server,/normalizedTranscriptWebhookPayload\(parsed\)/);
+  assert.match(server,/recentTranscripts\(days\)\.catch/);
+  assert.match(server,/archive\.forEach\(row=>push\(row,'val_transcripts'\)\)/);
   assert.match(server,/recentEvidenceTextRows/);
   assert.match(server,/recentConversationTextRows/);
   assert.match(server,/recentTeachValTextRows/);
