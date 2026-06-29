@@ -29,6 +29,8 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/Drafts/);
   assert.match(dashboard,/Rules/);
   assert.match(dashboard,/function selectEmailAt/);
+  assert.match(dashboard,/onclick="selectEmailAt\(\$\{i\}\)"/);
+  assert.match(dashboard,/list\.addEventListener\('click'/);
   assert.match(dashboard,/function markEmailNotImportant/);
   assert.match(dashboard,/function saveManualEmailRule/);
   assert.match(dashboard,/Refresh Inbox/);
@@ -37,6 +39,18 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/Last successful sync/);
   assert.match(dashboard,/Evidence:/);
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
+});
+
+test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{
+  assert.match(server,/function emailShouldPrepareDraft/);
+  assert.match(server,/function buildEmailReplyDraft/);
+  assert.match(server,/function emailDraftStableId/);
+  assert.match(server,/prepareEmailDraftIfNeeded/);
+  assert.match(server,/Warm introduction opportunity asks for reply language/);
+  assert.match(server,/source:'executive_inbox_auto_draft'/);
+  assert.match(server,/email\.preparedDraft=draft/);
+  assert.match(dashboard,/Draft waiting for approval/);
+  assert.match(dashboard,/Review Prepared Draft/);
 });
 
 test('email sync captures evidence before actions and does not auto-create tasks',()=>{

@@ -4784,10 +4784,15 @@ async function emailIntelligencePayload(req,{force=false}={}){
       const c=classifyEmail(email,rules);
       return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
+    const preparedDraftResults=await Promise.all(emails.map(async email=>{
+      const draft=await prepareEmailDraftIfNeeded(email).catch(()=>null);
+      if(draft)email.preparedDraft=draft;
+      return draft;
+    }));
     const evidenceResults=await saveEmailEvidenceBatch(emails);
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
-    const draftsPrepared=emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed').length;
+    const draftsPrepared=preparedDraftResults.filter(Boolean).length;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)).length;
@@ -4801,7 +4806,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       needsReply:emails.filter(e=>e.classification==='needs_reply'),
       lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)),
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
-      draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
+      draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
       providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
@@ -4874,7 +4879,7 @@ app.post('/api/email/actions',async(req,res)=>{
     const status=(external||sensitive)?'needs_approval':'prepared';
     const result={ok:true,status,requiresApproval:status==='needs_approval'};
     if(action==='drafted_reply'||action==='draft_reply'){
-      result.draft={subject:'Re: '+(email.subject||''),body:`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review and personalize before sending.]\n\nBest,`};
+      result.draft=buildEmailReplyDraft(email);
       result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from}});
     }else if(action==='forwarded'||action==='forward'){
       result.forwardDraft={to:body.forwardTo||'',subject:'Fwd: '+(email.subject||''),body:`VAL summary:\n${email.reason||'This may need review.'}\n\nOriginal email below.\n\nFrom: ${email.from?.email||''}\nSubject: ${email.subject||''}\n\n${email.bodyPreview||email.snippet||''}`};
@@ -5886,6 +5891,9 @@ function classifyEmail(email,rules=[]){
   if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)){
     return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
   }
+  if(/\b(intro|introduction|referral|connect you|introduce you|warm intro|warm introduction)\b/.test(text)&&/\b(send me|send over|share|tight version|blurb|language|one paragraph|paragraph|bio|overview|reply|respond)\b/.test(text)){
+    return {classification:'needs_reply',reason:'Warm introduction opportunity asks for reply language.',recommendedAction:'Draft the intro response for approval.',confidence:'high',requiresApproval:true};
+  }
   if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)){
     return {classification:'needs_reply',reason:'Asks for a response or decision.',recommendedAction:'Draft a reply for approval.',confidence:'high',requiresApproval:true};
   }
@@ -5893,6 +5901,79 @@ function classifyEmail(email,rules=[]){
     return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
   }
   return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
+}
+function emailShouldPrepareDraft(email){
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.recommendedAction,email.reason].join(' ');
+  if(['needs_reply','appointment_recap_needed'].includes(email.classification))return true;
+  if(/\bdraft\b/i.test(email.recommendedAction||''))return true;
+  return /\b(intro|introduction|referral|connect you|warm intro|send me|tight version|one paragraph|reply|respond|let me know)\b/i.test(text)&&!['ignored','low_priority','solicitation','spam_like'].includes(email.classification);
+}
+function emailDraftStableId(email){
+  const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
+  return 'draft_email_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
+}
+function buildEmailReplyDraft(email){
+  const subject=`Re: ${email.subject||''}`.trim();
+  const name=(email.from?.name||'').split(/\s+/)[0]||'';
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.reason,email.recommendedAction].join(' ');
+  const intro=/\b(intro|introduction|referral|connect you|warm intro|warm introduction|tight version|one paragraph)\b/i.test(text);
+  if(intro){
+    return {
+      subject,
+      body:[
+        `Hi ${name},`.replace(/\s+,/,','),
+        '',
+        'Thank you. I really appreciate the introduction.',
+        '',
+        'Here is a tight version you can use:',
+        '',
+        'VAL helps leaders stay on top of the relationships, meetings, decisions, and follow-through that actually move the business. It turns communication into clear next actions, drafts, and memory so important people and promises do not fall through the cracks.',
+        '',
+        'Grateful for you making the connection.',
+        '',
+        'Best,'
+      ].join('\n')
+    };
+  }
+  return {
+    subject,
+    body:[
+      `Hi ${name},`.replace(/\s+,/,','),
+      '',
+      'Thank you for your note. I wanted to respond thoughtfully.',
+      '',
+      email.reason?`I saw this needs attention because ${email.reason.charAt(0).toLowerCase()+email.reason.slice(1)}`:'I saw this needs a clear reply.',
+      '',
+      'Here is what I recommend as the next step:',
+      '',
+      email.recommendedAction||'Let me take a closer look and follow up with the right next step.',
+      '',
+      'Best,'
+    ].join('\n')
+  };
+}
+async function prepareEmailDraftIfNeeded(email){
+  if(!emailShouldPrepareDraft(email))return null;
+  const draft=buildEmailReplyDraft(email);
+  return saveInternalDraft({
+    id:emailDraftStableId(email),
+    draftType:'email_reply',
+    provider:'internal',
+    subject:draft.subject,
+    body:draft.body,
+    status:'draft',
+    sourceContext:{
+      source:'executive_inbox_auto_draft',
+      provider:email.provider||'email',
+      messageId:email.messageId||'',
+      threadId:email.threadId||'',
+      to:email.from?.email||'',
+      senderName:email.from?.name||'',
+      why:email.reason||'',
+      recommendedAction:email.recommendedAction||'',
+      classification:email.classification||''
+    }
+  });
 }
 function emailEvidenceStatus(email){
   const classification=String(email.classification||'').toLowerCase();
