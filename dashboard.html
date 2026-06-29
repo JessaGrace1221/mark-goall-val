@@ -5109,6 +5109,7 @@ function handleAuthExpired(){
   authRedirecting=true;
   var next=encodeURIComponent(location.pathname+location.search);
   var loginUrl='/login?next='+next;
+  try{sessionStorage.removeItem('val_auth_checked');}catch(_){}
   try{addSys('Your VAL session expired. Please sign back in to continue. <button class="pill" onclick="window.location.href=\''+loginUrl+'\'">Open Login</button>');}catch(_){}
   var detail=document.getElementById('centerDetail');
   var welcome=document.getElementById('centerWelcome');
@@ -5117,6 +5118,7 @@ function handleAuthExpired(){
     detail.innerHTML='<section class="val-auth-expired"><h2>Session expired</h2><p>VAL kept this page open instead of redirecting you mid-action. Sign back in, then return here and try again.</p><button class="primary" onclick="window.location.href=\''+loginUrl+'\'">Open Login</button></section>';
   }
   if(welcome)welcome.style.display='none';
+  setTimeout(function(){window.location.replace(loginUrl);},80);
 }
 function apiTextOrJson(r){
   if(r.status===401){
@@ -5155,6 +5157,15 @@ function apiFetch(url,opts){
   opts=opts||{};
   opts.credentials=opts.credentials||'same-origin';
   return fetch(url,opts).then(apiTextOrJson);
+}
+async function confirmDashboardSession(){
+  try{
+    var r=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){handleAuthExpired();return false;}
+    return r.ok;
+  }catch(_){
+    return true;
+  }
 }
 async function fetchJSON(url){
   try{
@@ -5645,12 +5656,15 @@ function renderWeekFallback(){
   });
 }
 
-valTasksLoad();
-valDocsLoad();
-loadWsThreads();
-document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">Loading...</div>';
-loadDashboard();
-setInterval(loadDashboard,5*60*1000);
+confirmDashboardSession().then(function(ok){
+  if(!ok)return;
+  valTasksLoad();
+  valDocsLoad();
+  loadWsThreads();
+  document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">Loading...</div>';
+  loadDashboard();
+  setInterval(loadDashboard,5*60*1000);
+});
 
 // ── MORNING BRIEFING ───────────────────────────────────
 // Briefings are user-initiated so the opening command view stays stable.
