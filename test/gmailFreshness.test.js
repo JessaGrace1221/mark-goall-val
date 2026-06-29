@@ -28,6 +28,9 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/Needs My Attention/);
   assert.match(dashboard,/Drafts/);
   assert.match(dashboard,/Rules/);
+  assert.match(dashboard,/function selectEmailAt/);
+  assert.match(dashboard,/function markEmailNotImportant/);
+  assert.match(dashboard,/function saveManualEmailRule/);
   assert.match(dashboard,/Refresh Inbox/);
   assert.match(dashboard,/function refreshGmailNow/);
   assert.match(dashboard,/function renderEmailSyncStatus/);

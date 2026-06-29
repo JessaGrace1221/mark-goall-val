@@ -5858,13 +5858,22 @@ function classifyEmail(email,rules=[]){
   const activeRules=rules.filter(r=>r.is_active!==false&&r.isActive!==false);
   for(const rule of activeRules){
     const conditions=rule.conditions||rule.conditions_json||rule.conditionsJson||{};
-    if((conditions.from_email&&conditions.from_email===email.from?.email) || (conditions.from_domain&&conditions.from_domain===domain)){
+    const fromEmail=String(email.from?.email||'').toLowerCase();
+    const fromDomain=domain.toLowerCase();
+    const needle=String(conditions.text_contains||conditions.body_contains||conditions.subject_contains||conditions.keyword||'').toLowerCase();
+    const matchesSender=conditions.from_email&&String(conditions.from_email).toLowerCase()===fromEmail;
+    const matchesDomain=conditions.from_domain&&String(conditions.from_domain).toLowerCase()===fromDomain;
+    const matchesText=needle&&text.includes(needle);
+    if(matchesSender || matchesDomain || matchesText){
       const type=rule.ruleType||rule.rule_type;
       const actions=rule.actions||rule.actions_json||rule.actionsJson||{};
+      const actionLabel=String(actions.action||actions.label||'').toLowerCase();
+      const lowPriority=type==='ignore_sender'||type==='ignore_domain'||actionLabel==='low_priority'||actionLabel==='not_important';
+      const draftReply=type==='draft_reply'||actionLabel==='draft_reply';
       return {
-        classification:type==='ignore_sender'||type==='ignore_domain'?'ignored':type==='forward_sender'||type==='forward_category'?'forward_to_team':type==='vip_priority'?'needs_attention':'needs_attention',
+        classification:lowPriority?'ignored':type==='forward_sender'||type==='forward_category'?'forward_to_team':draftReply?'needs_reply':type==='vip_priority'?'needs_attention':'needs_attention',
         reason:`Matched saved rule: ${rule.rule_name||rule.ruleName||type}`,
-        recommendedAction:actions.action==='forward'?`Forward to ${actions.forward_to}`:actions.action||type,
+        recommendedAction:actions.action==='forward'?`Forward to ${actions.forward_to}`:(lowPriority?'Keep out of Needs My Attention':actions.action||type),
         confidence:'high',
         matchedRuleId:rule.id,
         requiresApproval:(rule.approvalMode||rule.approval_mode)!=='always_auto'

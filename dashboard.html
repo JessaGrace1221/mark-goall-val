@@ -2609,7 +2609,8 @@ function openOpportunityIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Hidden Opportunities</h3><p>Relationship and pipeline signals can reveal revenue paths that are not explicit deals yet.</p></section><section class="exec-card"><h3>Stalled Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline data loaded yet.</li>')+'</ul></section><section class="exec-card"><h3>Next Best Action</h3><p>Review pipeline, draft follow-up, or create a task tied to the opportunity.</p></section></div>';
   openExecutiveWorkspace({id:'opportunityWorkspace',title:'Opportunity Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="askPipeline()">Review Pipeline</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'opportunityWorkspace\')">Close</button>'});
 }
-var emailIntel={emails:[],rules:[],summary:{},tab:'attention',selected:null,inbox:{query:'',results:[],selected:null,answer:''}};
+var emailIntel={emails:[],rules:[],summary:{},tab:'attention',selected:null,currentRows:[],inbox:{query:'',results:[],selected:null,answer:''}};
+function emailMessageKey(e){return String(e&&((e.provider||'email')+':'+(e.messageId||e.threadId||e.subject||'')));}
 function openEmailIntelligence(){
   openExecutiveWorkspace({id:'emailOverlay',title:'Executive Inbox',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Executive Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the thread with Greg about next Thursday..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find a conversation, summarize it, prepare a reply, or turn it into a task. Gmail and Outlook are active; LinkedIn context belongs here as soon as it is connected.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Executive Inbox...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading active conversations...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Compose Draft</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Inbox</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Connections</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
@@ -2723,6 +2724,9 @@ function emailRiskIfIgnored(e){
 function emailConversationSummary(e){
   return e.bodyPreview||e.snippet||'VAL found the conversation, but there is not enough readable body text to summarize yet.';
 }
+function emailReadableBody(e){
+  return e.bodyText||e.bodyPreview||e.snippet||'No readable email body was available from the provider.';
+}
 function renderEmailIntelligence(){
   var tabs=document.getElementById('emailTabs'), list=document.getElementById('emailList');
   if(!tabs||!list)return;
@@ -2731,8 +2735,9 @@ function renderEmailIntelligence(){
   if(emailIntel.tab==='rules'){renderEmailRules();return;}
   var rows=emailsForTab(emailIntel.tab);
   if(!rows.length){renderExecutiveInboxEmpty();return;}
-  if(!emailIntel.selected||!rows.some(function(e){return e.messageId===emailIntel.selected.messageId;}))emailIntel.selected=rows[0];
-  list.innerHTML=rows.map(function(e){return `<div class="email-item ${emailIntel.selected&&emailIntel.selected.messageId===e.messageId?'active':''}" onclick="selectEmail('${docSafe(e.messageId)}')"><div class="email-item-top"><span>${docSafe(emailDecisionLabel(e))}</span><span>${docSafe(emailRelativeTime(e.receivedAt||e.date))}</span></div><div class="email-item-subject">${docSafe(e.from?.name||e.from?.email||'Unknown sender')}</div><div class="email-item-meta">${docSafe(e.subject||'(No subject)')}<br>${docSafe(e.reason||'')}</div></div>`;}).join('');
+  if(!emailIntel.selected||!rows.some(function(e){return emailMessageKey(e)===emailMessageKey(emailIntel.selected);}))emailIntel.selected=rows[0];
+  emailIntel.currentRows=rows;
+  list.innerHTML=rows.map(function(e,i){return `<div class="email-item ${emailIntel.selected&&emailMessageKey(emailIntel.selected)===emailMessageKey(e)?'active':''}" onclick="selectEmailAt(${i})"><div class="email-item-top"><span>${docSafe(emailDecisionLabel(e))}</span><span>${docSafe(emailRelativeTime(e.receivedAt||e.date))}</span></div><div class="email-item-subject">${docSafe(e.from?.name||e.from?.email||'Unknown sender')}</div><div class="email-item-meta">${docSafe(e.subject||'(No subject)')}<br>${docSafe(e.reason||'')}</div></div>`;}).join('');
   renderEmailDetail(emailIntel.selected);
 }
 function renderExecutiveInboxEmpty(){
@@ -2743,7 +2748,12 @@ function renderExecutiveInboxEmpty(){
   detail.innerHTML='<div class="email-card"><h3>All clear for decisions</h3><div class="email-reason">VAL scanned '+docSafe(String(g.analyzedCount!=null?g.analyzedCount:(s.total||0)))+' active conversations from the last 14 days and did not find one that crossed the decision threshold. Recent analyzed conversations are still shown on the left so the page never hides context from you.</div><div class="email-actions"><button class="primary" onclick="refreshGmailNow()">Refresh Inbox</button><button onclick="emailIntel.tab=&quot;rules&quot;;renderEmailIntelligence()">Review Rules</button></div></div>';
 }
 function selectEmail(id){
-  emailIntel.selected=(emailIntel.emails||[]).find(function(e){return e.messageId===id;})||emailIntel.selected;
+  emailIntel.selected=(emailIntel.emails||[]).find(function(e){return e.messageId===id||emailMessageKey(e)===id;})||emailIntel.selected;
+  renderEmailIntelligence();
+}
+function selectEmailAt(index){
+  var rows=emailIntel.currentRows||emailsForTab(emailIntel.tab);
+  emailIntel.selected=rows[index]||emailIntel.selected;
   renderEmailIntelligence();
 }
 function emailDecisionLabel(e){
@@ -2764,7 +2774,7 @@ function renderEmailDetail(e){
   var detail=document.getElementById('emailDetail');if(!detail)return;
   if(!e){detail.innerHTML='';return;}
   var contact=e.matchedContact||{};
-  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(emailDecisionLabel(e))}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why you are seeing this:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>If ignored:</strong> ${docSafe(emailRiskIfIgnored(e))}<br><strong>VAL recommends:</strong> ${docSafe(e.recommendedAction||'Review this conversation.')}</div><div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">Approve Reply Draft</button><button onclick="emailAction('draft_reply')">Edit</button><button onclick="dismissEmail()">Dismiss</button><button onclick="emailAction('track_response')">Track Follow-up</button><button onclick="emailAction('task_created')">Create Task</button><button onclick="confirmAutoNext()">Make Rule</button></div><div class="email-reason"><strong>Summary</strong><br>${docSafe(emailConversationSummary(e))}</div><div class="email-reason"><strong>Relationship context</strong><br>Relationship: ${docSafe(contact.name||e.from?.name||'Not linked yet')}<br>Open tasks: ${docSafe(contact.openTasks||'No linked tasks found yet')}<br>Calendar: ${docSafe(contact.nextMeeting||'No linked meeting found yet')}<br>LinkedIn: ${docSafe(contact.linkedin||'Ready for future LinkedIn message context')}</div><div class="email-preview">${docSafe(e.bodyPreview||e.snippet||'No preview available.')}</div></div>`;
+  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(emailDecisionLabel(e))}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why you are seeing this:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>If ignored:</strong> ${docSafe(emailRiskIfIgnored(e))}<br><strong>VAL recommends:</strong> ${docSafe(e.recommendedAction||'Review this conversation.')}</div><div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">Draft Reply</button><button onclick="emailAction('draft_reply')">Edit Draft</button><button onclick="markEmailNotImportant()">Not Important</button><button onclick="emailAction('track_response')">Track Follow-up</button><button onclick="emailAction('task_created')">Create Task</button><button onclick="confirmAutoNext()">Make Rule</button>${e.webLink?`<button onclick="window.open('${docSafe(e.webLink)}','_blank','noopener')">Open Original</button>`:''}</div><div id="emailDraftPanel"></div><div class="email-reason"><strong>Summary</strong><br>${docSafe(emailConversationSummary(e))}</div><div class="email-reason"><strong>Relationship context</strong><br>Relationship: ${docSafe(contact.name||e.from?.name||'Not linked yet')}<br>Open tasks: ${docSafe(contact.openTasks||'No linked tasks found yet')}<br>Calendar: ${docSafe(contact.nextMeeting||'No linked meeting found yet')}<br>LinkedIn: ${docSafe(contact.linkedin||'Ready for future LinkedIn message context')}</div><div class="email-preview">${docSafe(emailReadableBody(e))}</div></div>`;
 }
 function dismissEmail(){
   var e=emailIntel.selected;if(!e)return;
@@ -2772,14 +2782,39 @@ function dismissEmail(){
   addSys('Dismissed from Executive Inbox.');
   renderEmailIntelligence();
 }
+function markEmailNotImportant(){
+  var e=emailIntel.selected;if(!e)return;
+  var from=e.from&&e.from.email||'';
+  if(!from){dismissEmail();return;}
+  apiFetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,mode:'ignore_sender',approvalMode:'always_auto',ruleName:'Not important: '+from})})
+    .then(function(d){
+      if(!d.ok){addSys(d.error||'Could not save not-important rule.');return;}
+      emailIntel.emails=(emailIntel.emails||[]).filter(function(x){return emailMessageKey(x)!==emailMessageKey(e);});
+      emailIntel.selected=null;
+      addSys('Marked not important. Future emails from '+from+' will stay out of Needs My Attention.');
+      renderEmailIntelligence();
+    }).catch(function(err){addSys('Not Important failed: '+err.message);});
+}
 function emailAction(action){
   apiFetch(PROXY+'/api/email/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actionType:action,email:emailIntel.selected})})
     .then(function(d){
-      if(d.draft)addMsg('Draft reply prepared:\n\nSubject: '+d.draft.subject+'\n\n'+d.draft.body,false);
+      if(d.draft)renderEmailDraftPanel(d.draft,emailIntel.selected,d.internalDraft);
       else if(d.forwardDraft)addMsg('Forward draft prepared:\n\nTo: '+(d.forwardDraft.to||'[choose recipient]')+'\nSubject: '+d.forwardDraft.subject+'\n\n'+d.forwardDraft.body,false);
       else if(d.followup)addMsg('Follow-up tracked: '+d.followup.title+' in '+d.followup.dueInBusinessDays+' business days.',false);
       else addSys(d.status||'Email action prepared.');
     });
+}
+function renderEmailDraftPanel(draft,email,internalDraft){
+  var p=document.getElementById('emailDraftPanel');if(!p)return;
+  var to=(email&&email.from&&email.from.email)||'';
+  p.innerHTML='<div class="email-reason"><strong>Reply draft</strong><br><label>To<input id="emailDraftTo" value="'+docSafe(to)+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Subject<input id="emailDraftSubject" value="'+docSafe(draft.subject||'')+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Message<textarea id="emailDraftBody" rows="10" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827">'+docSafe(draft.body||'')+'</textarea></label><div class="email-actions"><button class="primary" onclick="saveEmailDraftToGmail()">Approve Draft</button><button onclick="openDraftsPage()">Open Drafts</button></div></div>';
+}
+function saveEmailDraftToGmail(){
+  var e=emailIntel.selected;if(!e)return;
+  var payload={to:document.getElementById('emailDraftTo').value,subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||''};
+  apiFetch(PROXY+'/api/gmail/drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(d){if(d.ok)addSys(d.draftType==='gmail'?'Approved. Gmail draft created in the thread.':'Approved. Internal draft saved for review.');else addSys(d.error||'Draft approval failed.');})
+    .catch(function(err){addSys('Draft approval failed: '+err.message);});
 }
 function confirmAutoNext(){
   var e=emailIntel.selected;if(!e)return;
@@ -2802,7 +2837,7 @@ function renderEmailRules(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
   list.innerHTML='<div class="email-item active"><div class="email-item-subject">Teach Executive Inbox</div><div class="email-item-meta">Plain-English rules VAL should remember.</div></div><div class="email-item" onclick="renderRuleSuggestions()"><div class="email-item-subject">Rule suggestions</div><div class="email-item-meta">Patterns VAL has noticed.</div></div>';
   var rules=emailIntel.rules||[];
-  detail.innerHTML='<div class="email-card"><h3>Rules</h3><div class="email-reason">Rules should read like instructions you would give an assistant: never ignore client emails, invoices go to accounting, anything mentioning benefits is high priority, or draft replies but never send automatically.</div><div class="rule-list">'+(rules.length?rules.map(function(r){return `<div class="rule-row"><strong>${docSafe(r.ruleName||r.rule_name)}</strong><div>${r.isActive!==false?'Enabled':'Disabled'}</div><div>${docSafe(rulePlainEnglish(r))}</div><div class="email-actions"><button onclick="toggleEmailRule('${r.id}',${r.isActive!==false?'false':'true'})">${r.isActive!==false?'Disable':'Enable'}</button><button onclick="deleteEmailRule('${r.id}')">Delete</button></div></div>`;}).join(''):'<div class="email-reason">No saved rules yet. Start with something simple like: Never ignore emails from clients.</div>')+'</div></div>';
+  detail.innerHTML='<div class="email-card"><h3>Rules</h3><div class="email-reason">Rules should read like instructions you would give an assistant: never ignore client emails, invoices go to accounting, anything mentioning benefits is high priority, or draft replies but never send automatically.</div><div class="email-reason"><strong>Add a rule</strong><label>Instruction<input id="emailRuleName" placeholder="Anything mentioning benefits is high priority" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><label>When<select id="emailRuleScope" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"><option value="keyword">Email contains keyword</option><option value="sender">Sender email</option><option value="domain">Sender domain</option></select></label><label>Value<input id="emailRuleValue" placeholder="benefits or greg@example.com" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label></div><label>Do this<select id="emailRuleAction" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"><option value="needs_attention">Mark high priority</option><option value="low_priority">Mark not important</option><option value="draft_reply">Draft a reply</option></select></label><div class="email-actions"><button class="primary" onclick="saveManualEmailRule()">Save Rule</button></div></div><div class="rule-list">'+(rules.length?rules.map(function(r){return `<div class="rule-row"><strong>${docSafe(r.ruleName||r.rule_name)}</strong><div>${r.isActive!==false?'Enabled':'Disabled'}</div><div>${docSafe(rulePlainEnglish(r))}</div><div class="email-actions"><button onclick="toggleEmailRule('${r.id}',${r.isActive!==false?'false':'true'})">${r.isActive!==false?'Disable':'Enable'}</button><button onclick="deleteEmailRule('${r.id}')">Delete</button></div></div>`;}).join(''):'<div class="email-reason">No saved rules yet. Start with something simple like: Never ignore emails from clients.</div>')+'</div></div>';
 }
 function rulePlainEnglish(r){
   return (r.ruleName||r.rule_name)||((r.ruleType||r.rule_type||'Rule')+': '+JSON.stringify(r.conditions||r.conditions_json||{}));
@@ -2812,6 +2847,18 @@ function toggleEmailRule(id,isActive){
 }
 function deleteEmailRule(id){
   apiFetch(PROXY+'/api/email/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({isActive:false,deleted:true})}).then(loadEmailIntelligence);
+}
+function saveManualEmailRule(){
+  var name=(document.getElementById('emailRuleName')||{}).value||'Email rule';
+  var scope=(document.getElementById('emailRuleScope')||{}).value||'keyword';
+  var value=((document.getElementById('emailRuleValue')||{}).value||'').trim();
+  var action=(document.getElementById('emailRuleAction')||{}).value||'needs_attention';
+  if(!value){addSys('Add a sender, domain, or keyword for the rule.');return;}
+  var conditions=scope==='sender'?{from_email:value.toLowerCase()}:scope==='domain'?{from_domain:value.replace(/^@/,'').toLowerCase()}:{text_contains:value.toLowerCase()};
+  var ruleType=action==='low_priority'?'ignore_sender':(action==='draft_reply'?'draft_reply':'vip_priority');
+  apiFetch(PROXY+'/api/email/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruleName:name,ruleType:ruleType,conditions:conditions,actions:{action:action,label:action},approvalMode:'always_auto',createdFrom:'manual_rule'})})
+    .then(function(d){if(d.ok){addSys('Rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed.');})
+    .catch(function(err){addSys('Rule save failed: '+err.message);});
 }
 function renderRuleSuggestions(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
