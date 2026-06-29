@@ -342,6 +342,7 @@ window.renderTranscriptIntakeStatus=function(){
       ['Transcript memory rows',c.transcriptMemoryRows],
       ['Upload/webhook audit events',c.transcriptAuditEvents],
       ['Krisp-linked records',c.krispLinkedRows],
+      ['Purged recovered trash',c.purgedRecoveredTrash],
       ['Calendar links',c.meetingLinks]
     ].map(function(pair){return '<span class="val-transcript-stat"><strong>'+safe(pair[1]||0)+'</strong> '+safe(pair[0])+'</span>';}).join('');
     var hidden=(d.hiddenSamples||[]).map(function(x){return '<article class="val-review-card"><span class="val-status review">Hidden</span><h3>'+safe(transcriptShortText(x.title||x.id,'Untitled record',110))+'</h3><p>'+safe((x.source||'unknown')+' · '+(x.reason||'filtered')+' · '+(x.createdAt||''))+'</p></article>';}).join('');
