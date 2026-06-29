@@ -284,8 +284,50 @@ function loadTranscripts(show){
   return fetcher((window.PROXY||'')+'/api/val/transcripts?days=3650&limit=250').then(function(data){if(!data||data.ok===false||!Array.isArray(data.transcripts))throw new Error((data&&data.error)||'Transcript retrieval returned an invalid response.');transcriptState.items=data.transcripts;transcriptState.counts=data.counts||{total:data.transcripts.length,needsReview:0,withOpenActions:0};transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error='';transcriptState.lastLoadedAt=new Date().toISOString();updateCommandCenterBadges();buildCommandCenter();if(show)renderTranscriptList();return data;}).catch(function(e){transcriptState.loaded=true;transcriptState.loading=false;transcriptState.error=e.message||String(e);updateCommandCenterBadges();buildCommandCenter();if(show)renderTranscriptError(transcriptState.error);throw e;});
 }
 window.openTranscripts=function(){setActive('transcripts');call('closeDetail');var welcome=document.getElementById('centerWelcome');if(welcome)welcome.style.display='none';var view=document.getElementById('valTranscriptView');if(view)view.classList.add('open');if(!transcriptState.loaded||transcriptState.error){loadTranscripts(true).catch(function(){});}else renderTranscriptList();};
-function transcriptHeader(subtitle,back){return '<div class="val-view-head"><div><h2>Transcript Intelligence</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Inbox</button>':'')+'<button class="val-ui-btn" onclick="renderTranscriptReviewQueue()">Review Queue</button><button class="val-ui-btn" onclick="renderTranscriptIntakeStatus()">Intake Status</button><button class="val-ui-btn" '+(transcriptRecoveryRunning?'disabled':'')+' onclick="recoverStoredTranscripts()">'+(transcriptRecoveryRunning?'Recovering...':'Recover Existing')+'</button><button class="val-ui-btn" onclick="repairTranscriptProcessing()">Process Pending</button><button class="val-ui-btn" onclick="openIntegrationStatus()">Webhook Setup</button><button class="val-ui-btn" '+(transcriptState.loading?'disabled':'')+' onclick="loadTranscripts(true).catch(function(){})">'+(transcriptState.loading?'Refreshing…':'Refresh')+'</button></div></div>';}
+function transcriptHeader(subtitle,back){var clearBtn=(window.VAL_CONFIG&&VAL_CONFIG.clientSlug==='jessa-val')?'<button class="val-ui-btn danger" onclick="clearTranscriptArchive()">Clear Transcript Data</button>':'';return '<div class="val-view-head"><div><h2>Transcript Intelligence</h2><p>'+safe(subtitle)+'</p></div><div class="val-view-actions">'+(back?'<button class="val-ui-btn" onclick="renderTranscriptList()">Inbox</button>':'')+'<button class="val-ui-btn primary" onclick="chooseTranscriptUpload()">Upload Transcript</button><button class="val-ui-btn" onclick="renderTranscriptReviewQueue()">Review Queue</button><button class="val-ui-btn" onclick="repairTranscriptProcessing()">Process Pending</button><button class="val-ui-btn" onclick="openIntegrationStatus()">Webhook Setup</button><button class="val-ui-btn" '+(transcriptState.loading?'disabled':'')+' onclick="loadTranscripts(true).catch(function(){})">'+(transcriptState.loading?'Refreshing…':'Refresh')+'</button>'+clearBtn+'</div></div>';}
 function renderTranscriptLoading(){var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Loading the durable transcript archive…')+'<div class="val-empty val-transcript-loading">Refreshing transcripts…</div>';}
+window.chooseTranscriptUpload=function(){
+  var input=document.getElementById('valTranscriptUploadInput');
+  if(!input){
+    input=document.createElement('input');
+    input.type='file';
+    input.id='valTranscriptUploadInput';
+    input.accept='.txt,text/plain,.md,.markdown,.pdf,.docx';
+    input.multiple=true;
+    input.style.display='none';
+    input.onchange=function(){uploadTranscriptFiles(input.files);};
+    document.body.appendChild(input);
+  }
+  input.value='';
+  input.click();
+};
+window.uploadTranscriptFiles=function(files){
+  files=Array.prototype.slice.call(files||[]);
+  if(!files.length)return;
+  var view=document.getElementById('valTranscriptView');
+  if(view)view.innerHTML=transcriptHeader('Uploading transcript...',true)+'<div class="val-empty val-transcript-loading">Saving '+files.length+' transcript file'+(files.length===1?'':'s')+' into VAL.</div>';
+  var body=new FormData();
+  files.forEach(function(file){body.append('files',file,file.name);});
+  body.append('docType','transcript');
+  body.append('uploadedVia','transcript_tab_upload');
+  body.append('processTranscript','true');
+  return fetch((window.PROXY||'')+'/api/val/files',{method:'POST',credentials:'same-origin',body:body}).then(function(r){return r.json().catch(function(){return{};}).then(function(data){if(!r.ok||data.ok===false)throw new Error(data.error||'Transcript upload failed.');return data;});}).then(function(data){
+    if(typeof addSys==='function')addSys('Uploaded '+Number((data.files&&data.files.length)||1)+' transcript file'+(((data.files&&data.files.length)||1)===1?'':'s')+'.');
+    return loadTranscripts(true);
+  }).catch(function(e){renderTranscriptError(e.message);throw e;});
+};
+window.clearTranscriptArchive=function(){
+  var phrase=prompt('This permanently clears the current transcript archive for jessa_val. Type clear transcripts to continue.','');
+  if(!phrase)return;
+  var fetcher=typeof apiFetch==='function'?apiFetch:function(url,opts){return fetch(url,Object.assign({credentials:'same-origin'},opts||{})).then(function(r){return r.json().then(function(data){if(!r.ok||data.ok===false)throw new Error(data.error||'Transcript cleanup failed.');return data;});});};
+  var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Clearing transcript data...',true)+'<div class="val-empty val-transcript-loading">Removing transcript archive records, summaries, staging data, and transcript memory chunks.</div>';
+  return fetcher((window.PROXY||'')+'/api/val/transcripts/clear-all',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:phrase})}).then(function(data){
+    transcriptState.items=[];transcriptState.counts={total:0,needsReview:0,failedProcessing:0};transcriptState.loaded=true;
+    if(typeof addSys==='function')addSys('Transcript archive cleared.');
+    renderTranscriptList();
+    return data;
+  }).catch(function(e){renderTranscriptError(e.message);throw e;});
+};
 window.repairTranscriptProcessing=function(){
   var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Processing pending transcripts…')+'<div class="val-empty val-transcript-loading">VAL is processing received transcripts now. This can take a little while.</div>';
   var fetcher=typeof apiFetch==='function'?apiFetch:function(url,opts){return fetch(url,Object.assign({credentials:'same-origin'},opts||{})).then(function(r){return r.json().then(function(data){if(!r.ok||data.ok===false)throw new Error(data.error||'Transcript repair failed.');return data;});});};

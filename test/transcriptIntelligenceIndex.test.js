@@ -186,11 +186,25 @@ test('recovers transcript-shaped content from existing VAL storage',()=>{
   assert.match(server,/krispLinkedRows/);
   assert.match(server,/purgeJessaRecoveredNonKrispTranscripts/);
   assert.match(server,/jessaRequiresKrispTranscripts/);
-  assert.match(ui,/Recover Existing/);
   assert.match(ui,/Krisp-linked records/);
   assert.match(ui,/Purged recovered trash/);
   assert.match(ui,/recoverStoredTranscripts/);
   assert.match(ui,/Scanning VAL memory, evidence, conversations, uploads, and Teach VAL records/);
+});
+
+test('transcript inbox supports direct upload and clearing broken transcript archives',()=>{
+  assert.match(server,/app\.delete\('\/api\/val\/transcripts\/clear-all'/);
+  assert.match(server,/clearAllTranscriptDataForTenant/);
+  assert.match(server,/requireJessa:true/);
+  assert.match(server,/docType:inferredDocType/);
+  assert.match(server,/val_file_upload_transcript/);
+  assert.match(ui,/Upload Transcript/);
+  assert.match(ui,/chooseTranscriptUpload/);
+  assert.match(ui,/uploadTranscriptFiles/);
+  assert.match(ui,/body\.append\('docType','transcript'\)/);
+  assert.match(ui,/body\.append\('uploadedVia','transcript_tab_upload'\)/);
+  assert.match(ui,/clearTranscriptArchive/);
+  assert.match(ui,/Clear Transcript Data/);
 });
 
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{

@@ -13017,6 +13017,63 @@ async function clearTranscriptStaging(transcriptId){
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
   const store=valStore();for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'])store[key]=transcriptFileArray(store,key).filter(row=>row.transcriptId!==transcriptId);saveValStore(store);
 }
+async function clearAllTranscriptDataForTenant({requireJessa=false}={}){
+  if(requireJessa&&CLIENT_CONFIG.clientSlug!=='jessa-val') throw new Error('Full transcript cleanup is enabled only for jessa_val.');
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state){
+      state.transcripts=[];
+      ['transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','meetingTranscriptLinks'].forEach(key=>{state[key]=[];});
+      state.evidenceItems=(state.evidenceItems||[]).filter(row=>row.sourceType!=='transcript');
+      state.evidenceLinks=(state.evidenceLinks||[]).filter(row=>row.sourceType!=='transcript'&&row.targetType!=='transcript');
+      state.memoryItems=(state.memoryItems||[]).filter(row=>!/(^|_)transcript($|_)/i.test(String(row.kind||row.type||''))&&!row.metadata?.transcriptId);
+    }
+    return {deleted:true,mode:'demo'};
+  }
+  await valDbReady;
+  if(pgPool){
+    const ids=new Set();
+    const indexRows=await dbQuery('select transcript_id from transcripts where tenant_id=$1 and user_id=$2',[tenantId(),VAL_USER_ID]).catch(()=>({rows:[]}));
+    const archiveRows=await dbQuery(`select id from val_transcripts where tenant_id=$1 and user_id=$2 and (
+      type ilike '%transcript%' or id like 'recovered_%' or metadata->>'docType'='transcript' or metadata->>'uploadedVia' ilike '%transcript%' or metadata->>'source' ilike '%transcript%'
+    )`,[tenantId(),VAL_USER_ID]).catch(()=>({rows:[]}));
+    indexRows.rows.forEach(row=>row.transcript_id&&ids.add(String(row.transcript_id)));
+    archiveRows.rows.forEach(row=>row.id&&ids.add(String(row.id)));
+    const idList=[...ids];
+    const counts={transcriptIds:idList.length};
+    if(idList.length){
+      await dbQuery('delete from val_evidence_links where tenant_id=$1 and user_id=$2 and ((source_type like $3 and source_id=any($4::text[])) or (target_type like $3 and target_id=any($4::text[])) or (metadata->>\'transcriptId\')=any($4::text[]))',[tenantId(),VAL_USER_ID,'transcript%',idList]).catch(()=>{});
+      await dbQuery('delete from transcript_action_log where transcript_id=any($1::text[])',[idList]).catch(()=>{});
+      await dbQuery('delete from transcript_contact_updates where transcript_id=any($1::text[])',[idList]).catch(()=>{});
+      await dbQuery('delete from transcript_tasks where transcript_id=any($1::text[])',[idList]).catch(()=>{});
+      await dbQuery('delete from transcript_summaries where transcript_id=any($1::text[])',[idList]).catch(()=>{});
+      await dbQuery('delete from transcript_participants where transcript_id=any($1::text[])',[idList]).catch(()=>{});
+      await dbQuery('delete from meeting_transcript_links where tenant_id=$1 and transcript_id=any($2::text[])',[tenantId(),idList]).catch(()=>{});
+      await dbQuery('delete from val_decisions where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=any($4::text[])',[tenantId(),VAL_USER_ID,'transcript',idList]).catch(()=>{});
+      await dbQuery('delete from evidence_items where tenant_id=$1 and source_type=$2 and source_id=any($3::text[])',[tenantId(),'transcript',idList]).catch(()=>{});
+      await dbQuery('delete from transcripts where tenant_id=$1 and user_id=$2 and transcript_id=any($3::text[])',[tenantId(),VAL_USER_ID,idList]).catch(()=>{});
+      await dbQuery('delete from val_transcripts where tenant_id=$1 and user_id=$2 and id=any($3::text[])',[tenantId(),VAL_USER_ID,idList]).catch(()=>{});
+      await dbQuery('delete from val_memory_items where tenant_id=$1 and user_id=$2 and ((metadata->>\'transcriptId\')=any($3::text[]) or kind ilike $4 or metadata->>\'docType\'=$5 or metadata->>\'uploadedVia\' ilike $4)',[tenantId(),VAL_USER_ID,idList,'%transcript%','transcript']).catch(()=>{});
+    }
+    await dbQuery("delete from val_memory_items where tenant_id=$1 and user_id=$2 and (kind ilike '%transcript%' or metadata->>'docType'='transcript' or metadata->>'uploadedVia' ilike '%transcript%')",[tenantId(),VAL_USER_ID]).catch(()=>{});
+    await auditLog({action:'transcript_data_cleared',resourceType:'transcript',metadata:{...counts,requireJessa},success:true}).catch(()=>{});
+    return {deleted:true,mode:'postgres',...counts};
+  }
+  const store=valStore();
+  const ids=new Set([
+    ...transcriptFileArray(store,'transcriptIndex').map(row=>row.transcriptId).filter(Boolean),
+    ...(store.transcripts||[]).filter(row=>/transcript/i.test(String(row.type||row.kind||''))||row.metadata?.docType==='transcript'||/transcript/i.test(String(row.metadata?.uploadedVia||''))).map(row=>row.id).filter(Boolean)
+  ].map(String));
+  store.transcripts=(store.transcripts||[]).filter(row=>!ids.has(String(row.id))&&!/transcript/i.test(String(row.type||row.kind||''))&&row.metadata?.docType!=='transcript'&&!/transcript/i.test(String(row.metadata?.uploadedVia||'')));
+  store.transcriptIndex=[];
+  ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','meetingTranscriptLinks'].forEach(key=>{store[key]=transcriptFileArray(store,key).filter(row=>!ids.has(String(row.transcriptId)));});
+  store.evidenceItems=transcriptFileArray(store,'evidenceItems').filter(row=>row.sourceType!=='transcript'&&!ids.has(String(row.sourceId)));
+  store.evidenceLinks=transcriptFileArray(store,'evidenceLinks').filter(row=>!((row.sourceType==='transcript'||row.targetType==='transcript')&&(ids.has(String(row.sourceId))||ids.has(String(row.targetId)))));
+  store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType==='transcript'&&ids.has(String(row.sourceId))));
+  store.memoryItems=transcriptFileArray(store,'memoryItems').filter(row=>!ids.has(String(row.metadata?.transcriptId||''))&&!/transcript/i.test(String(row.kind||row.type||''))&&row.metadata?.docType!=='transcript'&&!/transcript/i.test(String(row.metadata?.uploadedVia||'')));
+  saveValStore(store);
+  return {deleted:true,mode:'file',transcriptIds:ids.size};
+}
 async function saveTranscript(payload){
   const indexId=payload.id||uuid(DEMO_MODE?'demo-tr':'tr');
   payload={...payload,id:indexId};
@@ -17100,6 +17157,18 @@ app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
     res.json(result);
   }catch(e){
     await auditLog({req,action:'stored_transcript_recovery_failed',resourceType:'transcript_recovery',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
+  try{
+    const phrase=String(req.body?.confirmation||'').trim().toLowerCase();
+    if(!['clear transcripts','delete transcripts','reset transcripts'].includes(phrase))return res.status(400).json({ok:false,error:'Type "clear transcripts" to confirm.'});
+    const result=await clearAllTranscriptDataForTenant({requireJessa:true});
+    await auditLog({req,action:'transcript_data_cleared_by_user',resourceType:'transcript',metadata:result,success:true}).catch(()=>{});
+    res.json({ok:true,...result});
+  }catch(e){
+    await auditLog({req,action:'transcript_data_clear_failed',resourceType:'transcript',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });
