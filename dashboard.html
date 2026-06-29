@@ -325,11 +325,21 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .teach-val-stage h2{font-family:var(--serif);font-size:2rem;line-height:1.05;color:var(--val-white)}
 .teach-val-stage p{color:var(--val-muted-white);line-height:1.58}
 .teach-val-action-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.teach-val-prompt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
-.teach-val-prompt-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--val-white);border-radius:8px;padding:11px;text-align:left;font-weight:800;cursor:pointer}
+.teach-val-prompt-grid{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:center}
+.teach-val-prompt-btn{min-height:52px;width:180px;display:inline-flex;align-items:center;justify-content:flex-start;gap:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--val-white);border-radius:8px;padding:12px 16px;text-align:left;font-weight:800;cursor:pointer}
 .teach-val-prompt-btn.active{background:var(--gold);border-color:var(--gold);color:#111d30}
-.teach-val-prompt-btn span{display:block;font-size:.68rem;font-weight:600;opacity:.72;margin-top:3px}
+.teach-val-prompt-icon{width:18px;height:18px;display:inline-grid;place-items:center;flex:0 0 18px;color:currentColor}
+.teach-val-prompt-icon svg{width:18px;height:18px;stroke:currentColor}
+.teach-val-prompt-label{display:block;font-size:.84rem;line-height:1.18}
+.teach-val-prompt-status{display:block;font-size:.64rem;font-weight:700;opacity:.7;margin-top:2px}
 .teach-val-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px}
+.teach-val-card-title{display:flex;align-items:center;gap:10px}
+.teach-val-card-title .teach-val-prompt-icon{color:var(--gold)}
+.teach-val-prompt-box{border:1px solid rgba(16,22,51,.12);border-radius:8px;padding:14px;background:linear-gradient(135deg,rgba(196,150,58,.08),rgba(255,255,255,.9));font-size:.88rem;line-height:1.55;color:var(--navy);white-space:pre-wrap}
+.teach-val-response-box{width:100%;min-height:306px;border:1px solid #cbd5e1;border-radius:8px;padding:14px;background:#fff;color:#111827;font:500 .86rem/1.55 var(--mono);resize:vertical}
+.teach-val-card-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.teach-val-copy-status{display:flex;align-items:center;gap:10px;border:1px solid rgba(16,22,51,.1);border-radius:8px;background:#fff;padding:12px 14px;margin-top:14px;color:var(--text-2);line-height:1.35}
+.teach-val-status-pill{display:inline-flex;align-items:center;gap:8px;min-height:38px;border:1px solid rgba(34,197,94,.24);border-radius:8px;background:rgba(34,197,94,.08);padding:0 14px;color:#166534;font-weight:800}
 .teach-val-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
 .teach-val-summary-card{background:#fff;border:1px solid #dfe4e9;border-radius:8px;padding:13px;color:#111827;text-align:center}
 .teach-val-summary-card strong{display:block;font:800 1.5rem var(--serif);color:#172740}
@@ -351,9 +361,6 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .teach-val-voice-control.primary{background:var(--gold);border-color:var(--gold)}
 .teach-val-voice-control.danger{background:#fff5f5;border-color:rgba(184,50,40,.22);color:#7f1d1d}
 .teach-val-voice-hidden{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
-.teach-val-shell.voice-only{display:block;min-height:640px}
-.teach-val-shell.voice-only .teach-val-stage{min-height:640px;padding:0!important;border:0!important;box-shadow:none!important;background:#fff!important}
-.exec-workspace-modal.teach-val-voice-active .exec-workspace-footer{display:none!important}
 @keyframes teachValOrbSpin{to{transform:rotate(360deg)}}
 @keyframes teachValOrbDrift{0%,100%{transform:rotate(0deg) scale(.98)}50%{transform:rotate(24deg) scale(1.05)}}
 @keyframes teachValListenPulse{0%,100%{transform:scale(1);box-shadow:0 0 0 10px rgba(16,22,51,.04),0 22px 60px rgba(16,22,51,.18)}50%{transform:scale(1.035);box-shadow:0 0 0 18px rgba(91,93,232,.08),0 28px 72px rgba(16,22,51,.22)}}
@@ -1309,8 +1316,14 @@ html,body{background:var(--cream)!important;color:var(--navy)!important;font-fam
 .teach-val-hero{gap:18px!important}
 .teach-val-stage h2{font-size:1.8rem!important;color:var(--navy)!important}
 .teach-val-orb,.michele-voice-orb{background:radial-gradient(circle at 35% 30%,#ffffff,#27314f 48%,#101633 100%)!important;box-shadow:0 0 0 8px rgba(16,22,51,0.08),0 18px 48px rgba(16,22,51,0.16)!important}
+.teach-val-prompt-grid{gap:12px 14px!important}
 .teach-val-prompt-btn{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important;box-shadow:var(--shadow-xs)!important}
-.teach-val-prompt-btn.active{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.teach-val-prompt-btn.active{background:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important;box-shadow:0 12px 24px rgba(109,40,217,.18)!important}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active{background-color:#6d28d9!important;background-image:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active *{color:#fff!important}
+.teach-val-prompt-btn:hover{border-color:rgba(109,40,217,.35)!important;box-shadow:0 12px 28px rgba(16,22,51,.08)!important}
+.teach-val-copy-status{background:#fff!important;border-color:rgba(16,22,51,.1)!important}
+.teach-val-status-pill{color:#166534!important}
 .teach-val-summary-card,.task-card,.exec-workspace-modal .task-card{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
 .teach-val-voice-room{background:#fff!important;border:1px solid rgba(16,22,51,.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
 .teach-val-agent-bubble,.teach-val-agent-bubble *{color:inherit!important}
@@ -1402,7 +1415,6 @@ html body .ws-new-session,
 html body .social-plat.sel,
 html body .email-tabs button.active,
 html body .exec-workspace-modal .email-tabs button.active,
-html body .teach-val-prompt-btn.active,
 html body .task-card.done .task-check,
 html body .exec-workspace-modal .task-card.done .task-check{
   background:#101633!important;border-color:#101633!important;color:#fff!important;
@@ -1410,7 +1422,6 @@ html body .exec-workspace-modal .task-card.done .task-check{
 html body .send-btn svg,
 html body .ws-new-session svg,
 html body .ws-new-session span,
-html body .teach-val-prompt-btn.active *,
 html body .email-tabs button.active *,
 html body .exec-workspace-modal .email-tabs button.active *{
   color:#fff!important;
@@ -5290,7 +5301,7 @@ function fetchDeepgramTtsBlob(clean){
   var controller=null,timer=null;
   if(window.AbortController){
     controller=new AbortController();
-    timer=setTimeout(function(){try{controller.abort();}catch(e){}},2500);
+    timer=setTimeout(function(){try{controller.abort();}catch(e){}},6500);
   }
   return fetch((window.PROXY||'')+'/api/val/tts',{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -5322,11 +5333,10 @@ function speak(text,btn,onDone){
     return;
   }
   voiceLastSpoken=clean;voiceLastSpokenAt=now;
-  var token=++voicePlaybackToken,finished=false,fellBack=false,fallbackTimer=null;
+  var token=++voicePlaybackToken,finished=false,fellBack=false;
   function finish(){
     if(finished||token!==voicePlaybackToken)return;
     finished=true;
-    if(fallbackTimer)clearTimeout(fallbackTimer);
     setTimeout(function(){if(token!==voicePlaybackToken)return;speaking=false;resumeListen();onDone();},450);
   }
   function fallbackOnce(){
@@ -5337,11 +5347,9 @@ function speak(text,btn,onDone){
   speaking=true;pauseListen();
   if(curAudio){curAudio.pause();curAudio=null;}
   try{speechSynthesis.cancel();}catch(e){}
-  fallbackTimer=setTimeout(fallbackOnce,900);
   (voiceAudioCache[clean]||preloadSpeech(clean))
   .then(function(b){
     if(fellBack||finished||token!==voicePlaybackToken)return;
-    if(fallbackTimer)clearTimeout(fallbackTimer);
     delete voiceAudioCache[clean];
     var url=URL.createObjectURL(b);curAudio=new Audio(url);
     curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;finish();};
@@ -6010,10 +6018,9 @@ function openTeachValOnboarding(){
     id:'teachValOnboardingWorkspace',
     title:'Teach VAL About You',
     body:'<div id="teachValOnboardingBody"><div class="task-empty">Loading Teach VAL About You...</div></div>',
-    footer:'<button class="alert-btn primary" onclick="teachValStart()">Start / Resume</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL</button><button class="alert-btn" onclick="teachValStartOver()">Start Over</button><button class="alert-btn primary" onclick="teachValCommit(false)">Send to VAL</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
+    footer:'<button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
   });
   teachValLoad();
-  teachValLoadVoiceStatus();
 }
 function startOnboardingProfile(){openTeachValOnboarding();}
 function teachValLoad(){
@@ -6022,7 +6029,7 @@ function teachValLoad(){
   });
 }
 function teachValStart(){
-  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();setTimeout(function(){teachValStartVoiceInterview();},120);}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
 }
 function teachValStartUpdate(){
   apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:false,testMode:true,mode:'update'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL update could not start: '+e.message);});
@@ -6041,8 +6048,7 @@ function teachValProgressHtml(){
   var imported=((teachValOnboarding&&teachValOnboarding.imports)||[]).filter(function(i){return i.category!=='voice_interview';}).length;
   var steps=[
     ['Welcome',p.welcome],
-    ['Voice Interview',p.voice_interview],
-    ['Prompts for Previous AI Tools',imported?imported+' saved':'Not Started'],
+    ['ChatGPT Context',imported?imported+' saved':'Ready'],
     ['Review Memory',p.review],
     ['Send to VAL',p.send_to_val]
   ];
@@ -6050,7 +6056,7 @@ function teachValProgressHtml(){
 }
 function teachValWelcomeHtml(){
   var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+(mode==='update'?'Update What VAL Knows':'Before VAL Can Support You Well')+'</h3><p>'+(mode==='update'?'Use this anytime your priorities, projects, relationships, or preferences change. You do not need to repeat the whole onboarding flow.':'VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. This should feel liberating: a 30-minute transfer of context, not a long intake form.')+'</p><div class="email-reason">Take your time. You can ramble. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start Voice Interview</button><button onclick="teachValStartUpdate()">I Am Updating VAL</button></div></section>';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+(mode==='update'?'Update What VAL Knows':'Before VAL Can Support You Well')+'</h3><p>'+(mode==='update'?'Use this anytime your priorities, projects, relationships, or preferences change. You do not need to repeat the whole onboarding flow.':'VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. This should feel liberating: a 30-minute transfer of context, not a long intake form.')+'</p><div class="email-reason">Take your time. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start Context Transfer</button><button onclick="teachValStartUpdate()">I Am Updating VAL</button></div></section>';
 }
 function teachValLoadVoiceStatus(){
   apiFetch(PROXY+'/api/val/voice/status').then(function(data){teachValVoiceStatus=data;}).catch(function(){teachValVoiceStatus={ok:false,ttsConfigured:false,error:'Voice status unavailable'};});
@@ -6220,7 +6226,7 @@ function teachValSaveInterview(silent){
 }
 function teachValCardsNavHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[];
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>Prompts For Your Previous AI Tools</h3><p>Use these with ChatGPT, Claude, or any AI that already knows you. Pick one prompt, copy it, paste the answer back, then move to the next.</p><div class="val-mini-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));display:grid">'+cards.map(function(c){var imp=teachValImportFor(c.category);return '<button class="alert-btn '+(teachValActiveCategory===c.category?'primary':'')+'" onclick="teachValActiveCategory=\''+docSafe(c.category)+'\';teachValRender()">'+docSafe(c.title)+(imp?' ✓':'')+'</button>';}).join('')+'</div></section>';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Existing Context</h3><p>If you already have notes, AI memory, old onboarding answers, or project context, add it here and VAL will organize it.</p><div class="val-mini-list" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));display:grid">'+cards.map(function(c){var imp=teachValImportFor(c.category);return '<button class="alert-btn '+(teachValActiveCategory===c.category?'primary':'')+'" onclick="teachValActiveCategory=\''+docSafe(c.category)+'\';teachValRender()">'+docSafe(c.title)+(imp?' ✓':'')+'</button>';}).join('')+'</div></section>';
 }
 function teachValOpenPrompt(category){
   teachValActiveCategory=category;
@@ -6229,13 +6235,33 @@ function teachValOpenPrompt(category){
 }
 function teachValCopyActivePrompt(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0];
-  if(card)copyText(card.prompt,'Knowledge prompt');
+  if(card&&card.prompt)teachValCopyPromptText(card.prompt);
+}
+function teachValCopyPromptText(text){
+  var status=document.getElementById('teachValPromptCopyStatus'), btn=document.getElementById('teachValCopyPromptBtn');
+  if(status)status.textContent='Copying...';
+  function copied(){
+    if(status)status.textContent='Copied. Paste it into ChatGPT or Claude.';
+    if(btn){
+      var old=btn.textContent;
+      btn.textContent='Copied';
+      btn.disabled=true;
+      setTimeout(function(){btn.textContent=old||'Copy Prompt';btn.disabled=false;},1600);
+    }
+    if(typeof addSys==='function')addSys('Prompt copied.');
+  }
+  function fallback(){
+    var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();copied();
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(copied).catch(fallback);
+  }else fallback();
 }
 function teachValKnowledgeCardHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0];
   if(!card)return '';
   var imp=teachValImportFor(card.category)||{};
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+docSafe(card.title)+'</h3><p>'+docSafe('This is a prompt for a previous AI tool, not a voice card. Copy it into ChatGPT or Claude, then paste that answer back here.')+'</p><div class="email-reason"><strong>Prompt to copy</strong><br>'+docSafe(card.prompt)+'</div><div class="email-actions"><button class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><textarea id="teachValRawResponse" rows="8" placeholder="Paste the response from ChatGPT, Claude, or another previous AI tool here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(imp.rawResponse||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Save And Extract</button><button onclick="teachValReview()">Review Extracted Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe(imp.status||'Waiting for Paste')+'</span></div>'+teachValExtractedItemsHtml(imp)+'</section>';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+docSafe(card.title)+'</h3><p>'+docSafe('Copy this into ChatGPT or Claude where your history already lives, then bring the answer back to VAL. This gives VAL a rich head start without making you retype your life.')+'</p><div class="email-reason"><strong>Context prompt</strong><br>'+docSafe(card.prompt||'')+'</div><div class="email-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button><span id="teachValPromptCopyStatus" class="email-reason">Ready to copy.</span></div><textarea id="teachValRawResponse" rows="8" placeholder="Paste the response here. VAL will turn it into reviewable memory cards..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(imp.rawResponse||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe(imp.status||'Ready when you are')+'</span></div>'+teachValExtractedItemsHtml(imp)+'</section>';
 }
 function teachValSaveKnowledgeCard(category){
   var box=document.getElementById('teachValRawResponse'), status=document.getElementById('teachValCardStatus');
@@ -6276,6 +6302,18 @@ function teachValCategoryLabel(category){
   var card=((teachValOnboarding&&teachValOnboarding.cards)||[]).find(function(c){return c.category===category;});
   return card?card.title:String(category||'').replace(/_/g,' ');
 }
+function teachValCategoryIcon(category){
+  var icons={
+    current_projects:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 7.5h6l2 2h8v9H4z"/><path d="M4 7.5v-2h6l2 2"/></svg>',
+    people:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M16 19v-1.5a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4V19"/><circle cx="10" cy="7" r="3"/><path d="M20 19v-1.5a4 4 0 0 0-3-3.9"/><path d="M16 4.2a3 3 0 0 1 0 5.6"/></svg>',
+    lessons:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M4 5.5V21"/><path d="M8 7h8"/></svg>',
+    preferences:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M9 7V5h6v2"/><path d="M4 12h16"/></svg>',
+    frustrations:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m12 4 9 16H3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    opportunities:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.8.6-1.2 1.4-1.4 2.5H9.9c-.2-1.1-.6-1.9-1.4-2.5z"/></svg>',
+    things_to_remember:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M6 4h12v17l-6-3-6 3z"/></svg>'
+  };
+  return '<span class="teach-val-prompt-icon" aria-hidden="true">'+(icons[category]||icons.things_to_remember)+'</span>';
+}
 function teachValPromptCategories(){
   return ((teachValOnboarding&&teachValOnboarding.cards)||[]).map(function(c){return c.category;});
 }
@@ -6283,14 +6321,13 @@ function teachValStepState(){
   var state=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, p=state.progress||{}, imports=(teachValOnboarding&&teachValOnboarding.imports)||[];
   var promptCount=imports.filter(function(i){return i.category!=='voice_interview';}).length;
   var memoryCount=imports.reduce(function(sum,i){return sum+((i.extractedItems||[]).filter(function(item){return item.include_in_val!==false;}).length);},0);
-  return {state:state,progress:p,promptCount:promptCount,memoryCount:memoryCount,voiceDone:/Imported/i.test(p.voice_interview||''),reviewDone:/Reviewed/i.test(p.review||''),sent:/Sent|Tested/i.test(p.send_to_val||'')};
+  return {state:state,progress:p,promptCount:promptCount,memoryCount:memoryCount,reviewDone:/Reviewed/i.test(p.review||''),sent:/Sent|Tested/i.test(p.send_to_val||'')};
 }
 function teachValRailHtml(current){
   var st=teachValStepState(), categories=teachValPromptCategories(), imported=st.promptCount;
   var steps=[
     {id:'welcome',label:'Welcome',meta:'30-minute setup',done:/Complete|Reviewed|Imported/i.test(st.progress.welcome||'')},
-    {id:'voice_interview',label:'Voice Interview',meta:st.voiceDone?'Transcript saved':'Conversation with VAL',done:st.voiceDone},
-    {id:'ai_prompts',label:'Bring in your AI',meta:imported?imported+' prompt set'+(imported===1?'':'s'):'Previous AI tools',done:imported>=categories.length&&categories.length>0},
+    {id:'ai_prompts',label:'ChatGPT Context',meta:imported?imported+' area'+(imported===1?'':'s')+' imported':'Copy, paste, import',done:imported>=categories.length&&categories.length>0},
     {id:'review',label:'Review memory',meta:st.memoryCount+' item'+(st.memoryCount===1?'':'s'),done:st.reviewDone},
     {id:'complete',label:'Send to VAL',meta:st.sent?'Complete':'Final save',done:st.sent}
   ];
@@ -6298,17 +6335,15 @@ function teachValRailHtml(current){
 }
 function teachValWelcomeStageHtml(){
   var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
-  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>You do not need to fill out a long form. I will guide you one step at a time, and you can bring in what your previous AI tools already know.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div>'+teachValTranscriptUploadHtml()+'</main>';
-}
-function teachValVoiceStageHtml(){
-  return '<main class="teach-val-stage">'+teachValVoiceHtml()+'</main>';
+  return '<main class="teach-val-stage"><div class="teach-val-hero"><div class="teach-val-orb">⌁</div><h2>'+(mode==='update'?'Update What VAL Knows':'Hi, I’m VAL.')+'</h2><p>'+(mode==='update'?'Tell me what has changed: projects, clients, priorities, preferences, or anything I should remember going forward.':'I’m your future Chief of Staff. Before I can support you well, I want to understand how you think, what you are building, who matters, and what kind of help you actually want.')+'</p><p>We’ll use a few guided ChatGPT or Claude prompts to bring over what your existing AI already knows, then you can review everything before it becomes VAL memory.</p><div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValStart()">Let’s Get Started</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL Instead</button></div></div>'+teachValTranscriptUploadHtml()+'</main>';
 }
 function teachValPromptStageHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0], imp=card?teachValImportFor(card.category):null;
-  if(!card)return '<main class="teach-val-stage"><h2>Prompts For Your Previous AI Tools</h2><p>No prompt cards are configured yet.</p></main>';
-  var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+docSafe(c.title)+'<span>'+(imported?'Imported':'Not started')+'</span></button>';}).join('')+'</div>';
+  if(!card)return '<main class="teach-val-stage"><h2>ChatGPT Context Transfer</h2><p>No import areas are configured yet.</p></main>';
+  if(!teachValActiveCategory)teachValActiveCategory=card.category;
+  var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+teachValCategoryIcon(c.category)+'<span><span class="teach-val-prompt-label">'+docSafe(c.title)+'</span><span class="teach-val-prompt-status">'+(imported?'Imported':'Not started')+'</span></span></button>';}).join('')+'</div>';
   var extracted=imp&&imp.extractedItems&&imp.extractedItems.length?'<div class="exec-card"><h3>Imported & Extracted</h3><p>VAL found '+imp.extractedItems.length+' item'+(imp.extractedItems.length===1?'':'s')+' from this response.</p>'+teachValExtractedItemsHtml(imp)+'<div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValReview()">Review Extracted Memory</button></div></div>':'';
-  return '<main class="teach-val-stage"><div><h2>Bring In Your AI — One Step At A Time</h2><p>Open ChatGPT, Claude, or another AI that already knows you. Copy one prompt, paste the response here, and VAL will extract the useful memory.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3>Current: '+docSafe(card.title)+'</h3><p>Copy this prompt into your previous AI tool.</p><div class="email-reason">'+docSafe(card.prompt)+'</div><div class="email-actions"><button class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><p>I’ll wait while you do that.</p></div><div class="exec-card"><h3>Paste AI Response</h3><p>You can edit later. No pressure.</p><textarea id="teachValRawResponse" rows="12" placeholder="Paste the response from ChatGPT, Claude, or another AI tool here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Save & Continue</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe((imp&&imp.status)||'Waiting for Paste')+'</span></div></div></div>'+teachValTranscriptUploadHtml()+extracted+'</main>';
+  return '<main class="teach-val-stage"><div><h2>ChatGPT Context Transfer</h2><p>Use these guided prompts with ChatGPT or Claude, then paste the answer back here. VAL will organize the response into memory cards you can review before saving.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon(card.category)+'<span>'+docSafe(card.title)+'</span></h3><p>Copy this prompt into the AI that already knows you.</p><div class="teach-val-prompt-box">'+docSafe(card.prompt||'')+'</div><div class="teach-val-card-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><div id="teachValPromptCopyStatus" class="teach-val-copy-status">'+teachValCategoryIcon('things_to_remember')+'<span>Ready to copy.</span></div></div><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon('opportunities')+'<span>Paste Response</span></h3><p>VAL will extract useful memory from the answer. You can edit or exclude anything later.</p><textarea id="teachValRawResponse" class="teach-val-response-box" placeholder="Paste the response from ChatGPT or Claude here...">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="teach-val-card-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="teach-val-status-pill">'+docSafe((imp&&imp.status)||'Ready')+'</span></div></div></div>'+teachValTranscriptUploadHtml()+extracted+'</main>';
 }
 function teachValReviewStageHtml(){
   var st=teachValStepState(), imports=(teachValOnboarding&&teachValOnboarding.imports)||[], categoryCounts={};
@@ -6323,10 +6358,9 @@ function teachValRender(){
   var el=document.getElementById('teachValOnboardingBody');if(!el||!teachValOnboarding)return;
   var session=teachValOnboarding.session||{}, state=session.state||{}, stage=state.stage||'welcome';
   if(stage==='current_projects'||stage==='important_people'||stage==='lessons_learned'||stage==='work_preferences'||stage==='frustrations'||stage==='opportunities'||stage==='things_to_remember')teachValActiveCategory=stage;
-  var current=stage==='complete'?'complete':(stage==='review'?'review':(stage==='welcome'?'welcome':(stage==='voice_interview'?'voice_interview':'ai_prompts')));
-  var stageHtml=current==='complete'?teachValCompleteStageHtml():(current==='review'?teachValReviewStageHtml():(current==='welcome'?teachValWelcomeStageHtml():(current==='voice_interview'?teachValVoiceStageHtml():teachValPromptStageHtml())));
-  var modal=el.closest('.exec-workspace-modal');if(modal)modal.classList.toggle('teach-val-voice-active',current==='voice_interview');
-  el.innerHTML=current==='voice_interview'?'<div class="teach-val-shell voice-only">'+stageHtml+'</div>':'<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
+  var current=stage==='complete'?'complete':(stage==='review'?'review':(stage==='welcome'?'welcome':'ai_prompts'));
+  var stageHtml=current==='complete'?teachValCompleteStageHtml():(current==='review'?teachValReviewStageHtml():(current==='welcome'?teachValWelcomeStageHtml():teachValPromptStageHtml()));
+  el.innerHTML='<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
 }
 Object.assign(window,{openTeachValOnboarding:openTeachValOnboarding,startOnboardingProfile:startOnboardingProfile,teachValStart:teachValStart,teachValStartUpdate:teachValStartUpdate,teachValStartOver:teachValStartOver,teachValSetStage:teachValSetStage,teachValStartVoiceInterview:teachValStartVoiceInterview,teachValPauseVoiceInterview:teachValPauseVoiceInterview,teachValStopVoiceInterview:teachValStopVoiceInterview,teachValRecordVoiceAnswer:teachValRecordVoiceAnswer,teachValStopVoiceAnswer:teachValStopVoiceAnswer,teachValSendVoiceAnswer:teachValSendVoiceAnswer,teachValSaveInterview:teachValSaveInterview,teachValOpenPrompt:teachValOpenPrompt,teachValCopyActivePrompt:teachValCopyActivePrompt,teachValSaveKnowledgeCard:teachValSaveKnowledgeCard,teachValReview:teachValReview,teachValToggleItem:teachValToggleItem,teachValCommit:teachValCommit,teachValLoadVoiceStatus:teachValLoadVoiceStatus,teachValTestVoice:teachValTestVoice});
 
