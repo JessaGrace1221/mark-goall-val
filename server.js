@@ -4907,6 +4907,12 @@ app.post('/api/email/automation-rule',async(req,res)=>{
     let ruleType='label',conditions={},actions={action:'label',label:email.classification||'review'};
     if(mode==='ignore_sender'||mode==='ignore_domain'){
       ruleType=mode;conditions=mode==='ignore_domain'?{from_domain:domain}:{from_email:fromEmail};actions={action:'label',label:'low_priority'};
+    }else if(mode==='vip_priority'){
+      ruleType='vip_priority';conditions={from_email:fromEmail};actions={action:'label',label:'needs_attention'};
+    }else if(mode==='draft_reply'){
+      ruleType='draft_reply';conditions={from_email:fromEmail};actions={action:'draft_reply'};
+    }else if(mode==='track_response'){
+      ruleType='track_sent_followup';conditions={from_email:fromEmail||'',subject_contains:(email.subject||'').slice(0,80)};actions={action:'track_response',business_days:3};
     }else if(/forward/i.test(action)){
       ruleType='forward_sender';conditions={from_email:fromEmail};actions={action:'forward',forward_to:req.body.forwardTo||'',include_summary:true,cc_user:false};
     }else if(/reply|draft/i.test(action)){

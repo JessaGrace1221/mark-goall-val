@@ -34,6 +34,9 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/function renderSelectedEmailDetail/);
   assert.match(dashboard,/renderEmailDetail\(emailIntel\.selected\)/);
   assert.match(dashboard,/function markEmailNotImportant/);
+  assert.match(dashboard,/function setEmailActionStatus/);
+  assert.match(dashboard,/function saveInlineEmailRule/);
+  assert.match(dashboard,/emailRulePanel/);
   assert.match(dashboard,/function saveManualEmailRule/);
   assert.match(dashboard,/Refresh Inbox/);
   assert.match(dashboard,/function refreshGmailNow/);
@@ -54,6 +57,17 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
+});
+
+test('executive inbox actions report inline and rules avoid native confirm flow',()=>{
+  assert.match(dashboard,/Follow-up tracked/);
+  assert.match(dashboard,/Task created/);
+  assert.match(dashboard,/Rule saved/);
+  assert.match(dashboard,/VAL is saving this rule/);
+  assert.doesNotMatch(dashboard,/Confirm automation rule\\\\n/);
+  assert.match(server,/mode==='vip_priority'/);
+  assert.match(server,/mode==='draft_reply'/);
+  assert.match(server,/mode==='track_response'/);
 });
 
 test('email sync captures evidence before actions and does not auto-create tasks',()=>{

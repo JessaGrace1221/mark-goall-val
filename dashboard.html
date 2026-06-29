@@ -3070,7 +3070,11 @@ function renderEmailDetail(e){
   if(!e){detail.innerHTML='';return;}
   var contact=e.matchedContact||{};
   var prepared=e.preparedDraft?`<div class="email-reason"><strong>Draft waiting for approval</strong><br>${docSafe(e.preparedDraft.subject||'Reply draft')}<div class="email-actions"><button class="primary" onclick="renderEmailDraftPanel(emailIntel.selected.preparedDraft,emailIntel.selected,true)">Review Prepared Draft</button><button onclick="openDraftsPage('${docSafe(e.preparedDraft.id||'')}')">Open Drafts</button></div></div>`:'';
-  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(emailDecisionLabel(e))}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}${e.preparedDraft?'<span class="email-pill">Draft ready</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why you are seeing this:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>If ignored:</strong> ${docSafe(emailRiskIfIgnored(e))}<br><strong>VAL recommends:</strong> ${docSafe(e.recommendedAction||'Review this conversation.')}</div>${prepared}<div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">${e.preparedDraft?'Regenerate Draft':'Draft Reply'}</button><button onclick="emailAction('draft_reply')">Edit Draft</button><button onclick="markEmailNotImportant()">Not Important</button><button onclick="emailAction('track_response')">Track Follow-up</button><button onclick="emailAction('task_created')">Create Task</button><button onclick="confirmAutoNext()">Make Rule</button>${e.webLink?`<button onclick="window.open('${docSafe(e.webLink)}','_blank','noopener')">Open Original</button>`:''}</div><div id="emailDraftPanel"></div><div class="email-reason"><strong>Summary</strong><br>${docSafe(emailConversationSummary(e))}</div><div class="email-reason"><strong>Relationship context</strong><br>Relationship: ${docSafe(contact.name||e.from?.name||'Not linked yet')}<br>Open tasks: ${docSafe(contact.openTasks||'No linked tasks found yet')}<br>Calendar: ${docSafe(contact.nextMeeting||'No linked meeting found yet')}<br>LinkedIn: ${docSafe(contact.linkedin||'Ready for future LinkedIn message context')}</div><div class="email-preview">${docSafe(emailReadableBody(e))}</div></div>`;
+  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(emailDecisionLabel(e))}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}${e.preparedDraft?'<span class="email-pill">Draft ready</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why you are seeing this:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>If ignored:</strong> ${docSafe(emailRiskIfIgnored(e))}<br><strong>VAL recommends:</strong> ${docSafe(e.recommendedAction||'Review this conversation.')}</div>${prepared}<div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">${e.preparedDraft?'Regenerate Draft':'Draft Reply'}</button><button onclick="emailAction('draft_reply')">Edit Draft</button><button onclick="markEmailNotImportant()">Not Important</button><button onclick="emailAction('track_response')">Track Follow-up</button><button onclick="emailAction('task_created')">Create Task</button><button onclick="confirmAutoNext()">Make Rule</button>${e.webLink?`<button onclick="window.open('${docSafe(e.webLink)}','_blank','noopener')">Open Original</button>`:''}</div><div id="emailActionStatus"></div><div id="emailRulePanel"></div><div id="emailDraftPanel"></div><div class="email-reason"><strong>Summary</strong><br>${docSafe(emailConversationSummary(e))}</div><div class="email-reason"><strong>Relationship context</strong><br>Relationship: ${docSafe(contact.name||e.from?.name||'Not linked yet')}<br>Open tasks: ${docSafe(contact.openTasks||'No linked tasks found yet')}<br>Calendar: ${docSafe(contact.nextMeeting||'No linked meeting found yet')}<br>LinkedIn: ${docSafe(contact.linkedin||'Ready for future LinkedIn message context')}</div><div class="email-preview">${docSafe(emailReadableBody(e))}</div></div>`;
+}
+function setEmailActionStatus(title,message,good){
+  var el=document.getElementById('emailActionStatus');if(!el)return;
+  el.innerHTML='<div class="email-reason" style="border-color:'+(good===false?'#fecaca':'#86efac')+';background:'+(good===false?'#fff1f2':'#f0fdf4')+';color:'+(good===false?'#7f1d1d':'#166534')+'!important"><strong>'+docSafe(title)+'</strong><br>'+docSafe(message||'')+'</div>';
 }
 function dismissEmail(){
   var e=emailIntel.selected;if(!e)return;
@@ -3092,13 +3096,15 @@ function markEmailNotImportant(){
     }).catch(function(err){addSys('Not Important failed: '+err.message);});
 }
 function emailAction(action){
+  setEmailActionStatus('Working','VAL is preparing this action...');
   apiFetch(PROXY+'/api/email/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actionType:action,email:emailIntel.selected})})
     .then(function(d){
-      if(d.draft)renderEmailDraftPanel(d.draft,emailIntel.selected,d.internalDraft);
+      if(d.draft){renderEmailDraftPanel(d.draft,emailIntel.selected,d.internalDraft);setEmailActionStatus('Draft ready','Review the draft below, then approve it when it feels right.');}
       else if(d.forwardDraft)addMsg('Forward draft prepared:\n\nTo: '+(d.forwardDraft.to||'[choose recipient]')+'\nSubject: '+d.forwardDraft.subject+'\n\n'+d.forwardDraft.body,false);
-      else if(d.followup)addMsg('Follow-up tracked: '+d.followup.title+' in '+d.followup.dueInBusinessDays+' business days.',false);
-      else addSys(d.status||'Email action prepared.');
-    });
+      else if(d.followup)setEmailActionStatus('Follow-up tracked',(d.followup.title||'Follow-up')+' is now tracked for '+(d.followup.dueInBusinessDays||3)+' business days from now.');
+      else if(d.task)setEmailActionStatus('Task created',d.task.title||'Review task created from this email.');
+      else setEmailActionStatus('Prepared',d.status||'Email action prepared.');
+    }).catch(function(err){setEmailActionStatus('Action failed',err.message||'VAL could not complete that action.',false);});
 }
 function renderEmailDraftPanel(draft,email,internalDraft){
   var p=document.getElementById('emailDraftPanel');if(!p)return;
@@ -3109,17 +3115,26 @@ function saveEmailDraftToGmail(){
   var e=emailIntel.selected;if(!e)return;
   var payload={to:document.getElementById('emailDraftTo').value,subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||''};
   apiFetch(PROXY+'/api/gmail/drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(function(d){if(d.ok)addSys(d.draftType==='gmail'?'Approved. Gmail draft created in the thread.':'Approved. Internal draft saved for review.');else addSys(d.error||'Draft approval failed.');})
-    .catch(function(err){addSys('Draft approval failed: '+err.message);});
+    .then(function(d){if(d.ok)setEmailActionStatus('Draft approved',d.draftType==='gmail'?'Gmail draft created in the thread.':'Internal draft saved for review.');else setEmailActionStatus('Draft approval failed',d.error||'Draft approval failed.',false);})
+    .catch(function(err){setEmailActionStatus('Draft approval failed',err.message,false);});
 }
 function confirmAutoNext(){
   var e=emailIntel.selected;if(!e)return;
-  var forwardTo='';
-  if(/forward/i.test(e.recommendedAction||''))forwardTo=prompt('Forward future emails from '+(e.from?.email||'this sender')+' to which email?')||'';
-  var text='Confirm automation rule\\n\\nTrigger:\\nFuture emails from '+(e.from?.email||'this sender')+'\\n\\nAction:\\n'+(e.recommendedAction||'Repeat this recommended action')+'\\n\\nApproval:\\nVAL will do this automatically unless sensitive content is detected.\\n\\nSave this rule?';
-  if(!confirm(text))return;
-  apiFetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,action:e.recommendedAction,forwardTo:forwardTo,approvalMode:'always_auto'})})
-    .then(function(d){if(d.ok){addSys('Email automation rule saved.');loadEmailIntelligence();}else addSys(d.error||'Rule save failed');});
+  var from=e.from&&e.from.email||'this sender',panel=document.getElementById('emailRulePanel');if(!panel)return;
+  panel.innerHTML='<div class="email-reason"><strong>Make a rule for '+docSafe(from)+'</strong><br><label>When this sender emails me<select id="emailInlineRuleMode" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"><option value="draft_reply">Draft a reply for approval</option><option value="vip_priority">Mark as important</option><option value="track_response">Track follow-up</option><option value="ignore_sender">Mark not important</option></select></label><label>Rule name<input id="emailInlineRuleName" value="Rule for '+docSafe(from)+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><div class="email-actions"><button class="primary" onclick="saveInlineEmailRule()">Save Rule</button><button onclick="document.getElementById(\'emailRulePanel\').innerHTML=\'\'">Cancel</button></div></div>';
+}
+function saveInlineEmailRule(){
+  var e=emailIntel.selected;if(!e)return;
+  var mode=(document.getElementById('emailInlineRuleMode')||{}).value||'draft_reply';
+  var name=(document.getElementById('emailInlineRuleName')||{}).value||'Executive Inbox rule';
+  setEmailActionStatus('Saving rule','VAL is saving this rule...');
+  apiFetch(PROXY+'/api/email/automation-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,mode:mode,ruleName:name,approvalMode:mode==='ignore_sender'?'always_auto':'needs_approval'})})
+    .then(function(d){
+      if(!d.ok){setEmailActionStatus('Rule save failed',d.error||'Rule save failed.',false);return;}
+      emailIntel.rules=[d.rule].concat(emailIntel.rules||[]);
+      var panel=document.getElementById('emailRulePanel');if(panel)panel.innerHTML='';
+      setEmailActionStatus('Rule saved',rulePlainEnglish(d.rule)||name);
+    }).catch(function(err){setEmailActionStatus('Rule save failed',err.message,false);});
 }
 function confirmIgnoreFuture(){
   var e=emailIntel.selected;if(!e)return;
