@@ -24,8 +24,8 @@ test('Inbox Command supports safe draft actions without direct sending',()=>{
   assert.doesNotMatch(server,/gmail\/v1\/users\/me\/messages\/send/);
 });
 
-test('Inbox Command is available in Email AI and global chat',()=>{
-  assert.match(dashboard,/Inbox Command/);
+test('Inbox Command is available in Executive Inbox and global chat',()=>{
+  assert.match(dashboard,/Executive Inbox Command/);
   assert.match(dashboard,/function runInboxCommand/);
   assert.match(dashboard,/function inboxCommandAction/);
   assert.match(dashboard,/\/api\/email\/inbox-command/);

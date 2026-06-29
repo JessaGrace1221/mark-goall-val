@@ -1055,7 +1055,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','tenantFeatureFlags','dashboardChangeRequests'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -2707,6 +2707,15 @@ function teachValImportRow(row){
     updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
   };
 }
+function teachValPublicCard(card){
+  return card?{category:card.category,title:card.title,prompt:card.prompt}:null;
+}
+function teachValPublicImport(row){
+  const clean=teachValImportRow(row);
+  if(!clean)return null;
+  const {promptUsed,...safe}=clean;
+  return safe;
+}
 function teachValMemoryRow(row){
   if(!row)return null;
   return {
@@ -2762,6 +2771,9 @@ async function listTeachValImports(sessionId){
   const {rows}=teachValStoreArray('teachValImports');
   return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValImportRow);
 }
+async function listTeachValPublicImports(sessionId){
+  return (await listTeachValImports(sessionId)).map(teachValPublicImport).filter(Boolean);
+}
 async function saveTeachValImport(record){
   await valDbReady;
   const row=teachValImportRow({...record,id:record.id||uuid('tvi'),tenantId:tenantId(),userId:currentUserId(),updatedAt:new Date().toISOString()});
@@ -2810,9 +2822,9 @@ async function teachValStateResponse(sessionId=''){
   if(!session){
     session=await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:teachValDefaultState(),createdAt:new Date().toISOString()});
   }
-  const imports=await listTeachValImports(session.id);
+  const imports=await listTeachValPublicImports(session.id);
   const memory=await listTeachValMemory(session.id);
-  return {ok:true,session,cards:TEACH_VAL_KNOWLEDGE_CARDS,imports,memory,voicePrompt:TEACH_VAL_VOICE_PROMPT};
+  return {ok:true,session,cards:TEACH_VAL_KNOWLEDGE_CARDS.map(teachValPublicCard).filter(Boolean),imports,memory};
 }
 function normalizeTeachValItems(category,items=[]){
   return (Array.isArray(items)?items:[]).map((item,idx)=>{
@@ -2832,7 +2844,7 @@ function normalizeTeachValItems(category,items=[]){
 }
 async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
   const card=teachValCardFor(category)||{};
-  if(!String(rawResponse||'').trim()) throw new Error('Paste the response from ChatGPT or Claude before saving this card.');
+  if(!String(rawResponse||'').trim()) throw new Error('Add some context before importing this card.');
   const system=[
     'Extract calm, useful onboarding memory for an executive AI.',
     'Return strict JSON only.',
@@ -2840,7 +2852,7 @@ async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
     'Required JSON shape: {"summary":{}, "items":[{"title":"","summary":"","category":"","source":"external_ai_import","confidence":0.0,"include_in_val":true,"data":{}}]}',
     'Categories should stay close to: projects, relationships, lessons, preferences, frustrations, process_gaps, opportunities, things_to_remember.'
   ].join('\n');
-  const user=`Knowledge card: ${card.title||category}\nPrompt used:\n${promptUsed||card.prompt||''}\n\nRaw response:\n${String(rawResponse).slice(0,30000)}`;
+  const user=`Knowledge card: ${card.title||category}\nInternal extraction guidance:\n${promptUsed||card.prompt||''}\n\nUser-supplied context:\n${String(rawResponse).slice(0,30000)}`;
   const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
   let parsed=null;
   try{parsed=raw?JSON.parse(raw):null;}catch(e){}
@@ -2869,7 +2881,7 @@ function teachValCompiledPayload({session,imports,items,testMode=false}){
     test_mode:!!testMode,
     onboarding_mode:session.state.mode||'onboarding',
     voice_interview:{transcript:voice.transcript||'',summary:voice.summary||{},duration:voice.duration||null},
-    external_ai_imports:imports.map(i=>({category:i.category,prompt_used:i.promptUsed,raw_response:i.rawResponse,structured_summary:i.structuredSummary,reviewed:!!i.reviewed})),
+    context_imports:imports.map(i=>({category:i.category,raw_response:i.rawResponse,structured_summary:i.structuredSummary,reviewed:!!i.reviewed})),
     knowledge_cards:{
       executive_profile:voice.summary?.executive_profile||{},
       company_context:voice.summary?.company_context||{},
@@ -3034,6 +3046,42 @@ async function initValDb(){
       content text not null,
       metadata jsonb not null default '{}',
       created_at timestamptz not null default now()
+    );
+    create table if not exists identity_links (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      entity_type text not null,
+      entity_id text not null,
+      source_type text not null,
+      source_id text not null,
+      label text,
+      normalized_value text not null,
+      confidence numeric not null default 0,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,entity_type,entity_id,source_type,source_id,normalized_value)
+    );
+    create table if not exists val_decisions (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      conversation_id text,
+      source_type text not null default 'unknown',
+      source_id text not null,
+      decision_type text not null default 'decision',
+      title text not null,
+      summary text not null default '',
+      status text not null default 'needs_review',
+      confidence numeric not null default 0,
+      evidence_ids_json jsonb not null default '[]',
+      relationship_ids_json jsonb not null default '[]',
+      project_ids_json jsonb not null default '[]',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,source_type,source_id,title)
     );
     create table if not exists val_transcripts (
       id text primary key,
@@ -3736,6 +3784,10 @@ async function initValDb(){
     create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
     create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
+    create index if not exists identity_links_lookup_idx on identity_links(tenant_id,user_id,entity_type,normalized_value);
+    create index if not exists identity_links_source_idx on identity_links(tenant_id,user_id,source_type,source_id);
+    create index if not exists val_decisions_source_idx on val_decisions(tenant_id,user_id,source_type,source_id,status);
+    create index if not exists val_decisions_conversation_idx on val_decisions(tenant_id,user_id,conversation_id,created_at desc);
     create index if not exists transcripts_user_created_idx on transcripts(user_id,created_at desc);
     create index if not exists transcript_participants_transcript_idx on transcript_participants(transcript_id,needs_review);
     create index if not exists transcript_tasks_transcript_idx on transcript_tasks(transcript_id,needs_approval,status);
@@ -4095,12 +4147,12 @@ app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
     const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
     const requestedMode=req.body.mode==='update'?'update':'onboarding';
-    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'current_projects',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     const state=normalizeTeachValState(session.state);
     state.mode=requestedMode;
-    state.stage=state.stage==='welcome'?'voice_interview':state.stage;
+    state.stage=state.stage==='welcome'||state.stage==='voice_interview'?'current_projects':state.stage;
     state.progress.welcome='Complete';
-    state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Ready':state.progress.voice_interview;
+    state.progress.current_projects=state.progress.current_projects==='Not Started'?'Ready':state.progress.current_projects;
     session.state=state;
     await saveTeachValSession(session);
     res.json(await teachValStateResponse(session.id));
@@ -4192,7 +4244,7 @@ app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
     const card=teachValCardFor(category);
     if(!card)return res.status(404).json({ok:false,error:'Knowledge Card not found.'});
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
-    if(!rawResponse)return res.status(400).json({ok:false,error:'Paste the response from ChatGPT or Claude before saving this card.'});
+    if(!rawResponse)return res.status(400).json({ok:false,error:'Add some context before importing this card.'});
     const promptUsed=String(req.body.promptUsed||card.prompt);
     const structured=await extractTeachValKnowledge({category,rawResponse,promptUsed});
     const existing=(await listTeachValImports(session.id)).find(i=>i.category===category);
@@ -4234,7 +4286,7 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
       summary:item.summary||'',
       source:item.source||'teach_val_onboarding',
       confidence:Number(item.confidence||0.72),
-      data:{...item.data,itemId:item.id,importId:i.id,promptUsed:i.promptUsed,sourceCategory:i.category}
+      data:{...item.data,itemId:item.id,importId:i.id,sourceCategory:i.category}
     })));
     const testMode=req.body.testMode!==undefined?!!req.body.testMode:!!session.state.testMode;
     const payload=teachValCompiledPayload({session,imports,items:included,testMode});
@@ -4716,7 +4768,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
         needsAttention:[],needsReply:[],waitingOnResponse:[],lowPriority:[],draftSuggestions:[],relationshipContext:[]
       };
     }
-    const recentQuery=force?'in:inbox newer_than:2d':'in:inbox newer_than:2d';
+    const recentQuery=force?'in:inbox newer_than:14d':'in:inbox newer_than:14d';
     const unreadQuery='in:inbox is:unread newer_than:14d';
     const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
@@ -4754,7 +4806,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeWindow:'14-day active conversations plus unresolved sent follow-ups'},
       rules
     };
   }catch(e){
@@ -4830,10 +4882,10 @@ app.post('/api/email/actions',async(req,res)=>{
     }else if(action==='followup_tracked'||action==='track_response'){
       result.followup={title:'Follow up on '+(email.subject||'email'),dueInBusinessDays:3};
       const due=new Date();due.setDate(due.getDate()+3);
-      result.task={id:uuid('task'),title:result.followup.title,contactName:email.from?.name||email.from?.email||'',dueDate:due.toISOString(),notes:'Created from Email Intelligence waiting-on-response tracking.',details:[{text:'Source email: '+(email.subject||''),ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      result.task={id:uuid('task'),title:result.followup.title,contactName:email.from?.name||email.from?.email||'',dueDate:due.toISOString(),notes:'Created from Executive Inbox waiting-on-response tracking.',details:[{text:'Source email: '+(email.subject||''),ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
       await saveTask(result.task);
     }else if(action==='task_created'||action==='add_task'){
-      result.task={id:uuid('task'),title:'Review email: '+(email.subject||'(No subject)'),contactName:email.from?.name||email.from?.email||'',dueDate:null,notes:[email.reason||'',email.recommendedAction||'',email.bodyPreview||email.snippet||''].filter(Boolean).join('\n'),details:[{text:'Created from Email Intelligence',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      result.task={id:uuid('task'),title:'Review email: '+(email.subject||'(No subject)'),contactName:email.from?.name||email.from?.email||'',dueDate:null,notes:[email.reason||'',email.recommendedAction||'',email.bodyPreview||email.snippet||''].filter(Boolean).join('\n'),details:[{text:'Created from Executive Inbox',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
       await saveTask(result.task);
     }
     await logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:action||'suggested',actionStatus:status,actedBy:'user',ruleId:email.matchedRuleId||'',details:{email,body,result}});
@@ -4923,15 +4975,15 @@ function guideHtml(markdown){
 <a class="card" href="/dashboard?view=meetings"><span class="icon">${icon.calendar}</span><h3>Prepare For Today</h3><p>Know who matters before your next conversation.</p><div class="status" id="meetingStatus">Loading meetings</div></a>
 <a class="card" href="/dashboard?view=relationships"><span class="icon">${icon.radar}</span><h3>Relationship Review</h3><p>See who matters most, which relationships are cooling, and where hidden opportunity exists.</p><div class="status" id="radarStatus">Checking signals</div></a>
 <a class="card" href="/dashboard?view=drafts"><span class="icon">${icon.stack}</span><h3>Approval Queue</h3><p>Review drafts, promises, and pending actions.</p><div class="status" id="queueStatus">Loading drafts</div></a>
-<a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.stack}</span><h3>Email Intelligence</h3><p>Find needed replies, waiting-on-response items, safe drafts, and repeatable rules.</p><div class="status" id="emailStatus">Review inbox signals</div></a>
+<a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.stack}</span><h3>Executive Inbox</h3><p>See only the conversations that need a decision, plus drafts and plain-English rules.</p><div class="status" id="emailStatus">Review active conversations</div></a>
 <a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.node}</span><h3>Inbox Command</h3><p>Ask for the email you remember, then summarize, draft, forward, or task it safely.</p><div class="status">Natural language email search</div></a>
 <a class="card" href="/dashboard?view=transcripts"><span class="icon">${icon.voice}</span><h3>Transcript Intelligence</h3><p>Open call memory, summaries, staged tasks, recap drafts, and review queues.</p><div class="status" id="transcriptStatus">Loading transcripts</div></a>
 <a class="card" href="/dashboard?view=tasks"><span class="icon">${icon.calendar}</span><h3>Calendarized Tasks</h3><p>Turn important tasks into private protected work blocks with no meeting link.</p><div class="status" id="taskScheduleStatus">Checking open loops</div></a>
 <a class="card" href="/dashboard?view=integration_status"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
 <a class="card" href="/dashboard?view=settings"><span class="icon">${icon.node}</span><h3>API Keys & Connections</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
 </div></section>
-<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard?view=chat">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard?view=intelligence">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Email AI</h3><p>Use Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard?view=email_intelligence">Open Email AI</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard?view=transcripts">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Calendarize A Task</h3><p>Turn one open commitment into a private protected work block so it actually gets done.</p><a class="btn secondary" href="/dashboard?view=tasks">Calendarize Tasks</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a></div></div></section>
-<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard?view=meetings">Meeting Prep</a><a href="/dashboard?view=intelligence">Daily Rhythm</a><a href="/dashboard?view=meetings">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard?view=relationships">Relationship Review</a><a href="/dashboard?view=drafts">Follow-Ups</a><a href="/dashboard?view=relationships">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard?view=drafts">Approval Queue</a><a href="/dashboard?view=drafts">Drafts</a><a href="/dashboard?view=tasks">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard?view=email_intelligence">Email Intelligence</a><a href="/dashboard?view=integration_status">Integration Status</a><a href="/dashboard?view=settings">API Keys & Connections</a></div></div></section>
+<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard?view=chat">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard?view=intelligence">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Executive Inbox</h3><p>Use Executive Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard?view=email_intelligence">Open Executive Inbox</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard?view=transcripts">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Calendarize A Task</h3><p>Turn one open commitment into a private protected work block so it actually gets done.</p><a class="btn secondary" href="/dashboard?view=tasks">Calendarize Tasks</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a></div></div></section>
+<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard?view=meetings">Meeting Prep</a><a href="/dashboard?view=intelligence">Daily Rhythm</a><a href="/dashboard?view=meetings">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard?view=relationships">Relationship Review</a><a href="/dashboard?view=drafts">Follow-Ups</a><a href="/dashboard?view=relationships">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard?view=drafts">Approval Queue</a><a href="/dashboard?view=drafts">Drafts</a><a href="/dashboard?view=tasks">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard?view=email_intelligence">Executive Inbox</a><a href="/dashboard?view=integration_status">Integration Status</a><a href="/dashboard?view=settings">API Keys & Connections</a></div></div></section>
 <section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div><div id="activityTranscripts">Transcripts loading</div><div id="activityEmail">Email intelligence loading</div><div id="activityCalendarized">Calendarized work loading</div></div></section>
 <section><div class="section-head"><div><h2>Learn VAL</h2><p>The full reference is here when you want depth. You do not need to study it first.</p></div></div><details><summary>See Full Reference</summary><div class="reference"><p>${referenceHtml}</p></div></details></section>
 </main><script>
@@ -4963,7 +5015,7 @@ function set(id,text){const el=document.getElementById(id);if(el)el.textContent=
   set('activityTasks',overdue.length?overdue.length+' overdue tasks':open.length+' open tasks');
   set('activityFollowups',unread?unread+' unread conversations':'No unread conversations');
   set('activityTranscripts',trTotal?trTotal+' transcripts in memory':'No transcripts received yet');
-  set('activityEmail',emailTotal?emailTotal+' emails analyzed':'Email Intelligence ready after connection');
+  set('activityEmail',emailTotal?emailTotal+' emails analyzed':'Executive Inbox ready after connection');
   set('activityCalendarized',calendarized?calendarized+' tasks have protected time':unscheduled+' tasks still need calendar time');
 })();
 async function resetDemo(){await fetch('/api/demo/reset',{method:'POST'});location.href='/guide';}
@@ -5822,13 +5874,13 @@ function classifyEmail(email,rules=[]){
   if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
     return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
   }
-  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination)\b/.test(text)){
+  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)){
     return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
   }
-  if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting)\b/.test(text)){
+  if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)){
     return {classification:'needs_reply',reason:'Asks for a response or decision.',recommendedAction:'Draft a reply for approval.',confidence:'high',requiresApproval:true};
   }
-  if(/\b(proposal|pricing|contract|intro|introduction|following up|checking in)\b/.test(text)){
+  if(/\b(proposal|pricing|contract|intro|introduction|following up|checking in|demo|next step|open loop|waiting|decision|opportunity|partnership)\b/.test(text)){
     return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
   }
   return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
@@ -5987,7 +6039,7 @@ async function recentEmailActions(userId,limit=200){
   }
   return (valStore().emailActionLog||[]).filter(a=>a.tenantId===tenantId()&&a.userId===userId).slice(-limit).reverse();
 }
-async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:2d',maxResults=25,includeBody=false}={}){
+async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId(),query='in:inbox newer_than:14d',maxResults=25,includeBody=false}={}){
   await ensureGoogleTokensLoaded();
   const token=await getGoogleToken();
   if(token) await hydrateGoogleTokenScopes(token);
@@ -6010,7 +6062,7 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
   return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
 }
 async function fetchUnifiedGmailEmails(limit=20){
-  return fetchGmailMessages({query:'in:inbox newer_than:2d',maxResults:limit});
+  return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
 }
 function normalizeOutlookMessage(m){
   const from=m.from?.emailAddress||{};
@@ -12219,7 +12271,7 @@ function dashboardProjectsFromEvidence(evidenceItems=[]){
     if(dashboardLooksLikeFakeProject(name))return;
     rows.push({id:normalizeContextName(name),name,state:'Watched',summary:reason,score:30,lastObservedAt:e.occurredAt||e.capturedAt||e.createdAt,evidence:[dashboardEvidenceSummary(e)],target:{type:'project',id:normalizeContextName(name)}});
   };
-  const known=/\b(GOALL|HelpByShopping|FinServe360|Baby VAL|Aric'?s VAL|Jessa VAL|VAL Platform|Email Intelligence|Relationship Engine)\b/g;
+  const known=/\b(GOALL|HelpByShopping|FinServe360|Baby VAL|Aric'?s VAL|Jessa VAL|VAL Platform|Executive Inbox|Relationship Engine)\b/g;
   for(const e of evidenceItems){
     const entities=evidenceJsonValue(e.entitiesJson||e.entities_json,{})||{};
     if(entities.project||entities.projectName||entities.project_name)add(entities.project||entities.projectName||entities.project_name,e,'Named project in evidence');
@@ -12486,6 +12538,170 @@ async function clearEvidenceLinksForTranscript(transcriptId){
   store.evidenceLinks=transcriptFileArray(store,'evidenceLinks').filter(row=>!((row.sourceType==='transcript'&&row.sourceId===transcriptId)||(row.sourceType==='transcript_task'&&taskIds.includes(row.sourceId))));
   saveValStore(store);
 }
+function normalizedIdentityValue(input={}){
+  const email=normalizeContextEmail(input.email||input.matchedEmail||input.address||'');
+  if(email)return email;
+  const phone=normalizeContextPhone(input.phone||input.matchedPhone||'');
+  if(phone)return phone;
+  return normalizeContextName(input.name||input.displayName||input.speakerNameRaw||input.matchedContactName||input.label||'');
+}
+async function saveIdentityLink(payload={}){
+  const normalized=String(payload.normalizedValue||normalizedIdentityValue(payload)||'').trim();
+  if(!normalized)return null;
+  const row={
+    id:payload.id||uuid('idlink'),
+    tenantId:payload.tenantId||tenantId(),
+    userId:payload.userId||VAL_USER_ID,
+    entityType:String(payload.entityType||'person'),
+    entityId:String(payload.entityId||''),
+    sourceType:String(payload.sourceType||'unknown'),
+    sourceId:String(payload.sourceId||''),
+    label:String(payload.label||payload.name||payload.email||payload.speakerNameRaw||''),
+    normalizedValue:normalized,
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    metadataJson:payload.metadataJson&&typeof payload.metadataJson==='object'?payload.metadataJson:(payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{}),
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.entityId||!row.sourceId)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('identityLinks');
+    if(rows){
+      const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.userId===row.userId&&x.entityType===row.entityType&&x.entityId===row.entityId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId&&x.normalizedValue===row.normalizedValue);
+      if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+      else rows.push(row);
+    }
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into identity_links (id,tenant_id,user_id,entity_type,entity_id,source_type,source_id,label,normalized_value,confidence,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now())
+      on conflict (tenant_id,user_id,entity_type,entity_id,source_type,source_id,normalized_value)
+      do update set label=coalesce(nullif(excluded.label,''),identity_links.label), confidence=greatest(identity_links.confidence,excluded.confidence), metadata_json=identity_links.metadata_json || excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.userId,row.entityType,row.entityId,row.sourceType,row.sourceId,row.label,row.normalizedValue,row.confidence,JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore();store.identityLinks=transcriptFileArray(store,'identityLinks');
+  const i=store.identityLinks.findIndex(x=>x.tenantId===row.tenantId&&x.userId===row.userId&&x.entityType===row.entityType&&x.entityId===row.entityId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId&&x.normalizedValue===row.normalizedValue);
+  if(i>=0)store.identityLinks[i]={...store.identityLinks[i],...row,id:store.identityLinks[i].id,createdAt:store.identityLinks[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+  else store.identityLinks.push(row);
+  saveValStore(store);
+  return i>=0?store.identityLinks[i]:row;
+}
+async function clearValDecisionsForSource(sourceType,sourceId){
+  if(!sourceId)return;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('valDecisions')||[];
+    for(let i=rows.length-1;i>=0;i--)if(rows[i].sourceType===sourceType&&rows[i].sourceId===sourceId)rows.splice(i,1);
+    return;
+  }
+  await valDbReady;
+  if(pgPool){await dbQuery('delete from val_decisions where tenant_id=$1 and user_id=$2 and source_type=$3 and source_id=$4',[tenantId(),VAL_USER_ID,sourceType,sourceId]);return;}
+  const store=valStore();store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType===sourceType&&row.sourceId===sourceId));saveValStore(store);
+}
+async function saveValDecision(payload={}){
+  const row={
+    id:payload.id||uuid('decision'),
+    tenantId:payload.tenantId||tenantId(),
+    userId:payload.userId||VAL_USER_ID,
+    conversationId:String(payload.conversationId||''),
+    sourceType:String(payload.sourceType||'unknown'),
+    sourceId:String(payload.sourceId||''),
+    decisionType:String(payload.decisionType||'decision'),
+    title:dashboardShortText(payload.title||payload.summary||'Decision from conversation','Decision from conversation',180),
+    summary:String(payload.summary||payload.title||''),
+    status:String(payload.status||'needs_review'),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    evidenceIdsJson:Array.isArray(payload.evidenceIdsJson)?payload.evidenceIdsJson:(Array.isArray(payload.evidenceIds)?payload.evidenceIds:[]),
+    relationshipIdsJson:Array.isArray(payload.relationshipIdsJson)?payload.relationshipIdsJson:(Array.isArray(payload.relationshipIds)?payload.relationshipIds:[]),
+    projectIdsJson:Array.isArray(payload.projectIdsJson)?payload.projectIdsJson:(Array.isArray(payload.projectIds)?payload.projectIds:[]),
+    metadataJson:payload.metadataJson&&typeof payload.metadataJson==='object'?payload.metadataJson:(payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{}),
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.sourceId||!row.title)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('valDecisions');
+    if(rows){
+      const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.userId===row.userId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId&&x.title===row.title);
+      if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+      else rows.push(row);
+    }
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into val_decisions (id,tenant_id,user_id,conversation_id,source_type,source_id,decision_type,title,summary,status,confidence,evidence_ids_json,relationship_ids_json,project_ids_json,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now(),now())
+      on conflict (tenant_id,user_id,source_type,source_id,title)
+      do update set conversation_id=excluded.conversation_id, summary=excluded.summary, status=excluded.status, confidence=greatest(val_decisions.confidence,excluded.confidence), evidence_ids_json=excluded.evidence_ids_json, relationship_ids_json=excluded.relationship_ids_json, project_ids_json=excluded.project_ids_json, metadata_json=val_decisions.metadata_json || excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.userId,row.conversationId||null,row.sourceType,row.sourceId,row.decisionType,row.title,row.summary,row.status,row.confidence,JSON.stringify(row.evidenceIdsJson),JSON.stringify(row.relationshipIdsJson),JSON.stringify(row.projectIdsJson),JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore();store.valDecisions=transcriptFileArray(store,'valDecisions');
+  const i=store.valDecisions.findIndex(x=>x.tenantId===row.tenantId&&x.userId===row.userId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId&&x.title===row.title);
+  if(i>=0)store.valDecisions[i]={...store.valDecisions[i],...row,id:store.valDecisions[i].id,createdAt:store.valDecisions[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+  else store.valDecisions.push(row);
+  saveValStore(store);
+  return i>=0?store.valDecisions[i]:row;
+}
+async function valCanonicalForTranscript(transcriptId){
+  const empty={conversation:null,identityLinks:[],decisions:[]};
+  if(!transcriptId)return empty;
+  if(DEMO_MODE){
+    const conversations=requestContext.getStore()?.demoState?.savedConversations||[];
+    return {
+      conversation:conversations.find(c=>c.id===`conv_${transcriptId}`||c.metadata?.sourceId===transcriptId)||null,
+      identityLinks:(transcriptDemoArray('identityLinks')||[]).filter(row=>row.metadataJson?.transcriptId===transcriptId||row.sourceId===transcriptId||row.sourceId?.includes(transcriptId)).slice(0,50),
+      decisions:(transcriptDemoArray('valDecisions')||[]).filter(row=>row.sourceType==='transcript'&&row.sourceId===transcriptId).slice(0,50)
+    };
+  }
+  await valDbReady;
+  if(pgPool){
+    const conversation=(await dbQuery("select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 and tenant_id=$2 and (id=$3 or metadata->>'sourceId'=$4) limit 1",[VAL_USER_ID,tenantId(),`conv_${transcriptId}`,transcriptId])).rows.map(transcriptPgRow)[0]||null;
+    const identityLinks=(await dbQuery("select * from identity_links where tenant_id=$1 and user_id=$2 and ((metadata_json->>'transcriptId')=$3 or source_id=$3 or source_id like $4) order by updated_at desc limit 50",[tenantId(),VAL_USER_ID,transcriptId,`%${transcriptId}%`])).rows.map(transcriptPgRow);
+    const decisions=(await dbQuery("select * from val_decisions where tenant_id=$1 and user_id=$2 and source_type='transcript' and source_id=$3 order by created_at asc limit 50",[tenantId(),VAL_USER_ID,transcriptId])).rows.map(transcriptPgRow);
+    return {conversation,identityLinks,decisions};
+  }
+  const store=valStore();
+  return {
+    conversation:(store.conversations||[]).find(c=>c.id===`conv_${transcriptId}`||c.metadata?.sourceId===transcriptId)||null,
+    identityLinks:transcriptFileArray(store,'identityLinks').filter(row=>row.metadataJson?.transcriptId===transcriptId||row.sourceId===transcriptId||String(row.sourceId||'').includes(transcriptId)).slice(0,50),
+    decisions:transcriptFileArray(store,'valDecisions').filter(row=>row.sourceType==='transcript'&&row.sourceId===transcriptId).slice(0,50)
+  };
+}
+async function attachCanonicalTranscriptDetail(transcript){
+  if(!transcript?.id)return transcript;
+  transcript.canonical=await valCanonicalForTranscript(transcript.id).catch(()=>({conversation:null,identityLinks:[],decisions:[]}));
+  return transcript;
+}
+async function valDecisionReviewQueue(limit=100){
+  if(DEMO_MODE)return (transcriptDemoArray('valDecisions')||[]).filter(row=>String(row.status||'').toLowerCase()==='needs_review').slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery("select * from val_decisions where tenant_id=$1 and user_id=$2 and status='needs_review' order by created_at asc limit $3",[tenantId(),VAL_USER_ID,limit]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'valDecisions').filter(row=>String(row.status||'').toLowerCase()==='needs_review').slice(0,limit);
+}
+async function updateValDecisionStatus(decisionId,status='approved'){
+  const clean=String(status||'approved').toLowerCase().replace(/\s+/g,'_');
+  if(!decisionId)return null;
+  if(DEMO_MODE){
+    const row=(transcriptDemoArray('valDecisions')||[]).find(x=>x.id===decisionId);
+    if(row){row.status=clean;row.updatedAt=new Date().toISOString();}
+    return row||null;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('update val_decisions set status=$1,updated_at=now() where id=$2 and tenant_id=$3 and user_id=$4 returning *',[clean,decisionId,tenantId(),VAL_USER_ID]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore(),row=transcriptFileArray(store,'valDecisions').find(x=>x.id===decisionId);
+  if(row){row.status=clean;row.updatedAt=new Date().toISOString();saveValStore(store);}
+  return row||null;
+}
 async function replaceTranscriptParticipants(transcriptId,participants){
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptParticipants');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(...participants);}return;}
   await valDbReady;if(pgPool){await dbQuery('delete from transcript_participants where transcript_id=$1',[transcriptId]);for(const p of participants)await dbQuery(`insert into transcript_participants (participant_id,transcript_id,speaker_name_raw,matched_contact_id,matched_contact_name,matched_email,matched_phone,matched_company,match_confidence,match_reason,needs_review,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,[p.participantId,transcriptId,p.speakerNameRaw,p.matchedContactId||null,p.matchedContactName||null,p.matchedEmail||null,p.matchedPhone||null,p.matchedCompany||null,p.matchConfidence||0,p.matchReason||'',!!p.needsReview]);}else{const store=valStore();store.transcriptParticipants=transcriptFileArray(store,'transcriptParticipants').filter(x=>x.transcriptId!==transcriptId);store.transcriptParticipants.push(...participants);saveValStore(store);}
@@ -12590,6 +12806,7 @@ function cleanTranscriptForUi(t={}){
 }
 async function clearTranscriptStaging(transcriptId){
   await clearEvidenceLinksForTranscript(transcriptId);
+  await clearValDecisionsForSource('transcript',transcriptId).catch(()=>{});
   const evidence=await evidenceItemForSource('transcript',transcriptId).catch(()=>null);
   if(evidence?.id){
     await clearAgencyMovesForEvidence(evidence.id).catch(()=>{});
@@ -16041,7 +16258,7 @@ function actionPrompt(action){
     daily_rhythm:'Run the daily executive rhythm: morning briefing, midday check-in, end-of-day wrap, and tomorrow prep. Keep it relationship-first. Surface dynamic prompts based on meetings, overdue tasks, approvals, stale relationships, pipeline urgency, and high-impact use of saved time.',
     saved_time_leverage:'Suggest the highest-impact things the user could do with the time, energy, and cognitive load VAL is saving. Focus on moves that create revenue, deepen high-value relationships, strengthen authority, protect recovery, improve strategic thinking, or create long-term leverage. Give 3 to 5 options, explain why each matters, and recommend one to do now.',
     onboarding_profile:'Run the Tell Me About Yourself onboarding. Ask one deep question at a time to understand identity, business model, high-value relationships, communication style, decision patterns, energy patterns, personality profile, boundaries, approval preferences, and documents to upload. Be warm, direct, and psychologically insightful.',
-    executive_review:'Run an executive review in this exact order. First: review Email Intelligence, including important unread emails, emails needing reply, waiting-on-response items, forwarding suggestions, rule suggestions, ignored email count, and appointment recap drafts. Second: include Relationship Intelligence: highest leverage relationship, top 3 relationship priorities, one cooling relationship, one forgotten commitment, one suggested introduction, and one hidden opportunity. Third: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. Fourth: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Fifth: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',
+    executive_review:'Run an executive review in this exact order. First: review Executive Inbox, including important unread emails, emails needing reply, waiting-on-response items, forwarding suggestions, rule suggestions, ignored email count, and appointment recap drafts. Second: include Relationship Intelligence: highest leverage relationship, top 3 relationship priorities, one cooling relationship, one forgotten commitment, one suggested introduction, and one hidden opportunity. Third: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. Fourth: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Fifth: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',
     document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',
     lead_intelligence:'Use the GOALL Agency lead intelligence standard for business lead research. Qualify the company by employee base, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.',
     book_where_left_off:'Use manuscript, chapter, outline, transcript, launch-note, and task memory to tell Michele where she left off. Include the last known working area, what changed or was decided, what remains unresolved, the next clean editorial move, and one question only if the next step is genuinely ambiguous. Do not discuss CRM, pipeline, or relationship management.',
@@ -16149,6 +16366,73 @@ async function saveTranscriptEvidenceObservations({sourceId,title,transcript,par
   for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
   return (await runObservationEngine(evidence,{candidates,replace:true})).observations;
 }
+async function saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload={},parsed={},participants=[],summary=null,observations=[]}){
+  const evidence=await evidenceItemForSource('transcript',sourceId).catch(()=>null);
+  const occurredAt=payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||new Date().toISOString();
+  const conversationId=`conv_${sourceId}`;
+  const conversation=await saveConversation({
+    id:conversationId,
+    title:title||'Transcript conversation',
+    source:'transcript',
+    timestamp:occurredAt,
+    metadata:{
+      canonicalType:'conversation',
+      conversationType:'meeting_transcript',
+      sourceType:'transcript',
+      sourceId,
+      evidenceItemId:evidence?.id||'',
+      summaryId:summary?.summaryId||'',
+      calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',
+      participantCount:(participants||[]).length,
+      observationCount:(observations||[]).length,
+      status:'processed'
+    }
+  });
+  await saveEvidenceLink({sourceType:'transcript',sourceId,sourceLabel:title,targetType:'conversation',targetId:conversation.id||conversationId,relationship:'captured_as_conversation',summary:title,confidence:1,metadata:{canonicalType:'conversation',evidenceItemId:evidence?.id||''}}).catch(()=>{});
+  const identityLinks=[];
+  for(const participant of (participants||[]).slice(0,40)){
+    const normalized=normalizedIdentityValue(participant);
+    if(!normalized)continue;
+    const entityId=participant.matchedContactId||`transcript:${sourceId}:${normalized}`;
+    const link=await saveIdentityLink({
+      entityType:'person',
+      entityId,
+      sourceType:'transcript_participant',
+      sourceId:participant.participantId||sourceId,
+      label:participant.matchedContactName||participant.speakerNameRaw||participant.matchedEmail||normalized,
+      normalizedValue:normalized,
+      confidence:participant.matchConfidence||0.45,
+      metadata:{transcriptId:sourceId,conversationId:conversation.id||conversationId,needsReview:!!participant.needsReview,matchReason:participant.matchReason||''}
+    }).catch(()=>null);
+    if(link){
+      identityLinks.push(link);
+      await saveEvidenceLink({sourceType:'transcript',sourceId,sourceLabel:title,targetType:'identity_link',targetId:link.id||entityId,relationship:participant.needsReview?'candidate_identity':'matched_identity',summary:link.label||normalized,confidence:link.confidence||participant.matchConfidence||0,metadata:{entityType:'person',entityId,normalizedValue:normalized,participantId:participant.participantId||''}}).catch(()=>{});
+    }
+  }
+  const decisions=[];
+  for(const item of (Array.isArray(parsed.keyDecisions)?parsed.keyDecisions:[]).slice(0,20)){
+    const text=observationText(item);
+    if(!text)continue;
+    const decision=await saveValDecision({
+      conversationId:conversation.id||conversationId,
+      sourceType:'transcript',
+      sourceId,
+      decisionType:'transcript_decision',
+      title:text,
+      summary:text,
+      status:'needs_review',
+      confidence:Math.max(0.5,Math.min(1,Number(item?.confidence)||0.8)),
+      evidenceIds:[evidence?.id||sourceId],
+      metadata:{sourceQuote:observationQuote(transcript,item),summaryId:summary?.summaryId||'',conversationId:conversation.id||conversationId}
+    }).catch(()=>null);
+    if(decision){
+      decisions.push(decision);
+      await saveEvidenceLink({sourceType:'transcript',sourceId,sourceLabel:title,targetType:'decision',targetId:decision.id,relationship:'extracted_decision',summary:decision.summary||decision.title,quote:decision.metadataJson?.sourceQuote||observationQuote(transcript,item),confidence:decision.confidence||0.8,metadata:{conversationId:conversation.id||conversationId,status:decision.status||'needs_review'}}).catch(()=>{});
+    }
+  }
+  await logTranscriptAction(sourceId,'canonical_pipeline_saved',conversation.id||conversationId,'completed').catch(()=>{});
+  return {conversation,identityLinks,decisions,evidenceItemId:evidence?.id||'',counts:{identityLinks:identityLinks.length,decisions:decisions.length}};
+}
 function fallbackTranscriptSummary(transcript,notes='Processing fallback summary; transcript retained for review.'){
   const raw=String(transcript||'');
   const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
@@ -16180,7 +16464,8 @@ async function processTranscriptPayload(payload){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
-  await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{}));
+  const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
+  const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
   if(modelFailed)await logTranscriptAction(sourceId,'failed_action','summary_model','failed',modelFailed);
   const stagedTasks=[],createdTasks=[],createdDrafts=[];
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
@@ -16195,9 +16480,19 @@ async function processTranscriptPayload(payload){
   }
   const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
   if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
-  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const sourceQuote=transcriptSupportingQuote(transcript,draft.sourceQuote);const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote}});createdDrafts.push(saved);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:saved.id||'',relationship:'created_followup_draft',summary:saved.subject||draft.subject||`Follow-up: ${title}`,quote:sourceQuote,confidence:Math.max(0,Math.min(1,Number(draft.confidence)||0.75)),metadata:{draftType:draft.draftType||draft.type||'follow_up'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
+  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){
+    const body=draft.body||draft.message||'';
+    if(!body.trim())continue;
+    const sourceQuote=transcriptSupportingQuote(transcript,draft.sourceQuote);
+    const draftIntent=await saveValDecision({conversationId:canonicalPipeline?.conversation?.id||`conv_${sourceId}`,sourceType:'transcript',sourceId,decisionType:'draft_intent',title:draft.subject||`Follow-up: ${title}`,summary:body,status:'needs_review',confidence:Math.max(0,Math.min(1,Number(draft.confidence)||0.75)),evidenceIds:[canonicalPipeline?.evidenceItemId||sourceId],metadata:{sourceQuote,draftType:draft.draftType||draft.type||'follow_up',transcriptTitle:title}}).catch(()=>null);
+    const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_decision',decisionId:draftIntent?.id||'',decisionStatus:draftIntent?.status||'needs_review',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote}});
+    createdDrafts.push(saved);
+    await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:saved.id||'',relationship:'created_followup_draft',summary:saved.subject||draft.subject||`Follow-up: ${title}`,quote:sourceQuote,confidence:Math.max(0,Math.min(1,Number(draft.confidence)||0.75)),metadata:{draftType:draft.draftType||draft.type||'follow_up',decisionId:draftIntent?.id||'',decisionStatus:draftIntent?.status||'needs_review'}}).catch(()=>{});
+    if(draftIntent?.id)await saveEvidenceLink({sourceType:'decision',sourceId:draftIntent.id,sourceLabel:draftIntent.title,targetType:'draft',targetId:saved.id||'',relationship:'prepared_draft',summary:saved.subject||draftIntent.title,quote:sourceQuote,confidence:draftIntent.confidence||0.75,metadata:{transcriptId:sourceId,draftType:draft.draftType||draft.type||'follow_up'}}).catch(()=>{});
+    await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');
+  }
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
-  return {analysis:parsed,summary,participants,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
+  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
@@ -16319,15 +16614,15 @@ app.get('/api/val/transcripts',async(req,res)=>{
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
-  try{const data=await transcriptIndexData();res.json({ok:true,participants:data.participants.filter(row=>row.needsReview),tasks:data.tasks.filter(row=>row.needsApproval),contactUpdates:data.contactUpdates.filter(row=>!row.approved)});}catch(e){res.status(500).json({ok:false,error:e.message});}
+  try{const data=await transcriptIndexData();res.json({ok:true,participants:data.participants.filter(row=>row.needsReview),tasks:data.tasks.filter(row=>row.needsApproval),contactUpdates:data.contactUpdates.filter(row=>!row.approved),decisions:await valDecisionReviewQueue()});}catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
+    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=await attachCanonicalTranscriptDetail(transcriptDetailFromIndex(data,data.transcripts[0]));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
+    const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
@@ -16389,6 +16684,15 @@ app.post('/api/val/transcripts/participants/:participantId/approve',async(req,re
     const updates={matchedContactId:req.body.contactId||participant.matchedContactId,matchedContactName:req.body.contactName||participant.matchedContactName,matchedEmail:req.body.email||participant.matchedEmail,matchedPhone:req.body.phone||participant.matchedPhone,matchedCompany:req.body.company||participant.matchedCompany,matchConfidence:1,matchReason:req.body.reason||'User-approved participant match',needsReview:false};
     if(!updates.matchedContactId)return res.status(400).json({ok:false,error:'Choose a specific CRM contact before approving this participant match'});
     if(DEMO_MODE)Object.assign((transcriptDemoArray('transcriptParticipants')||[]).find(row=>row.participantId===participant.participantId),updates);else if(pgPool)await dbQuery('update transcript_participants set matched_contact_id=$1,matched_contact_name=$2,matched_email=$3,matched_phone=$4,matched_company=$5,match_confidence=1,match_reason=$6,needs_review=false where participant_id=$7',[updates.matchedContactId,updates.matchedContactName,updates.matchedEmail,updates.matchedPhone,updates.matchedCompany,updates.matchReason,participant.participantId]);else{const store=valStore();Object.assign(store.transcriptParticipants.find(row=>row.participantId===participant.participantId),updates);saveValStore(store);}await logTranscriptAction(participant.transcriptId,'participant_match_approved',participant.participantId,'completed');res.json({ok:true,participant:{...participant,...updates}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/decisions/:decisionId/review',async(req,res)=>{
+  try{
+    const status=req.body?.status||'approved';
+    const decision=await updateValDecisionStatus(req.params.decisionId,status);
+    if(!decision)return res.status(404).json({ok:false,error:'Decision not found'});
+    await auditLog({req,action:'decision_reviewed',resourceType:'decision',resourceId:decision.id,metadata:{status:decision.status||status,sourceType:decision.sourceType||decision.source_type||'',sourceId:decision.sourceId||decision.source_id||''},success:true}).catch(()=>{});
+    res.json({ok:true,decision});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)=>{

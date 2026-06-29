@@ -110,7 +110,7 @@ test('Dashboard Studio UI is hidden unless backend feature flag is enabled',()=>
   assert.match(dashboard,/Dashboard Studio Project Manager/);
   assert.match(dashboard,/What would you like to improve today/);
   assert.match(dashboard,/Existing Features/);
-  assert.match(dashboard,/Email Intelligence/);
+  assert.match(dashboard,/Executive Inbox/);
   assert.match(dashboard,/Lead Scraper/);
   assert.match(dashboard,/Meeting Assistant/);
   assert.match(dashboard,/dashboardStudioFeatureSearch/);

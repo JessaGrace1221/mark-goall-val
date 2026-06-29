@@ -1644,7 +1644,7 @@ html body .val-primary-nav{
     <button class="val-nav-item" data-view="calendar"><span class="val-nav-icon">▤</span><span>Calendar</span></button>
     <button class="val-nav-item" data-view="documents"><span class="val-nav-icon">▧</span><span>Documents</span></button>
     <div class="val-nav-group-label">Momentum</div>
-    <button class="val-nav-item" data-view="email_intelligence"><span class="val-nav-icon">✉</span><span>Email Intelligence</span></button>
+    <button class="val-nav-item" data-view="email_intelligence"><span class="val-nav-icon">✉</span><span>Executive Inbox</span></button>
     <button class="val-nav-item" data-view="leads_employers"><span class="val-nav-icon">⌕</span><span>Scrape Employers</span></button>
     <button class="val-nav-item" data-view="leads_partners"><span class="val-nav-icon">⌕</span><span>Scrape Partners</span></button>
     <button class="val-nav-item" data-view="tasks"><span class="val-nav-icon">✓</span><span>Actions</span></button>
@@ -1709,7 +1709,7 @@ html body .val-primary-nav{
         </div>
         <div class="ws-item" onclick="openEmailIntelligence()">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg></div>
-          <div class="ws-item-text"><div class="ws-item-title">Email Intelligence</div><div class="ws-item-sub">Priority inbox, rules, and drafts</div></div>
+          <div class="ws-item-text"><div class="ws-item-title">Executive Inbox</div><div class="ws-item-sub">Decisions, drafts, and rules</div></div>
         </div>
         <div class="ws-item" onclick="openIntegrationStatus()">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
@@ -1812,7 +1812,7 @@ html body .val-primary-nav{
         <div class="menu-sep"></div>
         <div class="menu-hint">Workspaces</div>
         <button onclick="closeActionsMenu();openRelationshipReview()">Contacts <span>Radar</span></button>
-        <button onclick="closeActionsMenu();openEmailIntelligence()">Email AI <span>Triage</span></button>
+        <button onclick="closeActionsMenu();openEmailIntelligence()">Executive Inbox <span>Communications</span></button>
         <button onclick="closeActionsMenu();closeDetail()">Home <span>Reset View</span></button>
         <div class="menu-sep"></div>
         <div class="menu-hint">Utilities</div>
@@ -1967,7 +1967,7 @@ html body .val-primary-nav{
           <div class="val-project-list">
             <button class="val-project-row"><span class="val-project-icon">↗</span><span><strong>VAL Platform</strong><small>Evidence and briefing system</small></span><em class="up">Momentum</em></button>
             <button class="val-project-row"><span class="val-project-icon">↗</span><span><strong>Relationship Engine</strong><small>People create velocity</small></span><em class="up">Momentum</em></button>
-            <button class="val-project-row"><span class="val-project-icon risk">↘</span><span><strong>Email Intelligence</strong><small>Evidence before actions</small></span><em class="risk">Watching</em></button>
+            <button class="val-project-row"><span class="val-project-icon risk">↘</span><span><strong>Executive Inbox</strong><small>Decisions before email management</small></span><em class="risk">Watching</em></button>
           </div>
         </article>
         <article class="val-dash-card momentum">
@@ -2264,7 +2264,7 @@ var dashboardStudioCategories=[
   {id:'automations',label:'Automations',helper:'Review automation ideas safely before anything new is built.'},
   {id:'add_something_new',label:'Add Something New',helper:'New capabilities become premium/admin-reviewed requests.'}
 ];
-var dashboardStudioFeatures=['Dashboard','Calendar','Email Intelligence','CRM','Contacts','Tasks','Relationships','Transcripts','Voice','Lead Scraper','Meeting Assistant','Documents','Reports'];
+var dashboardStudioFeatures=['Dashboard','Calendar','Executive Inbox','CRM','Contacts','Tasks','Relationships','Transcripts','Voice','Lead Scraper','Meeting Assistant','Documents','Reports'];
 function dashboardStudioScopePrefix(){
   var parts=[];
   if(dashboardStudioDraftScope.category)parts.push('Category: '+dashboardStudioDraftScope.category);
@@ -2548,7 +2548,7 @@ function openPriorityReview(){
     +'<section class="exec-card"><h3>Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline opportunities loaded yet.</li>')+'</ul></section>'
     +'<section class="exec-card"><h3>Recommended Actions</h3><p>Start with the highest-friction item: overdue commitments, next meeting prep, then relationship drift.</p><p>'+drafts.length+' draft'+(drafts.length===1?'':'s')+' waiting for approval.</p></section>'
     +'</div>';
-  openExecutiveWorkspace({id:'priorityWorkspace',title:'Priority Review',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Email Intelligence</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'priorityWorkspace',title:'Priority Review',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Executive Inbox</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
 }
 function openLeadIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Scrape Employers</h3><p>Would this company benefit from GOALL?</p><p>Search by industry, market, and company size.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Employer leads keep the existing scoring, review, automation, and import workflow.</p></section><section class="exec-card"><h3>CRM Route</h3><p>The existing employer pipeline and stage remain unchanged.</p></section></div>';
@@ -2609,14 +2609,14 @@ function openOpportunityIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Hidden Opportunities</h3><p>Relationship and pipeline signals can reveal revenue paths that are not explicit deals yet.</p></section><section class="exec-card"><h3>Stalled Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline data loaded yet.</li>')+'</ul></section><section class="exec-card"><h3>Next Best Action</h3><p>Review pipeline, draft follow-up, or create a task tied to the opportunity.</p></section></div>';
   openExecutiveWorkspace({id:'opportunityWorkspace',title:'Opportunity Intelligence',body:body,footer:'<button class="alert-btn primary" onclick="askPipeline()">Review Pipeline</button><button class="alert-btn" onclick="openLeadIntelligence()">Lead Intelligence</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'opportunityWorkspace\')">Close</button>'});
 }
-var emailIntel={emails:[],rules:[],summary:{},tab:'priority',selected:null,inbox:{query:'',results:[],selected:null,answer:''}};
+var emailIntel={emails:[],rules:[],summary:{},tab:'attention',selected:null,inbox:{query:'',results:[],selected:null,answer:''}};
 function openEmailIntelligence(){
-  openExecutiveWorkspace({id:'emailOverlay',title:'Email AI',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the email from Bill about next week’s event..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find emails, summarize a thread, draft a reply, or prepare a safe forward draft.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Gmail sync status...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading Email AI...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Draft Message</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Gmail</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">API Keys & Connections</button><button class="alert-btn" onclick="openIntegrationStatus()">Integration Status</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
+  openExecutiveWorkspace({id:'emailOverlay',title:'Executive Inbox',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Executive Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the thread with Greg about next Thursday..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find a conversation, summarize it, prepare a reply, or turn it into a task. Gmail and Outlook are active; LinkedIn context belongs here as soon as it is connected.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Executive Inbox...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading active conversations...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Compose Draft</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Inbox</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Connections</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
 function connectGmail(){
   window.open(PROXY+'/auth/google','_blank','noopener');
-  addSys('Opening Gmail connection. Choose the Google account, approve Gmail permissions, then return here and click Email AI.');
+  addSys('Opening Gmail connection. Choose the Google account, approve Gmail permissions, then return here and open Executive Inbox.');
 }
 function connectMicrosoft(){
   window.open(PROXY+'/auth/microsoft','_blank','noopener');
@@ -2624,15 +2624,15 @@ function connectMicrosoft(){
 }
 function loadEmailIntelligence(force){
   var status=document.getElementById('emailSyncStatus');
-  if(status)status.innerHTML=force?'Refreshing Gmail now. Pulling at least the last 48 hours...':'Loading Gmail sync status...';
-  apiFetch(PROXY+(force?'/api/email/gmail/refresh':'/api/email/intelligence?limit=30'),force?{method:'POST'}:undefined).then(function(d){
+  if(status)status.innerHTML=force?'Refreshing active conversations from the last 14 days...':'Loading Executive Inbox...';
+  apiFetch(PROXY+(force?'/api/email/gmail/refresh':'/api/email/intelligence?limit=60'),force?{method:'POST'}:undefined).then(function(d){
     if(!d.ok){
       emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
-      var msg=(d.errors&&d.errors.length?d.errors.join('<br>'):(d.error||'Connect Gmail to activate Email AI.'));
+      var msg=(d.errors&&d.errors.length?d.errors.join('<br>'):(d.error||'Connect Gmail to activate Executive Inbox.'));
       renderEmailSyncStatus(d);
       document.getElementById('emailTabs').innerHTML='';
       document.getElementById('emailList').innerHTML='<div class="email-item active"><div class="email-item-subject">Gmail needs connection</div><div class="email-item-meta">'+docSafe(msg)+'</div></div>';
-      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Email AI</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Email AI again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">API Keys & Connections</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+      document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>Connect Gmail for Executive Inbox</h3><div class="email-reason">'+docSafe(msg)+'<br><br>Click <strong>Connect Gmail</strong>, choose the Google account, approve Gmail permissions, then return to VAL and open Executive Inbox again.</div><div class="email-actions"><button class="primary" onclick="connectGmail()">Connect Gmail</button><button onclick="connectMicrosoft()">Connect Outlook</button><button onclick="openKeysPanel()">Connections</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
       return;
     }
     emailIntel.emails=d.emails||[];emailIntel.rules=d.rules||[];emailIntel.summary=d.summary||{};
@@ -2653,10 +2653,10 @@ function renderEmailSyncStatus(data){
     'Fetched: '+(g.fetchedCount!=null?g.fetchedCount:(g.recentInboxCount||0)),
     'Analyzed: '+(g.analyzedCount!=null?g.analyzedCount:((data&&data.emails&&data.emails.length)||0)),
     'Evidence: '+(g.evidenceCaptured!=null?g.evidenceCaptured:((data&&data.summary&&data.summary.evidenceCaptured)||0)),
-    g.lastQuery?'Query: '+g.lastQuery:'',
+    'Window: '+((data&&data.summary&&data.summary.activeWindow)||'14-day active conversations'),
     g.error?'Error: '+g.error:''
   ].filter(Boolean);
-  el.innerHTML='<strong>Gmail Sync</strong><div style="font-size:12px;line-height:1.55;color:#334155;margin-top:4px">'+bits.map(docSafe).join(' · ')+'</div>';
+  el.innerHTML='<strong>Communications Sync</strong><div style="font-size:12px;line-height:1.55;color:#334155;margin-top:4px">'+bits.map(docSafe).join(' · ')+'</div>';
 }
 function runInboxCommand(){
   var input=document.getElementById('inboxCommandInput'),q=input&&input.value.trim(),status=document.getElementById('inboxCommandStatus');
@@ -2701,38 +2701,76 @@ function inboxCommandAction(action,extra){
 }
 function emailTabs(){
   return [
-    ['priority','Priority Inbox'],['drafts','Drafts Prepared'],['waiting','Waiting on Response'],['forward','Forwarding Suggestions'],['ignored','Ignored / Low Priority'],['suggestions','Rule Suggestions'],['rules','Saved Rules']
+    ['attention','Needs My Attention'],['drafts','Drafts'],['rules','Rules']
   ];
 }
 function emailsForTab(tab){
   var e=emailIntel.emails||[];
-  if(tab==='priority')return e.filter(x=>['needs_attention','needs_reply','unknown'].includes(x.classification));
+  if(tab==='attention')return e.filter(x=>['needs_attention','needs_reply','waiting_on_response','forward_to_team','appointment_recap_needed','relationship_context'].includes(x.classification));
   if(tab==='drafts')return e.filter(x=>x.classification==='needs_reply'||x.classification==='appointment_recap_needed');
-  if(tab==='waiting')return e.filter(x=>x.classification==='waiting_on_response');
-  if(tab==='forward')return e.filter(x=>x.classification==='forward_to_team');
-  if(tab==='ignored')return e.filter(x=>['ignored','low_priority','solicitation','spam_like'].includes(x.classification));
   return e;
+}
+function emailTabIds(){return emailTabs().map(function(t){return t[0];});}
+function emailRiskIfIgnored(e){
+  var c=String(e.classification||'');
+  if(c==='waiting_on_response')return 'A follow-up loop may stay open and lose momentum.';
+  if(c==='needs_reply')return 'Someone may be waiting on a decision or answer from you.';
+  if(c==='forward_to_team')return 'The right person may not get the context in time.';
+  if(c==='appointment_recap_needed')return 'A meeting recap or promised next step may get missed.';
+  if(c==='needs_attention')return 'This may affect money, trust, timing, or a sensitive relationship.';
+  return 'It may quietly fall out of view.';
+}
+function emailConversationSummary(e){
+  return e.bodyPreview||e.snippet||'VAL found the conversation, but there is not enough readable body text to summarize yet.';
 }
 function renderEmailIntelligence(){
   var tabs=document.getElementById('emailTabs'), list=document.getElementById('emailList');
   if(!tabs||!list)return;
+  if(!emailTabIds().includes(emailIntel.tab))emailIntel.tab='attention';
   tabs.innerHTML=emailTabs().map(function(t){return `<button class="${emailIntel.tab===t[0]?'active':''}" onclick="emailIntel.tab='${t[0]}';renderEmailIntelligence()">${t[1]}</button>`;}).join('');
   if(emailIntel.tab==='rules'){renderEmailRules();return;}
-  if(emailIntel.tab==='suggestions'){renderRuleSuggestions();return;}
   var rows=emailsForTab(emailIntel.tab);
-  if(!rows.length){list.innerHTML='<div class="email-item">Nothing in this section right now.</div>';document.getElementById('emailDetail').innerHTML='<div class="email-card"><h3>All clear</h3><div class="email-reason">VAL did not find anything that needs your attention in this section.</div></div>';return;}
+  if(!rows.length){renderExecutiveInboxEmpty();return;}
   if(!emailIntel.selected||!rows.some(function(e){return e.messageId===emailIntel.selected.messageId;}))emailIntel.selected=rows[0];
-  list.innerHTML=rows.map(function(e){return `<div class="email-item ${emailIntel.selected&&emailIntel.selected.messageId===e.messageId?'active':''}" onclick="selectEmail('${docSafe(e.messageId)}')"><div class="email-item-top"><span>${docSafe(e.classification||'unknown')}</span><span>${docSafe(e.confidence||'')}</span></div><div class="email-item-subject">${docSafe(e.subject||'(No subject)')}</div><div class="email-item-meta">${docSafe(e.from?.name||e.from?.email||'Unknown sender')} · ${docSafe(e.reason||'')}</div></div>`;}).join('');
+  list.innerHTML=rows.map(function(e){return `<div class="email-item ${emailIntel.selected&&emailIntel.selected.messageId===e.messageId?'active':''}" onclick="selectEmail('${docSafe(e.messageId)}')"><div class="email-item-top"><span>${docSafe(emailDecisionLabel(e))}</span><span>${docSafe(emailRelativeTime(e.receivedAt||e.date))}</span></div><div class="email-item-subject">${docSafe(e.from?.name||e.from?.email||'Unknown sender')}</div><div class="email-item-meta">${docSafe(e.subject||'(No subject)')}<br>${docSafe(e.reason||'')}</div></div>`;}).join('');
   renderEmailDetail(emailIntel.selected);
+}
+function renderExecutiveInboxEmpty(){
+  var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
+  var analyzed=(emailIntel.emails||[]).slice(0,8);
+  list.innerHTML=analyzed.length?analyzed.map(function(e){return `<div class="email-item" onclick="selectEmail('${docSafe(e.messageId)}')"><div class="email-item-top"><span>${docSafe(e.classification||'reviewed')}</span><span>${docSafe(emailRelativeTime(e.receivedAt||e.date))}</span></div><div class="email-item-subject">${docSafe(e.from?.name||e.from?.email||'Unknown sender')}</div><div class="email-item-meta">${docSafe(e.subject||'(No subject)')}</div></div>`;}).join(''):'<div class="email-item">No active conversations found.</div>';
+  var s=emailIntel.summary||{}, g=(emailIntel.providers&&emailIntel.providers.gmail)||{};
+  detail.innerHTML='<div class="email-card"><h3>All clear for decisions</h3><div class="email-reason">VAL scanned '+docSafe(String(g.analyzedCount!=null?g.analyzedCount:(s.total||0)))+' active conversations from the last 14 days and did not find one that crossed the decision threshold. Recent analyzed conversations are still shown on the left so the page never hides context from you.</div><div class="email-actions"><button class="primary" onclick="refreshGmailNow()">Refresh Inbox</button><button onclick="emailIntel.tab=&quot;rules&quot;;renderEmailIntelligence()">Review Rules</button></div></div>';
 }
 function selectEmail(id){
   emailIntel.selected=(emailIntel.emails||[]).find(function(e){return e.messageId===id;})||emailIntel.selected;
   renderEmailIntelligence();
 }
+function emailDecisionLabel(e){
+  var map={needs_attention:'Decision',needs_reply:'Reply needed',waiting_on_response:'Follow up',forward_to_team:'Delegate',appointment_recap_needed:'Recap',relationship_context:'Relationship'};
+  return map[e.classification]||'Reviewed';
+}
+function emailRelativeTime(value){
+  if(!value)return '';
+  var d=new Date(value),diff=Date.now()-d.getTime();
+  if(isNaN(d.getTime()))return '';
+  var h=Math.floor(diff/3600000),days=Math.floor(diff/86400000);
+  if(h<1)return 'Just now';
+  if(h<24)return h+'h ago';
+  if(days<14)return days+'d ago';
+  return d.toLocaleDateString();
+}
 function renderEmailDetail(e){
   var detail=document.getElementById('emailDetail');if(!detail)return;
   if(!e){detail.innerHTML='';return;}
-  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(e.classification||'unknown')}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why VAL flagged it:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>Recommended action:</strong> ${docSafe(e.recommendedAction||'Review this email.')}</div><div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">Draft Reply</button><button onclick="emailAction('forward')">Forward</button><button onclick="confirmIgnoreFuture()">Ignore in Future</button><button onclick="confirmAutoNext()">Do This Automatically Next Time</button><button onclick="emailAction('track_response')">Track Response</button><button onclick="emailAction('task_created')">Add Task</button></div><div class="email-preview">${docSafe(e.bodyPreview||e.snippet||'No preview available.')}</div></div>`;
+  var contact=e.matchedContact||{};
+  detail.innerHTML=`<div class="email-card"><h3>${docSafe(e.subject||'(No subject)')}</h3><div><span class="email-pill">${docSafe(e.provider||'email')}</span><span class="email-pill">${docSafe(emailDecisionLabel(e))}</span><span class="email-pill">${docSafe(e.confidence||'medium')}</span>${e.requiresApproval?'<span class="email-pill">Approval required</span>':''}</div><div class="email-reason"><strong>From:</strong> ${docSafe(e.from?.name||'')} ${docSafe(e.from?.email||'')}<br><strong>Why you are seeing this:</strong> ${docSafe(e.reason||'Review recommended.')}<br><strong>If ignored:</strong> ${docSafe(emailRiskIfIgnored(e))}<br><strong>VAL recommends:</strong> ${docSafe(e.recommendedAction||'Review this conversation.')}</div><div class="email-actions"><button class="primary" onclick="emailAction('draft_reply')">Approve Reply Draft</button><button onclick="emailAction('draft_reply')">Edit</button><button onclick="dismissEmail()">Dismiss</button><button onclick="emailAction('track_response')">Track Follow-up</button><button onclick="emailAction('task_created')">Create Task</button><button onclick="confirmAutoNext()">Make Rule</button></div><div class="email-reason"><strong>Summary</strong><br>${docSafe(emailConversationSummary(e))}</div><div class="email-reason"><strong>Relationship context</strong><br>Relationship: ${docSafe(contact.name||e.from?.name||'Not linked yet')}<br>Open tasks: ${docSafe(contact.openTasks||'No linked tasks found yet')}<br>Calendar: ${docSafe(contact.nextMeeting||'No linked meeting found yet')}<br>LinkedIn: ${docSafe(contact.linkedin||'Ready for future LinkedIn message context')}</div><div class="email-preview">${docSafe(e.bodyPreview||e.snippet||'No preview available.')}</div></div>`;
+}
+function dismissEmail(){
+  var e=emailIntel.selected;if(!e)return;
+  e.classification='low_priority';e.reason='Dismissed from Needs My Attention.';
+  addSys('Dismissed from Executive Inbox.');
+  renderEmailIntelligence();
 }
 function emailAction(action){
   apiFetch(PROXY+'/api/email/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actionType:action,email:emailIntel.selected})})
@@ -2762,12 +2800,18 @@ function confirmIgnoreFuture(){
 }
 function renderEmailRules(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
-  list.innerHTML='<div class="email-item">Saved Rules</div>';
+  list.innerHTML='<div class="email-item active"><div class="email-item-subject">Teach Executive Inbox</div><div class="email-item-meta">Plain-English rules VAL should remember.</div></div><div class="email-item" onclick="renderRuleSuggestions()"><div class="email-item-subject">Rule suggestions</div><div class="email-item-meta">Patterns VAL has noticed.</div></div>';
   var rules=emailIntel.rules||[];
-  detail.innerHTML='<div class="email-card"><h3>Saved Rules</h3><div class="rule-list">'+(rules.length?rules.map(function(r){return `<div class="rule-row"><strong>${docSafe(r.ruleName||r.rule_name)}</strong><div>${docSafe(r.ruleType||r.rule_type)} · ${docSafe(r.approvalMode||r.approval_mode)} · ${r.isActive!==false?'Active':'Disabled'}</div><div>Trigger: ${docSafe(JSON.stringify(r.conditions||r.conditions_json||{}))}</div><div>Action: ${docSafe(JSON.stringify(r.actions||r.actions_json||{}))}</div><div class="email-actions"><button onclick="toggleEmailRule('${r.id}',${r.isActive!==false?'false':'true'})">${r.isActive!==false?'Disable Rule':'Enable Rule'}</button></div></div>`;}).join(''):'<div class="email-reason">No saved rules yet.</div>')+'</div></div>';
+  detail.innerHTML='<div class="email-card"><h3>Rules</h3><div class="email-reason">Rules should read like instructions you would give an assistant: never ignore client emails, invoices go to accounting, anything mentioning benefits is high priority, or draft replies but never send automatically.</div><div class="rule-list">'+(rules.length?rules.map(function(r){return `<div class="rule-row"><strong>${docSafe(r.ruleName||r.rule_name)}</strong><div>${r.isActive!==false?'Enabled':'Disabled'}</div><div>${docSafe(rulePlainEnglish(r))}</div><div class="email-actions"><button onclick="toggleEmailRule('${r.id}',${r.isActive!==false?'false':'true'})">${r.isActive!==false?'Disable':'Enable'}</button><button onclick="deleteEmailRule('${r.id}')">Delete</button></div></div>`;}).join(''):'<div class="email-reason">No saved rules yet. Start with something simple like: Never ignore emails from clients.</div>')+'</div></div>';
+}
+function rulePlainEnglish(r){
+  return (r.ruleName||r.rule_name)||((r.ruleType||r.rule_type||'Rule')+': '+JSON.stringify(r.conditions||r.conditions_json||{}));
 }
 function toggleEmailRule(id,isActive){
   apiFetch(PROXY+'/api/email/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({isActive:isActive})}).then(loadEmailIntelligence);
+}
+function deleteEmailRule(id){
+  apiFetch(PROXY+'/api/email/rules/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({isActive:false,deleted:true})}).then(loadEmailIntelligence);
 }
 function renderRuleSuggestions(){
   var list=document.getElementById('emailList'),detail=document.getElementById('emailDetail');
@@ -6725,10 +6769,10 @@ function sendMessage(){
   }
   if(/\b(what emails need attention|emails? need|email intelligence|inbox attention)\b/i.test(msg)){
     inp.value='';inp.style.height='auto';
-    openDetailWithTitle('Email Intelligence');
+    openDetailWithTitle('Executive Inbox');
     addMsg(msg,true);
-    addMsg('Email Intelligence can separate needs-reply, waiting-on-response, drafts, forwarding suggestions, and low-priority messages.',false);
-    addWorkspaceChatButton('Open Email Intelligence',openEmailIntelligence);
+    addMsg('Executive Inbox turns email into decisions, drafts, and plain-English rules across active conversations.',false);
+    addWorkspaceChatButton('Open Executive Inbox',openEmailIntelligence);
     return;
   }
   if(/\b(what should i do today|start my day|priority review|what should i do now)\b/i.test(msg)){
