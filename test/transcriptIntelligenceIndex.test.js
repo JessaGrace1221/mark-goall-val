@@ -184,6 +184,10 @@ test('exposes transcript intake diagnostics for webhook and upload tracing',()=>
   assert.match(ui,/Accepted webhooks without transcript text/);
   assert.match(ui,/Accepted, no transcript text/);
   assert.match(ui,/Recent intake audit/);
+  assert.match(ui,/onclick="renderTranscriptIntakeStatus\(\)">Intake Status/);
+  assert.match(dashboard,/function testTranscriptWebhook/);
+  assert.match(dashboard,/Run Test/);
+  assert.match(dashboard,/Recent webhook\/storage receipts/);
 });
 
 test('recovers transcript-shaped content from existing VAL storage',()=>{
