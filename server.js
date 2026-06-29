@@ -1073,6 +1073,12 @@ function saveValStore(store){ writeJson(STORE_FILE,store); }
 function uuid(prefix){
   return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
 }
+function sessionTokenId(token=''){
+  return String(token||'').split('__uid__')[0]||'';
+}
+function sessionTokenUserId(token=''){
+  return String(token||'').split('__uid__')[1]||'';
+}
 function parseCookies(req){
   return String(req.headers.cookie||'').split(';').reduce((acc,part)=>{
     const i=part.indexOf('=');
@@ -1817,6 +1823,17 @@ async function findUserByEmail(email){
   const user=(valStore().users||[]).find(u=>String(u.email||'').toLowerCase()===normalized);
   return user?{id:user.id,email:user.email,name:user.name,role:user.role,passwordHash:user.passwordHash,passwordSetAt:user.passwordSetAt}:null;
 }
+async function findUserById(userId){
+  const id=String(userId||'').trim();
+  if(!id)return null;
+  if(pgPool){
+    const r=await dbQuery('select * from val_users where id=$1 limit 1',[id]);
+    const row=r&&r.rows&&r.rows[0];
+    return row?{id:row.id,email:row.email,name:row.name,role:row.role,passwordHash:row.password_hash,passwordSetAt:row.password_set_at}:null;
+  }
+  const user=(valStore().users||[]).find(u=>String(u.id)===id);
+  return user?{id:user.id,email:user.email,name:user.name,role:user.role,passwordHash:user.passwordHash,passwordSetAt:user.passwordSetAt}:null;
+}
 async function storePasswordSetupToken(userId,tokenHash,expiresAt){
   if(pgPool){
     await dbQuery('update val_users set password_reset_token_hash=$1,password_reset_expires_at=$2,updated_at=now() where id=$3',[tokenHash,expiresAt,userId]);
@@ -2298,25 +2315,32 @@ async function createSession(userId,req=null){
     store.sessions.push({id,userId,clientSlug:CLIENT_CONFIG.clientSlug,tenantId:tenantId(),ipAddress:req?requestIp(req):'',userAgent:req?requestUserAgent(req):'',lastActiveAt:new Date().toISOString(),expiresAt:expires});
     saveValStore(store);
   }
-  return id;
+  return `${id}__uid__${userId}`;
 }
 async function getSessionUser(req){
   const signed=parseCookies(req)[SESSION_COOKIE];
-  const sessionId=verifySignedSession(signed);
-  if(!sessionId) return null;
+  const sessionToken=verifySignedSession(signed);
+  if(!sessionToken) return null;
+  const sessionId=sessionTokenId(sessionToken);
+  const signedUserId=sessionTokenUserId(sessionToken);
   if(pgPool){
     await dbQuery('update val_sessions set last_active_at=now() where id=$1 and tenant_id=$2',[sessionId,tenantId()]).catch(()=>{});
     const r=await dbQuery(`select u.id,u.email,u.name,u.role from val_sessions s join val_users u on u.id=s.user_id where s.id=$1 and s.tenant_id=$2 and s.expires_at>now() limit 1`,[sessionId,tenantId()]);
-    return r&&r.rows&&r.rows[0]?publicUser(r.rows[0]):null;
+    if(r&&r.rows&&r.rows[0])return publicUser(r.rows[0]);
+    if(signedUserId){
+      const user=await findUserById(signedUserId);
+      if(user)return publicUser(user);
+    }
+    return null;
   }
   const store=valStore();
   const session=(store.sessions||[]).find(s=>s.id===sessionId&&(s.tenantId||CLIENT_CONFIG.clientSlug)===tenantId()&&new Date(s.expiresAt).getTime()>Date.now());
-  if(!session) return null;
-  session.lastActiveAt=new Date().toISOString();saveValStore(store);
-  return publicUser((store.users||[]).find(u=>u.id===session.userId));
+  if(session){session.lastActiveAt=new Date().toISOString();saveValStore(store);return publicUser((store.users||[]).find(u=>u.id===session.userId));}
+  if(signedUserId)return publicUser((store.users||[]).find(u=>u.id===signedUserId));
+  return null;
 }
 async function destroySession(req){
-  const sessionId=verifySignedSession(parseCookies(req)[SESSION_COOKIE]);
+  const sessionId=sessionTokenId(verifySignedSession(parseCookies(req)[SESSION_COOKIE]));
   if(!sessionId) return;
   if(pgPool) await dbQuery('delete from val_sessions where id=$1 and tenant_id=$2',[sessionId,tenantId()]);
   else{
