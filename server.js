@@ -17247,7 +17247,7 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
   if(!transcriptText.trim()){
     await auditLog({req,action:'transcript_webhook_received_without_text',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',eventId:payload.id||payload.eventId||payload.event_id||'',krispDetected:!!payload.metadata?.krispDetected,keys:Object.keys(req.body||{}).slice(0,40)},success:true}).catch(()=>{});
-    return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,needsTranscriptText:true,message:'Webhook received, but no transcript or note text was present in the payload. VAL accepted the event so the sender does not retry it as failed.'});
+    return res.status(200).json({ok:true,accepted:true,saved:false,processed:false,needsTranscriptText:true,message:'Webhook received, but no transcript or note text was present in the payload. VAL accepted the event so the sender does not retry it as failed.'});
   }
   try{
     const saved=await saveTranscript({...payload,reviewStatus:payload.reviewStatus||payload.review_status||'new'});
@@ -17259,12 +17259,12 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
     try{
       const processed=await processTranscriptPayload({...payload,savedTranscriptId:saved.id,meetingMatch});
       await updateTranscriptMetadata(saved.id,{analysis:processed.analysis,summary:processed.analysis?.summary||'',actionItems:processed.analysis?.actionItems||[],people:processed.analysis?.people||[],reviewStatus:'needs_review',processedAt:new Date().toISOString()});
-      return res.status(201).json({ok:true,...saved,...processed,saved:true,processed:true});
+      return res.status(200).json({ok:true,...saved,...processed,saved:true,processed:true});
     }catch(processError){
       console.error('[transcripts] processing failed after durable save',{id:saved.id,error:processError.message});
       const fallback={executiveSummary:transcriptText.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Processing failed; transcript retained for review.',keyDecisions:[],openQuestions:[],relationshipUpdates:[]};
       await saveTranscriptSummary(saved.id,fallback).catch(()=>{});await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});await logTranscriptAction(saved.id,'failed_action','pipeline','failed',processError.message).catch(()=>{});
-      return res.status(202).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch});
+      return res.status(200).json({ok:true,...saved,saved:true,processed:false,processingError:processError.message,meetingMatch});
     }
   }catch(e){console.error('[transcripts] save failed',e);res.status(500).json({ok:false,error:e.message});}
 });

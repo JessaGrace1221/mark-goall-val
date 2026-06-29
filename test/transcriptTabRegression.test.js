@@ -12,6 +12,7 @@ test('webhook accepts common transcript payload shapes and accepts note-only eve
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
   assert.match(server,/function parseTranscriptWebhookRequestBody/);
   assert.match(server,/express\.raw\(\{type:'\*\/\*',limit:'50mb'\}\)/);
+  assert.match(server,/return res\.status\(200\)\.json\(\{ok:true,accepted:true/);
   for(const field of ['rawText','raw_text','transcriptText','transcript_text','text','content','body','segments','sentences','utterances','speakerTurns'])assert.ok(server.includes(field));
   assert.match(server,/transcript_webhook_received_without_text/);
   assert.match(server,/needsTranscriptText/);
