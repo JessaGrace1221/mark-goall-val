@@ -7638,6 +7638,123 @@ async function fetchGhlOpportunitiesForAccount(account,{status='open',limit=100}
   return ghlMcp.findOpenOpportunitiesForAccount(account,{status,limit});
 }
 
+function ghlArray(data,...keys){
+  for(const key of keys){
+    if(Array.isArray(data?.[key])) return data[key];
+  }
+  if(Array.isArray(data?.data)) return data.data;
+  if(Array.isArray(data)) return data;
+  return [];
+}
+
+function ghlPipelineId(o={}){
+  return String(o.pipelineId||o.pipeline_id||o.pipeline?.id||o.pipeline?._id||'');
+}
+
+function ghlPipelineStageId(o={}){
+  return String(o.pipelineStageId||o.pipeline_stage_id||o.stageId||o.stage_id||o.pipelineStage?.id||o.pipelineStage?._id||o.stage?.id||o.stage?._id||'');
+}
+
+function ghlPipelineName(o={}){
+  return o.pipeline?.name||o.pipeline?.title||o.pipelineName||o.pipeline_name||'Unknown Pipeline';
+}
+
+function ghlStageName(o={}){
+  return o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage||'Unknown Stage';
+}
+
+async function fetchGhlPipelinesForAccount(account){
+  const data=await ghlForAccount(account,'GET',`/opportunities/pipelines?locationId=${encodeURIComponent(account.locationId)}`);
+  return ghlArray(data,'pipelines').map(p=>({
+    id:String(p.id||p._id||''),
+    name:p.name||p.title||'Unnamed Pipeline',
+    stages:ghlArray(p,'stages','pipelineStages').map(s=>({
+      id:String(s.id||s._id||''),
+      name:s.name||s.title||'Unnamed Stage'
+    })).filter(s=>s.id||s.name)
+  })).filter(p=>p.id||p.name);
+}
+
+function ghlOpportunityCountFromSearch(data){
+  const meta=data?.meta||{};
+  const total=meta.total??meta.totalCount??data?.total??data?.count;
+  const numeric=Number(total);
+  if(Number.isFinite(numeric)) return numeric;
+  return ghlArray(data,'opportunities').length;
+}
+
+async function countGhlStageForAccount(account,{pipelineId,stageId,status='open'}={}){
+  const base={location_id:account.locationId,status,limit:'500'};
+  const variants=[
+    {...base,pipeline_id:pipelineId,pipeline_stage_id:stageId},
+    {locationId:account.locationId,status,limit:'500',pipelineId,pipelineStageId:stageId}
+  ];
+  for(const params of variants){
+    const qs=new URLSearchParams();
+    Object.entries(params).forEach(([key,value])=>{if(value)qs.set(key,value);});
+    const result=await ghlTryForAccount(account,'GET',`/opportunities/search?${qs.toString()}`);
+    if(result.ok) return {count:ghlOpportunityCountFromSearch(result.data),path:result.path};
+  }
+  return {count:0,path:'',error:'Stage count request failed'};
+}
+
+async function buildGhlPipelineBreakdownForAccount(account,pipelines,opportunities,{status='open'}={}){
+  const byPipeline=new Map();
+  pipelines.forEach(p=>{
+    byPipeline.set(p.id,{
+      id:p.id,
+      name:p.name,
+      accountSlug:account.slug,
+      accountLabel:account.label,
+      status,
+      total:0,
+      stages:p.stages.map(s=>({id:s.id,name:s.name,count:0}))
+    });
+  });
+
+  opportunities.forEach(o=>{
+    const pipelineId=o.pipelineId||'';
+    const stageId=o.pipelineStageId||'';
+    if(!byPipeline.has(pipelineId)){
+      byPipeline.set(pipelineId,{
+        id:pipelineId,
+        name:o.pipelineName||'Unknown Pipeline',
+        accountSlug:account.slug,
+        accountLabel:account.label,
+        status,
+        total:0,
+        stages:[]
+      });
+    }
+    const pipeline=byPipeline.get(pipelineId);
+    let stage=stageId ? pipeline.stages.find(s=>String(s.id)===String(stageId)) : null;
+    if(!stage){
+      stage={id:stageId,name:o.stage||'Unknown Stage',count:0};
+      pipeline.stages.push(stage);
+    }
+    pipeline.total+=1;
+    stage.count+=1;
+  });
+
+  const countTargets=[];
+  for(const pipeline of byPipeline.values()){
+    pipeline.stages.forEach(stage=>{
+      if(pipeline.id&&stage.id) countTargets.push({pipeline,stage});
+    });
+  }
+  const counts=await mapWithConcurrency(countTargets,4,item=>countGhlStageForAccount(account,{pipelineId:item.pipeline.id,stageId:item.stage.id,status}));
+  counts.forEach((result,index)=>{
+    const item=countTargets[index];
+    if(!item||!result) return;
+    item.stage.count=result.count;
+  });
+  for(const pipeline of byPipeline.values()){
+    const countedTotal=pipeline.stages.reduce((n,s)=>n+(Number(s.count)||0),0);
+    pipeline.total=countedTotal||pipeline.total;
+  }
+  return Array.from(byPipeline.values()).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+}
+
 async function fetchContactNotesForAccount(account,contactId,limit=25){
   if(!contactId)return [];
   const encoded=encodeURIComponent(contactId);
@@ -7655,7 +7772,7 @@ async function fetchContactNotesForAccount(account,contactId,limit=25){
 }
 
 async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
-  const stage=o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage||'Unknown Stage';
+  const stage=ghlStageName(o);
   const contactId=o.contact?.id||o.contactId;
   let notes=[];
   let contactEmail='';
@@ -7676,6 +7793,9 @@ async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
     name:o.name,
     status:o.status,
     stage,
+    pipelineId:ghlPipelineId(o),
+    pipelineStageId:ghlPipelineStageId(o),
+    pipelineName:ghlPipelineName(o),
     value:o.monetaryValue,
     contactName:o.contact?.name||o.contactName||'',
     contactId,
@@ -7699,21 +7819,32 @@ app.get('/api/pipeline',async(req,res)=>{
     }
     const accounts=await resolvedGhlAccounts();
     if(!accounts.length){
-      return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL account configuration'}});
+      return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],pipelines:[],pipelineSummary:'No GHL account configuration found.',_debug:{configured:false,error:'Missing GHL account configuration'}});
     }
+    const status=String(req.query.status||'open');
+    const limit=Math.max(1,Math.min(Number(req.query.limit||250)||250,500));
     const now=Date.now();
     const batches=await Promise.allSettled(accounts.map(async account=>{
-      const found=await fetchGhlOpportunitiesForAccount(account,{status:'open',limit:100});
-      const opps=found.data?.opportunities||[];
+      const [found,pipelineDefs]=await Promise.all([
+        fetchGhlOpportunitiesForAccount(account,{status,limit}),
+        fetchGhlPipelinesForAccount(account).catch(e=>({error:e.message,pipelines:[]}))
+      ]);
+      const opps=ghlArray(found.data,'opportunities');
       const enriched=await mapWithConcurrency(opps,6,o=>enrichGhlOpportunityForAccount(o,account,now));
-      return {account,path:found.path,attempts:found.attempts,opportunities:enriched,total:found.data?.meta?.total||opps.length};
+      const pipelines=await buildGhlPipelineBreakdownForAccount(account,Array.isArray(pipelineDefs)?pipelineDefs:[],enriched,{status});
+      return {account,path:found.path,attempts:found.attempts,opportunities:enriched,total:found.data?.meta?.total||opps.length,pipelines,pipelineDefinitionError:pipelineDefs.error||''};
     }));
     const successful=batches.filter(b=>b.status==='fulfilled').map(b=>b.value);
     const errors=batches.filter(b=>b.status==='rejected').map((b,i)=>({account:accounts[i]?.label,error:b.reason?.message||String(b.reason)}));
     const enriched=successful.flatMap(b=>b.opportunities);
+    const pipelines=successful.flatMap(b=>b.pipelines||[]);
+    const pipelineActive=pipelines.reduce((n,p)=>n+(Number(p.total)||0),0)||successful.reduce((n,b)=>n+b.total,0)||enriched.length;
     const stalled=enriched.filter(o=>o.stalled);
-    res.json({pipelineActive:successful.reduce((n,b)=>n+b.total,0)||enriched.length,stalledDeals:stalled.length,opportunities:enriched,_debug:{configured:true,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts})),errors}});
-  }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{error:e.message}});}
+    const pipelineSummary=pipelines.length
+      ? pipelines.map(p=>`${p.accountLabel} / ${p.name}: ${p.total} ${status} lead${p.total===1?'':'s'} (${p.stages.map(s=>`${s.name}: ${s.count}`).join(', ')||'no stages returned'})`).join('\n')
+      : `No ${status} pipeline leads returned from GHL.`;
+    res.json({pipelineActive,stalledDeals:stalled.length,opportunities:enriched,pipelines,pipelineSummary,_debug:{configured:true,status,limit,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts,pipelineDefinitionError:b.pipelineDefinitionError||''})),errors}});
+  }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[],pipelines:[],pipelineSummary:'Pipeline lookup failed: '+e.message,_debug:{error:e.message}});}
 });
 
 app.get('/api/debug/ghl-pipeline',async(req,res)=>{

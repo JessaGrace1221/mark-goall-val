@@ -7196,6 +7196,17 @@ function chat(msg,inp){
     });
   }
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active deals: '+dashData.pipelineActive+(dashData.stalledDeals?' ('+dashData.stalledDeals+' stalled)':'')+'.\n';
+  if(dashData.pipelines&&dashData.pipelines.length){
+    ctx+='GHL pipeline breakdown:\n';
+    dashData.pipelines.forEach(function(p){
+      ctx+='  - '+(p.name||'Pipeline')+(p.accountLabel?' | Account: '+p.accountLabel:'')+': '+(p.total||0)+' lead'+((p.total||0)===1?'':'s')+'.\n';
+      (p.stages||[]).forEach(function(s){
+        ctx+='    - '+(s.name||'Stage')+': '+(s.count||0)+'\n';
+      });
+    });
+  }else if(dashData.pipelineSummary){
+    ctx+='GHL pipeline breakdown: '+dashData.pipelineSummary+'\n';
+  }
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Pipeline ownership:\n';
     dashData.opportunities.slice(0,15).forEach(function(o){
@@ -7993,9 +8004,16 @@ function buildContext(){
   if(dashData.meetingsToday!==undefined) ctx+='Meetings today: '+dashData.meetingsToday+'.\n';
   if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
+  if(dashData.pipelines&&dashData.pipelines.length){
+    ctx+='GHL pipelines:\n';
+    dashData.pipelines.forEach(function(p){
+      ctx+='  - '+(p.name||'Pipeline')+': '+(p.total||0)+' lead'+((p.total||0)===1?'':'s')+'.\n';
+      (p.stages||[]).forEach(function(s){ctx+='    - '+(s.name||'Stage')+': '+(s.count||0)+'\n';});
+    });
+  }
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Visible lead ownership:\n';
-    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
+    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.pipelineName?' | Pipeline: '+o.pipelineName:'')+(o.stage?' | Stage: '+o.stage:'')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
   }
   return ctx;
 }
@@ -8238,7 +8256,8 @@ function askPipeline(){
     pipelineTriageQueue=opps;
     pipelineTriageIndex=0;
     var sync=ensurePipelineTasks(opps);
-    addMsg('I found '+opps.length+' active pipeline deal'+(opps.length===1?'':'s')+'. I created or matched a VAL task for each one, then I will review them one at a time.',false);
+    var breakdown=(d.pipelines||[]).map(function(p){return (p.name||'Pipeline')+': '+(p.total||0)+' lead'+((p.total||0)===1?'':'s')+' ('+(p.stages||[]).map(function(s){return (s.name||'Stage')+': '+(s.count||0);}).join(', ')+')';}).join('\n');
+    addMsg('I found '+opps.length+' active pipeline deal'+(opps.length===1?'':'s')+(breakdown?'\n\n'+breakdown:'')+'\n\nI created or matched a VAL task for each active opportunity, then I will review them one at a time.',false);
     if(sync.created||sync.existing)addSys('Pipeline tasks: '+sync.created+' created, '+sync.existing+' already existed.');
     presentPipelineItem();
   }).catch(function(){ask('Show my active pipeline deals one at a time. For each one, tell me the stage, what the notes say, and the best next action.');});
