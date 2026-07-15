@@ -8265,18 +8265,35 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
       contactMap.set(contactId,data.contact||data);
     }catch(_){}
   });
+  const dispositionRowByContact=new Map();
+  for(const [contactId,contact] of contactMap.entries()){
+    const contactFields=goallContactFieldValues(contact,fieldMap);
+    const dispositionDate=parseGoallMetricDate(contactFields.callDispositionUpdatedAt);
+    if(!contactFields.callDisposition||!dispositionDate) continue;
+    const candidates=rows.filter(row=>row.contactId===contactId);
+    let best=null;
+    candidates.forEach(row=>{
+      const rowDate=parseGoallMetricDate(row.dateUpdated||row.dateAdded);
+      if(!rowDate) return;
+      const distance=Math.abs(rowDate.getTime()-dispositionDate.getTime());
+      if(!best||distance<best.distance) best={row,distance};
+    });
+    if(best&&best.distance<=6*60*60*1000) dispositionRowByContact.set(contactId,best.row.id);
+  }
   return rows.map(row=>{
     const contact=contactMap.get(row.contactId);
     if(!contact) return row;
     const contactFields=goallContactFieldValues(contact,fieldMap);
     if(contactFields.callDispositionAgent) contactFields.callDispositionAgent=canonicalGoallCallerName(contactFields.callDispositionAgent,userMap);
     if(contactFields.assignedCallerFirstName) contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
+    const isDispositionRow=dispositionRowByContact.get(row.contactId)===row.id;
+    const rowContactFields=isDispositionRow?contactFields:{assignedCallerFirstName:contactFields.assignedCallerFirstName};
     return {
       ...row,
-      assignedToName:contactFields.callDispositionAgent||row.assignedToName,
+      assignedToName:(isDispositionRow&&contactFields.callDispositionAgent)||row.assignedToName,
       tags:Array.from(new Set([...(row.tags||[]),...(contact.tags||[])])),
       contact:{id:row.contactId,assignedTo:contact.assignedTo||'',assignedToName:userMap.get(String(contact.assignedTo||''))||'',tags:contact.tags||[]},
-      __goall:{...(row.__goall||{}),contactFields,customDispositionExposed:!!contactFields.callDisposition}
+      __goall:{...(row.__goall||{}),contactFields:rowContactFields,customDispositionExposed:!!rowContactFields.callDisposition}
     };
   });
 }

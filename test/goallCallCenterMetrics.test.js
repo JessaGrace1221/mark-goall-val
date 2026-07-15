@@ -56,6 +56,8 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
   assert.match(server,/Unknown GHL user/);
   assert.match(server,/contactCallDispositions/);
   assert.match(server,/uniqueContactIds/);
+  assert.match(server,/dispositionRowByContact/);
+  assert.match(server,/6\*60\*60\*1000/);
 });
 
 test('GOALL call-center metrics uses GHL conversation and contact field mapping',()=>{
