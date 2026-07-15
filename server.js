@@ -86,6 +86,8 @@ const ROCKETREACH_ENRICH_CONCURRENCY = Math.min(Math.max(Number(process.env.ROCK
 const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/api/v1';
 const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) || 10000;
+const APOLLO_PEOPLE_SEARCH_PAGES = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PAGES)||3,1),5);
+const APOLLO_PEOPLE_SEARCH_PER_PAGE = Math.min(Math.max(Number(process.env.APOLLO_PEOPLE_SEARCH_PER_PAGE)||25,10),100);
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -7359,19 +7361,29 @@ function normalizeCompanyForMatch(value){
 function apolloPersonTitles(){
   return [
     'Owner',
+    'Co-Owner',
     'Founder',
+    'Co-Founder',
     'CEO',
+    'Chief Executive Officer',
+    'COO',
+    'Chief Operating Officer',
     'President',
+    'Managing Member',
     'Managing Partner',
     'Partner',
     'Principal',
     'Practice Owner',
+    'Operator',
     'Executive Director',
     'General Manager',
     'Operations Manager',
     'Director of Operations',
+    'VP Operations',
+    'Vice President Operations',
     'HR Director',
     'Human Resources Director',
+    'Benefits Manager',
     'Office Manager'
   ];
 }
@@ -7395,12 +7407,41 @@ function normalizeApolloPerson(person,lead={}){
   };
 }
 
+function normalizeApolloOrganization(org={}){
+  const domain=org.primary_domain || org.website_url || org.domain || leadDomain(org.website_url||org.website||'');
+  return {
+    id:org.id || org.organization_id || org.account_id || '',
+    name:org.name || org.organization_name || org.company_name || '',
+    domain:leadDomain(domain||''),
+    website:org.website_url || org.website || (domain?`https://${domain}`:''),
+    city:org.city || '',
+    state:org.state || '',
+    country:org.country || '',
+    rawPreview:JSON.stringify(org).slice(0,1000)
+  };
+}
+
+function scoreApolloOrganization(org,lead){
+  let score=0;
+  const targetDomain=leadDomain(lead.website||'');
+  if(targetDomain && org.domain && targetDomain===org.domain) score+=140;
+  const targetCompany=normalizeCompanyForMatch(lead.organizationName||lead.name||'');
+  const orgCompany=normalizeCompanyForMatch(org.name||'');
+  if(targetCompany && orgCompany){
+    if(targetCompany===orgCompany) score+=100;
+    else if(targetCompany.includes(orgCompany) || orgCompany.includes(targetCompany)) score+=65;
+  }
+  const targetState=String(lead.state||lead.location||'').toLowerCase();
+  if(targetState && org.state && targetState.includes(String(org.state).toLowerCase())) score+=10;
+  return score;
+}
+
 function scoreApolloPerson(person,lead){
   let score=0;
   const title=String(person.title||'').toLowerCase();
-  if(/\b(owner|founder|ceo|chief executive|president)\b/.test(title)) score+=100;
+  if(/\b(owner|co-owner|founder|co-founder|ceo|chief executive|president|managing member|operator)\b/.test(title)) score+=100;
   else if(/\b(managing partner|partner|principal|practice owner|executive director)\b/.test(title)) score+=85;
-  else if(/\b(operations|general manager|office manager|human resources|hr director)\b/.test(title)) score+=60;
+  else if(/\b(coo|chief operating|operations|general manager|office manager|human resources|hr director|benefits manager)\b/.test(title)) score+=60;
   else if(/\b(manager|director)\b/.test(title)) score+=35;
   const targetDomain=leadDomain(lead.website||'');
   const personDomain=leadDomain(person.companyDomain||'');
@@ -7416,41 +7457,125 @@ function scoreApolloPerson(person,lead){
   return score;
 }
 
+function apolloHeaders(apolloKey){
+  return {
+    accept:'application/json',
+    'Content-Type':'application/json',
+    'Cache-Control':'no-cache',
+    'x-api-key':apolloKey,
+    'X-Api-Key':apolloKey,
+    Authorization:`Bearer ${apolloKey}`
+  };
+}
+
+async function apolloSearch(path,params,apolloKey,label){
+  const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}${path}?${params.toString()}`;
+  const response=await fetchWithTimeout(url,{method:'POST',headers:apolloHeaders(apolloKey)},APOLLO_REQUEST_TIMEOUT_MS,label);
+  const data=await readJsonResponse(response);
+  if(!response.ok) return {ok:false,status:response.status,error:data.message || data.error || `Apollo ${response.status}`,data};
+  return {ok:true,status:response.status,data};
+}
+
+function buildApolloPeopleParams({domain,organizationId,company,page=1,includeSimilar=true}={}){
+  const params=new URLSearchParams();
+  apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
+  ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
+  if(domain) params.append('q_organization_domains_list[]',domain);
+  if(organizationId) params.append('organization_ids[]',organizationId);
+  if(!domain && !organizationId && company) params.set('q_keywords',company);
+  params.set('include_similar_titles',includeSimilar?'true':'false');
+  params.set('page',String(page));
+  params.set('per_page',String(APOLLO_PEOPLE_SEARCH_PER_PAGE));
+  return params;
+}
+
+async function searchApolloPeople({domain,organizationId,company,lead,apolloKey,label,includeSimilar=true,pages=APOLLO_PEOPLE_SEARCH_PAGES}){
+  const allPeople=[];
+  const errors=[];
+  for(let page=1;page<=pages;page+=1){
+    const result=await apolloSearch('/mixed_people/api_search',buildApolloPeopleParams({domain,organizationId,company,page,includeSimilar}),apolloKey,`Apollo decision-maker lookup (${label}, page ${page})`);
+    if(!result.ok){
+      errors.push(result.error);
+      break;
+    }
+    const data=result.data||{};
+    const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
+    allPeople.push(...rawPeople.map(p=>normalizeApolloPerson(p,lead)).filter(p=>p.found));
+    const pagination=data.pagination||{};
+    const totalPages=Number(pagination.total_pages||pagination.totalPages||0);
+    if(!rawPeople.length || (totalPages && page>=totalPages)) break;
+  }
+  const ranked=allPeople
+    .map(p=>({...p,matchScore:scoreApolloPerson(p,lead),apolloSearchLabel:label}))
+    .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain) || organizationId)
+    .sort((a,b)=>b.matchScore-a.matchScore);
+  return {people:allPeople,ranked,errors};
+}
+
+async function lookupApolloOrganizations(lead,apolloKey){
+  const domain=leadDomain(lead.website||'');
+  const company=lead.organizationName||lead.name||'';
+  const searches=[];
+  if(domain){
+    const domainParams=new URLSearchParams();
+    domainParams.append('q_organization_domains_list[]',domain);
+    domainParams.set('page','1');
+    domainParams.set('per_page','10');
+    searches.push({label:'domain',params:domainParams});
+  }
+  if(company){
+    const nameParams=new URLSearchParams();
+    nameParams.set('q_organization_name',company);
+    nameParams.set('page','1');
+    nameParams.set('per_page','10');
+    searches.push({label:'company name',params:nameParams});
+  }
+  const orgs=[];
+  const errors=[];
+  for(const search of searches){
+    const result=await apolloSearch('/mixed_companies/search',search.params,apolloKey,`Apollo organization lookup (${search.label})`);
+    if(!result.ok){
+      errors.push(result.error);
+      continue;
+    }
+    const data=result.data||{};
+    orgs.push(...[...(data.organizations||[]),...(data.accounts||[]),...(data.companies||[])].map(normalizeApolloOrganization).filter(o=>o.id || o.name || o.domain));
+  }
+  const ranked=[...new Map(orgs.map(o=>[o.id||`${o.name}|${o.domain}`,{...o,matchScore:scoreApolloOrganization(o,lead)}])).values()]
+    .filter(o=>o.matchScore>=65 || (domain && o.domain===domain))
+    .sort((a,b)=>b.matchScore-a.matchScore);
+  return {organizations:ranked,errors};
+}
+
 async function lookupApolloDecisionMaker(lead={}){
   const apolloKey=await resolveIntegrationSecret('apollo','api_key',APOLLO_API_KEY);
   if(!apolloKey) return {configured:false,error:'APOLLO_API_KEY is not set'};
   const domain=leadDomain(lead.website||'');
   const company=lead.organizationName||lead.name||'';
-  const params=new URLSearchParams();
-  apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
-  ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
-  if(domain) params.append('q_organization_domains_list[]',domain);
-  if(!domain && company) params.set('q_keywords',company);
-  if(lead.state) params.append('organization_locations[]',lead.state);
-  else if(lead.location) params.append('organization_locations[]',lead.location);
-  params.set('include_similar_titles','false');
-  params.set('page','1');
-  params.set('per_page','10');
-  const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
-  const response=await fetchWithTimeout(url,{
-    method:'POST',
-    headers:{
-      accept:'application/json',
-      'Content-Type':'application/json',
-      'x-api-key':apolloKey,
-      Authorization:`Bearer ${apolloKey}`
-    }
-  },APOLLO_REQUEST_TIMEOUT_MS,'Apollo decision-maker lookup');
-  const data=await readJsonResponse(response);
-  if(!response.ok) return {configured:true,error:data.message || data.error || `Apollo ${response.status}`};
-  const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
-  const people=rawPeople.map(p=>normalizeApolloPerson(p,lead)).filter(p=>p.found);
-  const ranked=people
-    .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
-    .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain))
-    .sort((a,b)=>b.matchScore-a.matchScore);
-  if(!ranked.length) return {configured:true,error:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
-  return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:rawPeople.length};
+  const attempts=[];
+  const errors=[];
+  const runPeopleSearch=async(search)=>{
+    const result=await searchApolloPeople({...search,lead,apolloKey});
+    attempts.push({label:search.label,rawCount:result.people.length,matchCount:result.ranked.length,errors:result.errors});
+    errors.push(...result.errors);
+    return result.ranked;
+  };
+  if(domain){
+    const ranked=await runPeopleSearch({domain,company,label:'domain'});
+    if(ranked.length) return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:attempts.reduce((sum,a)=>sum+a.rawCount,0),attempts};
+  }
+  const organizationLookup=await lookupApolloOrganizations(lead,apolloKey).catch(e=>({organizations:[],errors:[e.message]}));
+  errors.push(...(organizationLookup.errors||[]));
+  for(const organization of (organizationLookup.organizations||[]).slice(0,3)){
+    const ranked=await runPeopleSearch({organizationId:organization.id,domain:'',company:organization.name||company,label:`organization:${organization.name||organization.id}`});
+    if(ranked.length) return {configured:true,data:{...ranked[0],apolloOrganization:organization},candidates:ranked.slice(0,3),rawCount:attempts.reduce((sum,a)=>sum+a.rawCount,0),attempts,organizations:organizationLookup.organizations.slice(0,3)};
+  }
+  if(company){
+    const ranked=await runPeopleSearch({company,label:'company keyword',pages:Math.min(APOLLO_PEOPLE_SEARCH_PAGES,2)});
+    if(ranked.length) return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:attempts.reduce((sum,a)=>sum+a.rawCount,0),attempts,organizations:organizationLookup.organizations?.slice?.(0,3)||[]};
+  }
+  const rawCount=attempts.reduce((sum,a)=>sum+a.rawCount,0);
+  return {configured:true,error:errors.length?`Apollo did not find a confident decision-maker match. Search notes: ${errors.slice(0,2).join(' | ')}`:'Apollo did not find a confident decision-maker match',rawCount,attempts,organizations:organizationLookup.organizations?.slice?.(0,3)||[]};
 }
 
 async function enrichProspectWithApollo(p){
@@ -7810,6 +7935,190 @@ async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
     stalled:(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000
   };
 }
+
+function goallMetricWindow(req){
+  const now=new Date();
+  const startParam=String(req.query.start||req.query.date||'').trim();
+  const endParam=String(req.query.end||req.query.date||'').trim();
+  const start=startParam?new Date(`${startParam}T00:00:00`):new Date(now);
+  start.setHours(0,0,0,0);
+  const end=endParam?new Date(`${endParam}T23:59:59`):new Date(now);
+  end.setHours(23,59,59,999);
+  return {start,end};
+}
+
+function goallMetricDate(value){
+  const raw=value?.dateAdded||value?.dateUpdated||value?.updatedAt||value?.createdAt||value?.lastActivityAt||value?.lastMessageDate||value?.lastMessageAt||value?.startTime||value?.start||'';
+  const date=raw?new Date(raw):null;
+  return date&&Number.isFinite(date.getTime())?date:null;
+}
+
+function goallMetricInWindow(value,start,end){
+  const date=goallMetricDate(value);
+  if(!date) return true;
+  return date>=start&&date<=end;
+}
+
+function goallTextBlob(value){
+  if(!value||typeof value!=='object') return String(value||'');
+  const fields=[
+    value.outcome,value.disposition,value.callOutcome,value.call_outcome,value.callStatus,value.status,
+    value.type,value.messageType,value.lastMessage,value.lastMessageBody,value.body,value.notes,value.note,
+    value.title,value.name,value.pipelineStage?.name,value.stage?.name,value.stageName,
+    ...(Array.isArray(value.tags)?value.tags:[]),
+    ...(Array.isArray(value.contact?.tags)?value.contact.tags:[])
+  ];
+  const custom=value.customFields||value.custom_fields||value.contact?.customFields||[];
+  if(Array.isArray(custom)) custom.forEach(f=>fields.push(f.value,f.name,f.fieldName,f.label));
+  return fields.filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+}
+
+function normalizeGoallCallOutcome(value){
+  const text=goallTextBlob(value).toLowerCase();
+  if(/\b(meeting scheduled|meeting booked|appointment booked|appointment scheduled|scheduled meeting|booked meeting)\b/.test(text)) return 'meeting_scheduled';
+  if(/\b(info requested|information requested|requested info|send info|more information|asked for info)\b/.test(text)) return 'info_requested';
+  if(/\b(voicemail|voice mail|left vm|left message)\b/.test(text)) return 'voicemail';
+  if(/\b(not interested|no interest|declined|do not call|dnc)\b/.test(text)) return 'not_interested';
+  if(/\b(no answer|missed call|unanswered|did not answer|no pickup|no pick up)\b/.test(text)) return 'no_answer';
+  return 'unclassified';
+}
+
+function goallAgentName(value){
+  const raw=value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
+  return String(raw||'Unassigned').trim()||'Unassigned';
+}
+
+function goallMoney(value){
+  const n=Number(value?.monetaryValue??value?.value??value?.amount??value?.revenue??0);
+  return Number.isFinite(n)?n:0;
+}
+
+function goallSummaryFromRows(rows,{hoursPerDay=8,dialsPerHour=30,daysWorked=1}={}){
+  const outcomeKeys=['no_answer','info_requested','voicemail','not_interested','meeting_scheduled','unclassified'];
+  const outcomeCounts=Object.fromEntries(outcomeKeys.map(k=>[k,0]));
+  const agents=new Map();
+  rows.forEach(row=>{
+    const outcome=normalizeGoallCallOutcome(row);
+    outcomeCounts[outcome]=(outcomeCounts[outcome]||0)+1;
+    const agent=goallAgentName(row);
+    if(!agents.has(agent)) agents.set(agent,{agent,actualDials:0,outcomes:Object.fromEntries(outcomeKeys.map(k=>[k,0]))});
+    const bucket=agents.get(agent);
+    bucket.actualDials+=1;
+    bucket.outcomes[outcome]=(bucket.outcomes[outcome]||0)+1;
+  });
+  const expectedPerAgent=hoursPerDay*dialsPerHour*daysWorked;
+  const agentRows=Array.from(agents.values()).map(agent=>({
+    ...agent,
+    expectedDials:expectedPerAgent,
+    variance:agent.actualDials-expectedPerAgent,
+    paceStatus:agent.actualDials>=expectedPerAgent?'on_pace':agent.actualDials>=expectedPerAgent*0.8?'watch':'behind'
+  })).sort((a,b)=>b.actualDials-a.actualDials);
+  const totalDials=rows.length;
+  const rates=Object.fromEntries(outcomeKeys.map(k=>[k,totalDials?outcomeCounts[k]/totalDials:0]));
+  return {totalDials,outcomeCounts,rates,agents:agentRows};
+}
+
+async function fetchGoallMetricRowsForAccount(account,start,end){
+  const errors=[];
+  const [convosRes,oppsOpenRes,oppsWonRes,calendarRes]=await Promise.allSettled([
+    ghlTryForAccount(account,'GET',`/conversations/search?locationId=${encodeURIComponent(account.locationId)}&limit=100`),
+    fetchGhlOpportunitiesForAccount(account,{status:'open',limit:100}),
+    fetchGhlOpportunitiesForAccount(account,{status:'won',limit:100}),
+    ghlMcp.getCalendarEventsForAccount(account,start,end,{selectedCalendarIds:account.calendarIds||[]})
+  ]);
+  if(convosRes.status==='rejected') errors.push(`conversations: ${convosRes.reason.message}`);
+  if(oppsOpenRes.status==='rejected') errors.push(`open opportunities: ${oppsOpenRes.reason.message}`);
+  if(oppsWonRes.status==='rejected') errors.push(`won opportunities: ${oppsWonRes.reason.message}`);
+  if(calendarRes.status==='rejected') errors.push(`calendar: ${calendarRes.reason.message}`);
+  const conversations=convosRes.status==='fulfilled'&&convosRes.value.ok
+    ? ghlArray(convosRes.value.data,'conversations').filter(c=>goallMetricInWindow(c,start,end))
+    : [];
+  const openOpps=oppsOpenRes.status==='fulfilled'
+    ? ghlArray(oppsOpenRes.value.data,'opportunities').filter(o=>goallMetricInWindow(o,start,end))
+    : [];
+  const wonOpps=oppsWonRes.status==='fulfilled'
+    ? ghlArray(oppsWonRes.value.data,'opportunities').filter(o=>goallMetricInWindow(o,start,end))
+    : [];
+  const calendarEvents=calendarRes.status==='fulfilled'?calendarRes.value:[];
+  return {account,conversations,openOpps,wonOpps,calendarEvents,errors};
+}
+
+function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsPerHour,daysWorked}){
+  const allConversations=rows.flatMap(r=>r.conversations.map(c=>({...c,accountSlug:r.account.slug,accountLabel:r.account.label})));
+  const allOpenOpps=rows.flatMap(r=>r.openOpps.map(o=>({...o,accountSlug:r.account.slug,accountLabel:r.account.label})));
+  const allWonOpps=rows.flatMap(r=>r.wonOpps.map(o=>({...o,accountSlug:r.account.slug,accountLabel:r.account.label})));
+  const allCalendarEvents=rows.flatMap(r=>r.calendarEvents.map(e=>({...e,accountSlug:r.account.slug,accountLabel:r.account.label})));
+  const summary=goallSummaryFromRows(allConversations,{hoursPerDay,dialsPerHour,daysWorked});
+  const meetingEvents=allCalendarEvents.filter(ev=>/\b(meeting|appointment|consult|call|demo|enrollment)\b/i.test(goallTextBlob(ev)));
+  const revenueValues=allWonOpps.map(goallMoney).filter(n=>n>0);
+  const enrollments=allWonOpps.length;
+  const revenueTotal=revenueValues.reduce((sum,n)=>sum+n,0);
+  const averageRevenuePerEnrollment=enrollments?revenueTotal/enrollments:0;
+  return {
+    ok:true,
+    configured:accounts.length>0,
+    window:{start:start.toISOString(),end:end.toISOString()},
+    assumptions:{hoursPerDay,dialsPerHour,daysWorked},
+    agentDashboard:{
+      agents:summary.agents,
+      targetPerAgent:hoursPerDay*dialsPerHour*daysWorked,
+      hiddenRevenue:true
+    },
+    ownerDashboard:{
+      numberOfAgents:summary.agents.length,
+      totalDials:summary.totalDials,
+      expectedDials:summary.agents.length*hoursPerDay*dialsPerHour*daysWorked,
+      dialsPerHourPerAgent:dialsPerHour,
+      hoursCallingPerDay:hoursPerDay,
+      daysWorked,
+      outcomeCounts:summary.outcomeCounts,
+      outcomeRates:summary.rates,
+      meetingsScheduled:summary.outcomeCounts.meeting_scheduled+meetingEvents.length,
+      openOpportunities:allOpenOpps.length
+    },
+    revenueDashboard:{
+      meetingsScheduled:summary.outcomeCounts.meeting_scheduled+meetingEvents.length,
+      enrollments,
+      meetingToEnrollmentRate:(summary.outcomeCounts.meeting_scheduled+meetingEvents.length)?enrollments/(summary.outcomeCounts.meeting_scheduled+meetingEvents.length):0,
+      revenueTotal,
+      averageRevenuePerEnrollment,
+      wonOpportunities:allWonOpps.slice(0,25).map(o=>({id:o.id,name:o.name,contactName:o.contact?.name||o.contactName||'',value:goallMoney(o),accountSlug:o.accountSlug,accountLabel:o.accountLabel,updatedAt:o.updatedAt||o.dateUpdated||''}))
+    },
+    _debug:{
+      source:'ghl_read_only',
+      accounts:accounts.map(a=>({slug:a.slug,label:a.label,calendarIds:(a.calendarIds||[]).length})),
+      counts:{conversations:allConversations.length,openOpportunities:allOpenOpps.length,wonOpportunities:allWonOpps.length,calendarEvents:allCalendarEvents.length},
+      errors:rows.flatMap(r=>r.errors.map(error=>({account:r.account.label,error})))
+    }
+  };
+}
+
+app.get('/api/goall/call-center-metrics',async(req,res)=>{
+  try{
+    const {start,end}=goallMetricWindow(req);
+    const hoursPerDay=Math.max(Number(req.query.hoursPerDay)||8,0);
+    const dialsPerHour=Math.max(Number(req.query.dialsPerHour)||30,0);
+    const daysWorked=Math.max(Number(req.query.daysWorked)||1,0);
+    if(DEMO_MODE){
+      const demoRows=[
+        {assignedToName:'Agent Demo',outcome:'No Answer'},
+        {assignedToName:'Agent Demo',outcome:'Info Requested'},
+        {assignedToName:'Agent Demo',outcome:'Voicemail'},
+        {assignedToName:'Agent Demo',outcome:'Meeting Scheduled'}
+      ];
+      return res.json(buildGoallCallCenterMetrics({start,end,accounts:[{slug:'demo',label:'Demo'}],rows:[{account:{slug:'demo',label:'Demo'},conversations:demoRows,openOpps:[],wonOpps:[{id:'demo-won',name:'Demo Enrollment',monetaryValue:10000,contactName:'Demo Contact'}],calendarEvents:[],errors:[]}],hoursPerDay,dialsPerHour,daysWorked}));
+    }
+    const accounts=await resolvedGhlAccounts();
+    if(!accounts.length){
+      return res.json({ok:true,configured:false,window:{start:start.toISOString(),end:end.toISOString()},agentDashboard:{agents:[],targetPerAgent:0,hiddenRevenue:true},ownerDashboard:{numberOfAgents:0,totalDials:0,expectedDials:0,outcomeCounts:{},outcomeRates:{},meetingsScheduled:0,openOpportunities:0},revenueDashboard:{meetingsScheduled:0,enrollments:0,meetingToEnrollmentRate:0,revenueTotal:0,averageRevenuePerEnrollment:0,wonOpportunities:[]},_debug:{source:'ghl_read_only',accounts:[],errors:[{error:'Missing GHL account configuration'}]}});
+    }
+    const rows=await Promise.all(accounts.map(account=>fetchGoallMetricRowsForAccount(account,start,end)));
+    res.json(buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsPerHour,daysWorked}));
+  }catch(e){
+    console.error('goall call center metrics error:',e);
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 
 app.get('/api/pipeline',async(req,res)=>{
   try{

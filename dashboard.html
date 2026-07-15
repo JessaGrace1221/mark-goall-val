@@ -2325,6 +2325,7 @@ var MEMORY_HOOK   = PROXY+'/api/val/transcripts';
 var CONVERSATION_HOOK = PROXY+'/api/val/conversations';
 var HOOK_MEETINGS = PROXY+'/api/meetings';
 var HOOK_PIPELINE = PROXY+'/api/pipeline';
+var HOOK_GOALL_CALL_CENTER = PROXY+'/api/goall/call-center-metrics';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_SIDEBAR_CALENDAR = '/api/calendar/sidebar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
@@ -5227,9 +5228,10 @@ async function loadBookDashboard(){
 async function loadDashboard(){
   if(isBookEditorMode())return loadBookDashboard();
   refreshTaskUI(); // use VAL-managed tasks, no GHL fetch needed
-  var [meetings, pipeline, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
+  var [meetings, pipeline, callCenterMetrics, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
+    fetchJSON(HOOK_GOALL_CALL_CENTER),
     fetchJSON(HOOK_SIDEBAR_CALENDAR),
     fetchJSON(HOOK_FEED),
     fetchJSON(HOOK_COMMS),
@@ -5238,6 +5240,7 @@ async function loadDashboard(){
   if(isBookEditorMode())return loadBookDashboard();
   meetings  = meetings.status==='fulfilled'?meetings.value:null;
   pipeline  = pipeline.status==='fulfilled'?pipeline.value:null;
+  callCenterMetrics = callCenterMetrics.status==='fulfilled'?callCenterMetrics.value:null;
   calendar  = calendar.status==='fulfilled'?calendar.value:null;
   feed      = feed.status==='fulfilled'?feed.value:null;
   comms     = comms&&comms.status==='fulfilled'?comms.value:null;
@@ -5268,10 +5271,17 @@ async function loadDashboard(){
   function parse(d){ if(!d)return null; if(typeof d.text==='string'){try{return JSON.parse(d.text);}catch(e){}}return d; }
   meetings = parse(meetings);
   pipeline = parse(pipeline);
+  callCenterMetrics = parse(callCenterMetrics);
   calendar = parse(calendar);
   feed     = parse(feed);
   feed     = parse(feed);
   dashData = Object.assign({}, feed||{}, pipeline||{}, meetings||{}, calendar||{});
+  if(callCenterMetrics&&callCenterMetrics.ok){
+    dashData.goallCallCenterMetrics=callCenterMetrics;
+    dashData.goallCallCenterOwner=callCenterMetrics.ownerDashboard||{};
+    dashData.goallCallCenterRevenue=callCenterMetrics.revenueDashboard||{};
+    dashData.goallCallCenterAgents=(callCenterMetrics.agentDashboard&&callCenterMetrics.agentDashboard.agents)||[];
+  }
   if(calendar&&Array.isArray(calendar.events)) dashData.calendarEvents=calendar.events;
   if(comms) dashData.followups=comms.total||0;
   if(proposals){
@@ -5313,7 +5323,11 @@ async function loadDashboard(){
       sb.textContent=(pipeline.stalledDeals)+' STALLED';sb.classList.remove('hidden');
     }
     setText('scPipelineVal',(pipeline.pipelineActive??0)+' Active');
-    setText('scPipelineSub',(pipeline.stalledDeals??0)>0?(pipeline.stalledDeals)+' showing signals':'No stalled deals');
+    var callCenterSub='';
+    if(callCenterMetrics&&callCenterMetrics.ownerDashboard){
+      callCenterSub=' · '+(callCenterMetrics.ownerDashboard.totalDials||0)+' calls today';
+    }
+    setText('scPipelineSub',((pipeline.stalledDeals??0)>0?(pipeline.stalledDeals)+' showing signals':'No stalled deals')+callCenterSub);
   }
 
   // CALENDAR
@@ -7196,6 +7210,13 @@ function chat(msg,inp){
     });
   }
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active deals: '+dashData.pipelineActive+(dashData.stalledDeals?' ('+dashData.stalledDeals+' stalled)':'')+'.\n';
+  if(dashData.goallCallCenterOwner){
+    var cc=dashData.goallCallCenterOwner;
+    var rev=dashData.goallCallCenterRevenue||{};
+    ctx+='GOALL call center today: '+(cc.totalDials||0)+' dials across '+(cc.numberOfAgents||0)+' agent(s), '+(cc.meetingsScheduled||0)+' meetings scheduled, '+(cc.openOpportunities||0)+' open opportunities. ';
+    ctx+='Outcomes: no answer '+((cc.outcomeCounts&&cc.outcomeCounts.no_answer)||0)+', info requested '+((cc.outcomeCounts&&cc.outcomeCounts.info_requested)||0)+', voicemail '+((cc.outcomeCounts&&cc.outcomeCounts.voicemail)||0)+', not interested '+((cc.outcomeCounts&&cc.outcomeCounts.not_interested)||0)+'. ';
+    ctx+='Revenue dashboard: '+(rev.enrollments||0)+' enrollments, average revenue per enrollment '+(rev.averageRevenuePerEnrollment||0)+'.\n';
+  }
   if(dashData.pipelines&&dashData.pipelines.length){
     ctx+='GHL pipeline breakdown:\n';
     dashData.pipelines.forEach(function(p){
