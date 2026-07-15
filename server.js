@@ -7940,7 +7940,10 @@ function goallContactFieldValues(contact={},fieldMap=new Map()){
     const value=field.value??field.field_value??field.values??'';
     if(value===undefined||value===null||String(value).trim()==='') return;
     if(key.includes('assigned_caller_first_name')) values.assignedCallerFirstName=String(value).trim();
+    if(key.includes('call_disposition_agent')) values.callDispositionAgent=String(value).trim();
     if(key.includes('call_outcome')) values.callOutcome=String(value).trim();
+    if(key.includes('call_disposition')&&!key.includes('updated_at')&&!key.includes('agent')) values.callDisposition=String(value).trim();
+    if(key.includes('call_disposition_updated_at')) values.callDispositionUpdatedAt=String(value).trim();
     if(key.includes('appointment_booked_yes_or_no')) values.appointmentBooked=String(value).trim();
     if(key.includes('lead_status')) values.leadStatus=String(value).trim();
   });
@@ -7964,6 +7967,9 @@ async function enrichGoallConversationForAccount(account,conversation,fieldMap,u
     const contactFields=goallContactFieldValues(contact,fieldMap);
     if(contactFields.assignedCallerFirstName){
       contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
+    }
+    if(contactFields.callDispositionAgent){
+      contactFields.callDispositionAgent=canonicalGoallCallerName(contactFields.callDispositionAgent,userMap);
     }
     const assignedTo=contact.assignedTo||conversation.assignedTo||conversation.contact?.assignedTo||'';
     const assignedToName=userMap.get(String(assignedTo))||'';
@@ -8045,10 +8051,32 @@ function goallMetricWindow(req){
   return {start,end};
 }
 
+function parseGoallMetricDate(value){
+  const raw=String(value||'').trim();
+  if(!raw) return null;
+  let date=new Date(raw);
+  if(Number.isFinite(date.getTime())) return date;
+  const m=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if(m){
+    let month=Number(m[1])-1;
+    let day=Number(m[2]);
+    let year=Number(m[3]);
+    if(year<100) year+=2000;
+    let hour=Number(m[4]||0);
+    const minute=Number(m[5]||0);
+    const second=Number(m[6]||0);
+    const ampm=String(m[7]||'').toUpperCase();
+    if(ampm==='PM'&&hour<12) hour+=12;
+    if(ampm==='AM'&&hour===12) hour=0;
+    date=new Date(year,month,day,hour,minute,second);
+    if(Number.isFinite(date.getTime())) return date;
+  }
+  return null;
+}
+
 function goallMetricDate(value){
-  const raw=value?.lastMessageDate||value?.lastManualMessageDate||value?.lastActivityAt||value?.lastMessageAt||value?.dateUpdated||value?.updatedAt||value?.dateAdded||value?.createdAt||value?.startTime||value?.start||'';
-  const date=raw?new Date(raw):null;
-  return date&&Number.isFinite(date.getTime())?date:null;
+  const raw=value?.__goall?.contactFields?.callDispositionUpdatedAt||value?.lastMessageDate||value?.lastManualMessageDate||value?.lastActivityAt||value?.lastMessageAt||value?.dateUpdated||value?.updatedAt||value?.dateAdded||value?.createdAt||value?.startTime||value?.start||'';
+  return parseGoallMetricDate(raw);
 }
 
 function goallMetricInWindow(value,start,end){
@@ -8065,7 +8093,7 @@ function goallTextBlob(value){
     value.type,value.messageType,value.lastMessageType,value.lastOutboundMessageAction,value.lastMessageDirection,
     value.lastMessage,value.lastMessageBody,value.body,value.notes,value.note,
     value.title,value.name,value.pipelineStage?.name,value.stage?.name,value.stageName,
-    contactFields.callOutcome,contactFields.appointmentBooked,contactFields.leadStatus,
+    contactFields.callDisposition,contactFields.callOutcome,contactFields.appointmentBooked,contactFields.leadStatus,
     ...(Array.isArray(value.tags)?value.tags:[]),
     ...(Array.isArray(value.contact?.tags)?value.contact.tags:[])
   ];
@@ -8103,7 +8131,7 @@ function goallCustomDispositionNotExposed(value){
 }
 
 function goallAgentName(value){
-  const raw=value?.__goall?.contactFields?.assignedCallerFirstName||value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
+  const raw=value?.__goall?.contactFields?.callDispositionAgent||value?.__goall?.contactFields?.assignedCallerFirstName||value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
   if(/^[A-Za-z0-9]{18,}$/.test(String(raw||''))) return 'Unknown GHL user';
   return String(raw||'Unassigned').trim()||'Unassigned';
 }
@@ -8155,7 +8183,8 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
   const userMap=userMapRes.status==='fulfilled'?userMapRes.value:new Map();
   let callMessages=[];
   try{
-    callMessages=await fetchGhlCallMessagesForAccount(account,start,end,userMap);
+    const fieldMap=await fetchGhlCustomFieldMapForAccount(account);
+    callMessages=await fetchGhlCallMessagesForAccount(account,start,end,userMap,fieldMap);
   }catch(e){
     errors.push(`call messages: ${e.message}`);
   }
@@ -8181,7 +8210,7 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
   return {account,conversations:callMessages.length?callMessages:conversations,openOpps,wonOpps,calendarEvents,errors,sourceCounts:{callMessages:callMessages.length,conversationSearch:conversations.length}};
 }
 
-async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map()){
+async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(),fieldMap=new Map()){
   const rows=[];
   let cursor='';
   for(let page=0;page<5;page++){
@@ -8199,7 +8228,7 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
       throw new Error(String(detail).slice(0,240));
     }
     const messages=ghlArray(result.data,'messages').filter(m=>goallMetricInWindow(m,start,end));
-    rows.push(...messages.map(message=>{
+    const mapped=messages.map(message=>{
       const callStatus=message.meta?.call?.status||message.status||'';
       const userId=message.userId||message.assignedTo||'';
       const assignedToName=userMap.get(String(userId))||(userId?'Unknown GHL user':'');
@@ -8224,7 +8253,27 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
         meta:message.meta||{},
         __goall:{callMessage:true,callDurationSeconds:message.meta?.call?.duration??null,customDispositionExposed:false}
       };
-    }));
+    });
+    const enriched=await mapWithConcurrency(mapped,6,async row=>{
+      if(!row.contactId) return row;
+      try{
+        const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(row.contactId)}`);
+        const contact=data.contact||data;
+        const contactFields=goallContactFieldValues(contact,fieldMap);
+        if(contactFields.callDispositionAgent) contactFields.callDispositionAgent=canonicalGoallCallerName(contactFields.callDispositionAgent,userMap);
+        if(contactFields.assignedCallerFirstName) contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
+        return {
+          ...row,
+          assignedToName:contactFields.callDispositionAgent||row.assignedToName,
+          tags:Array.from(new Set([...(row.tags||[]),...(contact.tags||[])])),
+          contact:{id:row.contactId,assignedTo:contact.assignedTo||'',assignedToName:userMap.get(String(contact.assignedTo||''))||'',tags:contact.tags||[]},
+          __goall:{...(row.__goall||{}),contactFields,customDispositionExposed:!!contactFields.callDisposition}
+        };
+      }catch(_){
+        return row;
+      }
+    });
+    rows.push(...enriched);
     cursor=result.data?.nextCursor||'';
     if(!cursor) break;
   }
@@ -8319,11 +8368,13 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
       source:'ghl_read_only',
       mapping:{
         dateFieldPriority:['lastMessageDate','lastManualMessageDate','lastActivityAt','dateUpdated','dateAdded'],
-        outcomeSignals:['contact.call_outcome','contact.appointment_booked_yes_or_no','lastMessageType','lastOutboundMessageAction','lastMessageBody','tags'],
-        agentSignals:['contact.assigned_caller_first_name','assignedToName','assignedUserName','ownerName','assignedTo','contact.assignedTo'],
+        outcomeSignals:['contact.call_disposition','contact.call_outcome','contact.appointment_booked_yes_or_no','lastMessageType','lastOutboundMessageAction','lastMessageBody','tags'],
+        agentSignals:['contact.call_disposition_agent','contact.assigned_caller_first_name','assignedToName','assignedUserName','ownerName','assignedTo','contact.assignedTo'],
         lastMessageTypes:goallValueCounts(allConversations,c=>c.lastMessageType),
         lastMessageDirections:goallValueCounts(allConversations,c=>c.lastMessageDirection),
         tags:goallValueCounts(allConversations,c=>c.tags,20),
+        contactCallDispositions:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.callDisposition),
+        contactCallDispositionAgents:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.callDispositionAgent),
         contactCallOutcomes:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.callOutcome),
         contactLeadStatuses:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.leadStatus)
       },
