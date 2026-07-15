@@ -35,6 +35,17 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
   assert.match(server,/voicemail/);
   assert.match(server,/not_interested/);
   assert.match(server,/no_answer/);
+  assert.match(server,/appointment_booked_yes_or_no/);
+  assert.match(server,/type_no_show/);
+  assert.match(server,/vm followup/);
+});
+
+test('GOALL call-center metrics uses GHL conversation and contact field mapping',()=>{
+  assert.match(server,/lastMessageDate\|\|value\?\.lastManualMessageDate/);
+  assert.match(server,/fetchGhlCustomFieldMapForAccount\(account\)/);
+  assert.match(server,/enrichGoallConversationForAccount\(account,conversation,fieldMap\)/);
+  assert.match(server,/assigned_caller_first_name/);
+  assert.match(server,/contactCallOutcomes/);
 });
 
 test('dashboard loads GOALL call-center metrics into live context',()=>{

@@ -7896,6 +7896,60 @@ async function fetchContactNotesForAccount(account,contactId,limit=25){
   return [];
 }
 
+const ghlCustomFieldMapCache=new Map();
+async function fetchGhlCustomFieldMapForAccount(account){
+  const cacheKey=`${account.slug||account.locationId||'default'}:${account.locationId||''}`;
+  const cached=ghlCustomFieldMapCache.get(cacheKey);
+  if(cached&&Date.now()-cached.fetchedAt<5*60*1000) return cached.map;
+  const data=await ghlForAccount(account,'GET',`/locations/${encodeURIComponent(account.locationId)}/customFields`);
+  const map=new Map();
+  ghlArray(data,'customFields','custom_fields').forEach(field=>{
+    if(field?.id) map.set(String(field.id),field);
+    if(field?.fieldKey) map.set(String(field.fieldKey),field);
+  });
+  ghlCustomFieldMapCache.set(cacheKey,{fetchedAt:Date.now(),map});
+  return map;
+}
+
+function goallContactFieldValues(contact={},fieldMap=new Map()){
+  const values={};
+  const customFields=Array.isArray(contact.customFields)?contact.customFields:[];
+  customFields.forEach(field=>{
+    const def=fieldMap.get(String(field.id||''))||fieldMap.get(String(field.fieldKey||''))||{};
+    const key=String(def.fieldKey||field.fieldKey||def.name||field.name||field.id||'').toLowerCase();
+    const value=field.value??field.field_value??field.values??'';
+    if(value===undefined||value===null||String(value).trim()==='') return;
+    if(key.includes('assigned_caller_first_name')) values.assignedCallerFirstName=String(value).trim();
+    if(key.includes('call_outcome')) values.callOutcome=String(value).trim();
+    if(key.includes('appointment_booked_yes_or_no')) values.appointmentBooked=String(value).trim();
+    if(key.includes('lead_status')) values.leadStatus=String(value).trim();
+  });
+  return values;
+}
+
+async function enrichGoallConversationForAccount(account,conversation,fieldMap){
+  const contactId=conversation.contactId||conversation.contact?.id||'';
+  if(!contactId) return conversation;
+  try{
+    const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(contactId)}`);
+    const contact=data.contact||data;
+    const contactFields=goallContactFieldValues(contact,fieldMap);
+    return {
+      ...conversation,
+      contact:{
+        ...(conversation.contact||{}),
+        id:contactId,
+        assignedTo:contact.assignedTo||conversation.contact?.assignedTo||'',
+        tags:Array.from(new Set([...(conversation.tags||[]),...(contact.tags||[])]))
+      },
+      tags:Array.from(new Set([...(conversation.tags||[]),...(contact.tags||[])])),
+      __goall:{...(conversation.__goall||{}),contactFields}
+    };
+  }catch(e){
+    return conversation;
+  }
+}
+
 async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
   const stage=ghlStageName(o);
   const contactId=o.contact?.id||o.contactId;
@@ -7940,15 +7994,23 @@ function goallMetricWindow(req){
   const now=new Date();
   const startParam=String(req.query.start||req.query.date||'').trim();
   const endParam=String(req.query.end||req.query.date||'').trim();
-  const start=startParam?new Date(`${startParam}T00:00:00`):new Date(now);
+  const days=Number(req.query.days||req.query.windowDays||0);
+  let start;
+  if(startParam){
+    start=new Date(`${startParam}T00:00:00`);
+  }else if(Number.isFinite(days)&&days>0){
+    start=new Date(now.getTime()-Math.max(days-1,0)*24*60*60*1000);
+  }else{
+    start=new Date(now);
+  }
   start.setHours(0,0,0,0);
   const end=endParam?new Date(`${endParam}T23:59:59`):new Date(now);
-  end.setHours(23,59,59,999);
+  if(endParam) end.setHours(23,59,59,999);
   return {start,end};
 }
 
 function goallMetricDate(value){
-  const raw=value?.dateAdded||value?.dateUpdated||value?.updatedAt||value?.createdAt||value?.lastActivityAt||value?.lastMessageDate||value?.lastMessageAt||value?.startTime||value?.start||'';
+  const raw=value?.lastMessageDate||value?.lastManualMessageDate||value?.lastActivityAt||value?.lastMessageAt||value?.dateUpdated||value?.updatedAt||value?.dateAdded||value?.createdAt||value?.startTime||value?.start||'';
   const date=raw?new Date(raw):null;
   return date&&Number.isFinite(date.getTime())?date:null;
 }
@@ -7961,10 +8023,13 @@ function goallMetricInWindow(value,start,end){
 
 function goallTextBlob(value){
   if(!value||typeof value!=='object') return String(value||'');
+  const contactFields=value.__goall?.contactFields||{};
   const fields=[
     value.outcome,value.disposition,value.callOutcome,value.call_outcome,value.callStatus,value.status,
-    value.type,value.messageType,value.lastMessage,value.lastMessageBody,value.body,value.notes,value.note,
+    value.type,value.messageType,value.lastMessageType,value.lastOutboundMessageAction,value.lastMessageDirection,
+    value.lastMessage,value.lastMessageBody,value.body,value.notes,value.note,
     value.title,value.name,value.pipelineStage?.name,value.stage?.name,value.stageName,
+    contactFields.callOutcome,contactFields.appointmentBooked,contactFields.leadStatus,
     ...(Array.isArray(value.tags)?value.tags:[]),
     ...(Array.isArray(value.contact?.tags)?value.contact.tags:[])
   ];
@@ -7975,16 +8040,17 @@ function goallTextBlob(value){
 
 function normalizeGoallCallOutcome(value){
   const text=goallTextBlob(value).toLowerCase();
+  if(/\b(appointment booked yes|appointment booked:?\s*yes|booked yes|appointment_booked_yes)\b/.test(text)) return 'meeting_scheduled';
   if(/\b(meeting scheduled|meeting booked|appointment booked|appointment scheduled|scheduled meeting|booked meeting)\b/.test(text)) return 'meeting_scheduled';
   if(/\b(info requested|information requested|requested info|send info|more information|asked for info)\b/.test(text)) return 'info_requested';
-  if(/\b(voicemail|voice mail|left vm|left message)\b/.test(text)) return 'voicemail';
+  if(/\b(voicemail|voice mail|left vm|left message|vm followup|voicemail left)\b/.test(text)) return 'voicemail';
   if(/\b(not interested|no interest|declined|do not call|dnc)\b/.test(text)) return 'not_interested';
-  if(/\b(no answer|missed call|unanswered|did not answer|no pickup|no pick up)\b/.test(text)) return 'no_answer';
+  if(/\b(no answer|missed call|unanswered|did not answer|no pickup|no pick up|type_no_show|no show)\b/.test(text)) return 'no_answer';
   return 'unclassified';
 }
 
 function goallAgentName(value){
-  const raw=value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
+  const raw=value?.__goall?.contactFields?.assignedCallerFirstName||value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
   return String(raw||'Unassigned').trim()||'Unassigned';
 }
 
@@ -8030,9 +8096,18 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
   if(oppsOpenRes.status==='rejected') errors.push(`open opportunities: ${oppsOpenRes.reason.message}`);
   if(oppsWonRes.status==='rejected') errors.push(`won opportunities: ${oppsWonRes.reason.message}`);
   if(calendarRes.status==='rejected') errors.push(`calendar: ${calendarRes.reason.message}`);
-  const conversations=convosRes.status==='fulfilled'&&convosRes.value.ok
+  const rawConversations=convosRes.status==='fulfilled'&&convosRes.value.ok
     ? ghlArray(convosRes.value.data,'conversations').filter(c=>goallMetricInWindow(c,start,end))
     : [];
+  let conversations=rawConversations;
+  if(rawConversations.length){
+    try{
+      const fieldMap=await fetchGhlCustomFieldMapForAccount(account);
+      conversations=await mapWithConcurrency(rawConversations,6,conversation=>enrichGoallConversationForAccount(account,conversation,fieldMap));
+    }catch(e){
+      errors.push(`conversation contact enrichment: ${e.message}`);
+    }
+  }
   const openOpps=oppsOpenRes.status==='fulfilled'
     ? ghlArray(oppsOpenRes.value.data,'opportunities').filter(o=>goallMetricInWindow(o,start,end))
     : [];
@@ -8041,6 +8116,20 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
     : [];
   const calendarEvents=calendarRes.status==='fulfilled'?calendarRes.value:[];
   return {account,conversations,openOpps,wonOpps,calendarEvents,errors};
+}
+
+function goallValueCounts(rows,reader,limit=12){
+  const counts=new Map();
+  rows.forEach(row=>{
+    const raw=reader(row);
+    const values=Array.isArray(raw)?raw:[raw];
+    values.filter(Boolean).forEach(value=>{
+      const key=String(value).trim();
+      if(!key) return;
+      counts.set(key,(counts.get(key)||0)+1);
+    });
+  });
+  return Object.fromEntries(Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,limit));
 }
 
 function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsPerHour,daysWorked}){
@@ -8086,6 +8175,16 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
     },
     _debug:{
       source:'ghl_read_only',
+      mapping:{
+        dateFieldPriority:['lastMessageDate','lastManualMessageDate','lastActivityAt','dateUpdated','dateAdded'],
+        outcomeSignals:['contact.call_outcome','contact.appointment_booked_yes_or_no','lastMessageType','lastOutboundMessageAction','lastMessageBody','tags'],
+        agentSignals:['contact.assigned_caller_first_name','assignedToName','assignedUserName','ownerName','assignedTo','contact.assignedTo'],
+        lastMessageTypes:goallValueCounts(allConversations,c=>c.lastMessageType),
+        lastMessageDirections:goallValueCounts(allConversations,c=>c.lastMessageDirection),
+        tags:goallValueCounts(allConversations,c=>c.tags,20),
+        contactCallOutcomes:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.callOutcome),
+        contactLeadStatuses:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.leadStatus)
+      },
       accounts:accounts.map(a=>({slug:a.slug,label:a.label,calendarIds:(a.calendarIds||[]).length})),
       counts:{conversations:allConversations.length,openOpportunities:allOpenOpps.length,wonOpportunities:allWonOpps.length,calendarEvents:allCalendarEvents.length},
       errors:rows.flatMap(r=>r.errors.map(error=>({account:r.account.label,error})))
