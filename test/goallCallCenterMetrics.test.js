@@ -54,4 +54,7 @@ test('dashboard loads GOALL call-center metrics into live context',()=>{
   assert.match(dashboard,/fetchJSON\(HOOK_GOALL_CALL_CENTER\)/);
   assert.match(dashboard,/dashData\.goallCallCenterOwner/);
   assert.match(dashboard,/GOALL call center today/);
+  assert.match(dashboard,/id="scCallCenterVal"/);
+  assert.match(dashboard,/renderCallCenterDashboard\(callCenterMetrics\)/);
+  assert.match(dashboard,/function askCallCenter\(\)/);
 });

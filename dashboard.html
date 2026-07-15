@@ -226,6 +226,10 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .scard-sub{font-size:0.5625rem;color:var(--text-3);margin-top:2px}
 .scard-link{font-size:0.5rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-top:5px;display:block;transition:color 0.2s}
 .scard:hover .scard-link{color:var(--gold-2)}
+.call-center-mini{display:grid;grid-template-columns:1fr;gap:4px;margin-top:8px}
+.call-center-mini div{display:flex;justify-content:space-between;gap:8px;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px;font-size:0.56rem;color:var(--text-3)}
+.call-center-mini strong{color:var(--text-4);font-weight:700}
+.call-center-mini span{color:var(--val-white);font-weight:700;text-align:right}
 
 /* ── CENTER ── */
 .center{
@@ -1258,6 +1262,9 @@ html,body{background:var(--cream)!important;color:var(--navy)!important;font-fam
 .fitem:hover,.fitem.active{background:var(--gold-dim)!important;transform:none!important;border-right:0!important}
 .fitem-title,.scard-val,.ws-item-title,.prompt-row,.lpanel .fitem-title,.lpanel .scard-val{color:var(--navy)!important;font-weight:700!important}
 .fitem-meta,.scard-sub,.lpanel .fitem-meta,.lpanel .scard-label,.lpanel .scard-sub{color:var(--text-3)!important}
+.call-center-mini div{border-color:rgba(16,22,51,0.08)!important;color:var(--text-3)!important}
+.call-center-mini strong{color:var(--text-3)!important}
+.call-center-mini span{color:var(--navy)!important}
 .summary-cards{background:#fff!important;border-top:1px solid rgba(16,22,51,0.08)!important}
 .scard{border-color:rgba(16,22,51,0.08)!important;padding:16px 18px!important}
 .scard:hover{background:#f8feff!important}
@@ -2191,6 +2198,17 @@ html body .prompt-row:hover{
         <div class="scard-val" id="scPipelineVal">—</div>
         <div class="scard-sub" id="scPipelineSub">Loading...</div>
         <span class="scard-link">Show Signals →</span>
+      </div>
+      <div class="scard" onclick="askCallCenter()">
+        <div class="scard-label">Call Center</div>
+        <div class="scard-val" id="scCallCenterVal">—</div>
+        <div class="scard-sub" id="scCallCenterSub">Loading...</div>
+        <div class="call-center-mini" id="callCenterMini">
+          <div><strong>Agent</strong><span id="ccAgentMini">—</span></div>
+          <div><strong>Owner</strong><span id="ccOwnerMini">—</span></div>
+          <div><strong>Revenue</strong><span id="ccRevenueMini">—</span></div>
+        </div>
+        <span class="scard-link">Review Three Dashboards →</span>
       </div>
       <div class="suggestion-label">Suggested Prompts</div>
       <div class="dynamic-suggestions" id="dynamicSuggestions"></div>
@@ -5281,6 +5299,7 @@ async function loadDashboard(){
     dashData.goallCallCenterOwner=callCenterMetrics.ownerDashboard||{};
     dashData.goallCallCenterRevenue=callCenterMetrics.revenueDashboard||{};
     dashData.goallCallCenterAgents=(callCenterMetrics.agentDashboard&&callCenterMetrics.agentDashboard.agents)||[];
+    renderCallCenterDashboard(callCenterMetrics);
   }
   if(calendar&&Array.isArray(calendar.events)) dashData.calendarEvents=calendar.events;
   if(comms) dashData.followups=comms.total||0;
@@ -5377,6 +5396,31 @@ function setText(id,html){
   if(!el)return;
   if(html&&html.includes('<'))el.innerHTML=html;
   else el.textContent=html;
+}
+
+function fmtPct(n){
+  n=Number(n)||0;
+  return Math.round(n*100)+'%';
+}
+function fmtMoney(n){
+  n=Number(n)||0;
+  if(!n)return '$0';
+  return '$'+Math.round(n).toLocaleString();
+}
+function renderCallCenterDashboard(metrics){
+  metrics=metrics||{};
+  var owner=metrics.ownerDashboard||{};
+  var revenue=metrics.revenueDashboard||{};
+  var agents=(metrics.agentDashboard&&metrics.agentDashboard.agents)||[];
+  var topAgent=agents[0]||{};
+  var totalDials=owner.totalDials||0;
+  var meetings=owner.meetingsScheduled||0;
+  var outcomes=owner.outcomeCounts||{};
+  setText('scCallCenterVal',totalDials+' Dials');
+  setText('scCallCenterSub',agents.length+' agent'+(agents.length===1?'':'s')+' · '+meetings+' meeting'+(meetings===1?'':'s'));
+  setText('ccAgentMini',topAgent.agent?topAgent.agent+' · '+(topAgent.actualDials||0):'No agent data');
+  setText('ccOwnerMini',(outcomes.no_answer||0)+' no answer · '+(outcomes.voicemail||0)+' VM');
+  setText('ccRevenueMini',(revenue.enrollments||0)+' enroll · '+fmtMoney(revenue.revenueTotal));
 }
 
 function renderFeed(items){
@@ -8282,6 +8326,26 @@ function askPipeline(){
     if(sync.created||sync.existing)addSys('Pipeline tasks: '+sync.created+' created, '+sync.existing+' already existed.');
     presentPipelineItem();
   }).catch(function(){ask('Show my active pipeline deals one at a time. For each one, tell me the stage, what the notes say, and the best next action.');});
+}
+
+function askCallCenter(){
+  fetchJSON(HOOK_GOALL_CALL_CENTER).then(function(d){
+    d=d||dashData.goallCallCenterMetrics||{};
+    var owner=d.ownerDashboard||{};
+    var revenue=d.revenueDashboard||{};
+    var agents=(d.agentDashboard&&d.agentDashboard.agents)||[];
+    var outcomes=owner.outcomeCounts||{};
+    var lines=[
+      'GOALL call center dashboard review:',
+      'Agent dashboard: '+agents.length+' agent(s); top rows: '+agents.slice(0,5).map(function(a){return (a.agent||'Unassigned')+' '+(a.actualDials||0)+' dials '+(a.paceStatus||'');}).join(', '),
+      'Owner dashboard: '+(owner.totalDials||0)+' dials, '+(owner.meetingsScheduled||0)+' meetings scheduled, '+(owner.openOpportunities||0)+' open opportunities.',
+      'Outcomes: no answer '+(outcomes.no_answer||0)+', voicemail '+(outcomes.voicemail||0)+', not interested '+(outcomes.not_interested||0)+', info requested '+(outcomes.info_requested||0)+', unclassified '+(outcomes.unclassified||0)+'.',
+      'Revenue dashboard: '+(revenue.enrollments||0)+' enrollments, '+fmtMoney(revenue.revenueTotal)+' revenue, '+fmtPct(revenue.meetingToEnrollmentRate||0)+' meeting-to-enrollment rate.'
+    ];
+    ask(lines.join('\n')+'\n\nTell me what this means operationally, where the dashboard data is strong, where the GHL mapping still needs cleanup, and what the next call-center management action should be.');
+  }).catch(function(){
+    ask('Review the GOALL call center dashboard: agent activity, owner outcomes, revenue conversion, and what we need to clean up in GHL mapping next.');
+  });
 }
 
 function askFollowups(){
