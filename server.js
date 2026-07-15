@@ -7947,6 +7947,14 @@ function goallContactFieldValues(contact={},fieldMap=new Map()){
   return values;
 }
 
+function canonicalGoallCallerName(name,userMap=new Map()){
+  const raw=String(name||'').trim();
+  if(!raw||/\s/.test(raw)) return raw;
+  const lowered=raw.toLowerCase();
+  const matches=Array.from(userMap.values()).filter(full=>String(full||'').trim().split(/\s+/)[0]?.toLowerCase()===lowered);
+  return matches.length===1?matches[0]:raw;
+}
+
 async function enrichGoallConversationForAccount(account,conversation,fieldMap,userMap=new Map()){
   const contactId=conversation.contactId||conversation.contact?.id||'';
   if(!contactId) return conversation;
@@ -7954,6 +7962,9 @@ async function enrichGoallConversationForAccount(account,conversation,fieldMap,u
     const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(contactId)}`);
     const contact=data.contact||data;
     const contactFields=goallContactFieldValues(contact,fieldMap);
+    if(contactFields.assignedCallerFirstName){
+      contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
+    }
     const assignedTo=contact.assignedTo||conversation.assignedTo||conversation.contact?.assignedTo||'';
     const assignedToName=userMap.get(String(assignedTo))||'';
     return {
