@@ -8087,11 +8087,19 @@ function normalizeGoallCallOutcome(value){
 
 function goallNeedsDisposition(value){
   if(normalizeGoallCallOutcome(value)!=='unclassified') return false;
+  if(value?.__goall?.callMessage) return false;
   const body=String(value?.lastMessageBody||value?.body||'').trim();
   const type=String(value?.lastMessageType||value?.messageType||value?.type||'').toUpperCase();
   const direction=String(value?.lastMessageDirection||value?.direction||'').toLowerCase();
   const action=String(value?.lastOutboundMessageAction||value?.action||'').toLowerCase();
   return type==='TYPE_CALL'&&direction==='outbound'&&(!action||action==='manual')&&!body;
+}
+
+function goallCustomDispositionNotExposed(value){
+  if(normalizeGoallCallOutcome(value)!=='unclassified') return false;
+  if(!value?.__goall?.callMessage) return false;
+  if(value.__goall.customDispositionExposed) return false;
+  return String(value.callStatus||value.status||'').toLowerCase()==='completed';
 }
 
 function goallAgentName(value){
@@ -8243,12 +8251,16 @@ function goallCallAttemptTags(value){
 
 function goallDispositionQuality(rows){
   const needing=rows.filter(goallNeedsDisposition);
+  const notExposed=rows.filter(goallCustomDispositionNotExposed);
   return {
     needsDisposition:needing.length,
     byAgent:goallValueCounts(needing,goallAgentName,12),
     byAttemptTag:goallValueCounts(needing,row=>goallCallAttemptTags(row),12),
     byMessageType:goallValueCounts(needing,row=>row.lastMessageType||row.messageType||row.type,12),
-    byAction:goallValueCounts(needing,row=>row.lastOutboundMessageAction||row.action,12)
+    byAction:goallValueCounts(needing,row=>row.lastOutboundMessageAction||row.action,12),
+    customDispositionNotExposed:notExposed.length,
+    notExposedByAgent:goallValueCounts(notExposed,goallAgentName,12),
+    notExposedByCallStatus:goallValueCounts(notExposed,row=>row.callStatus||row.status,12)
   };
 }
 
@@ -8260,6 +8272,7 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
   const summary=goallSummaryFromRows(allConversations,{hoursPerDay,dialsPerHour,daysWorked});
   const dispositionQuality=goallDispositionQuality(allConversations);
   const needsDisposition=dispositionQuality.needsDisposition;
+  const customDispositionNotExposed=dispositionQuality.customDispositionNotExposed||0;
   const meetingEvents=allCalendarEvents.filter(ev=>/\b(meeting|appointment|consult|call|demo|enrollment)\b/i.test(goallTextBlob(ev)));
   const revenueValues=allWonOpps.map(goallMoney).filter(n=>n>0);
   const enrollments=allWonOpps.length;
@@ -8285,7 +8298,9 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
       outcomeCounts:summary.outcomeCounts,
       outcomeRates:summary.rates,
       needsDisposition,
+      customDispositionNotExposed,
       dispositionCompleteness:summary.totalDials?1-(needsDisposition/summary.totalDials):1,
+      customDispositionVisibility:summary.totalDials?1-(customDispositionNotExposed/summary.totalDials):1,
       dispositionQuality,
       meetingsScheduled:summary.outcomeCounts.meeting_scheduled+meetingEvents.length,
       openOpportunities:allOpenOpps.length

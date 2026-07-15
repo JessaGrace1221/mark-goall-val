@@ -40,7 +40,9 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
   assert.match(server,/vm followup/);
   assert.match(server,/unsubscribe/);
   assert.match(server,/function goallNeedsDisposition/);
+  assert.match(server,/function goallCustomDispositionNotExposed/);
   assert.match(server,/dispositionCompleteness/);
+  assert.match(server,/customDispositionVisibility/);
   assert.match(server,/function goallDispositionQuality/);
   assert.match(server,/byAttemptTag/);
   assert.match(server,/function fetchGhlCallMessagesForAccount/);
@@ -72,7 +74,9 @@ test('dashboard loads GOALL call-center metrics into live context',()=>{
   assert.match(dashboard,/renderCallCenterDashboard\(callCenterMetrics\)/);
   assert.match(dashboard,/function askCallCenter\(\)/);
   assert.match(dashboard,/need disposition/);
+  assert.match(dashboard,/disposition hidden/);
   assert.match(dashboard,/disposition completeness/);
+  assert.match(dashboard,/Custom disposition API visibility/);
   assert.match(dashboard,/Needs disposition by agent/);
   assert.match(dashboard,/Needs disposition by attempt tag/);
 });
