@@ -46,6 +46,7 @@ test('GOALL call-center metrics uses GHL conversation and contact field mapping'
   assert.match(server,/enrichGoallConversationForAccount\(account,conversation,fieldMap\)/);
   assert.match(server,/assigned_caller_first_name/);
   assert.match(server,/contactCallOutcomes/);
+  assert.match(server,/String\(o\.status\|\|''\)\.toLowerCase\(\)==='won'/);
 });
 
 test('dashboard loads GOALL call-center metrics into live context',()=>{

@@ -8109,10 +8109,10 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
     }
   }
   const openOpps=oppsOpenRes.status==='fulfilled'
-    ? ghlArray(oppsOpenRes.value.data,'opportunities').filter(o=>goallMetricInWindow(o,start,end))
+    ? ghlArray(oppsOpenRes.value.data,'opportunities').filter(o=>String(o.status||'').toLowerCase()==='open').filter(o=>goallMetricInWindow(o,start,end))
     : [];
   const wonOpps=oppsWonRes.status==='fulfilled'
-    ? ghlArray(oppsWonRes.value.data,'opportunities').filter(o=>goallMetricInWindow(o,start,end))
+    ? ghlArray(oppsWonRes.value.data,'opportunities').filter(o=>String(o.status||'').toLowerCase()==='won').filter(o=>goallMetricInWindow(o,start,end))
     : [];
   const calendarEvents=calendarRes.status==='fulfilled'?calendarRes.value:[];
   return {account,conversations,openOpps,wonOpps,calendarEvents,errors};
