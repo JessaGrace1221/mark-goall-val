@@ -8104,6 +8104,7 @@ function goallCustomDispositionNotExposed(value){
 
 function goallAgentName(value){
   const raw=value?.__goall?.contactFields?.assignedCallerFirstName||value?.assignedToName||value?.assignedUserName||value?.userName||value?.ownerName||value?.owner||value?.assignedTo||value?.userId||value?.createdBy||value?.contact?.assignedTo||'Unassigned';
+  if(/^[A-Za-z0-9]{18,}$/.test(String(raw||''))) return 'Unknown GHL user';
   return String(raw||'Unassigned').trim()||'Unassigned';
 }
 
@@ -8201,13 +8202,14 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
     rows.push(...messages.map(message=>{
       const callStatus=message.meta?.call?.status||message.status||'';
       const userId=message.userId||message.assignedTo||'';
+      const assignedToName=userMap.get(String(userId))||(userId?'Unknown GHL user':'');
       return {
         id:message.id,
         source:'ghl_call_message_export',
         contactId:message.contactId||'',
         conversationId:message.conversationId||'',
         assignedTo:userId,
-        assignedToName:userMap.get(String(userId))||'',
+        assignedToName,
         userId,
         status:message.status||callStatus,
         callStatus,
