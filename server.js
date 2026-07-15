@@ -8081,7 +8081,7 @@ function normalizeGoallCallOutcome(value){
   if(/\b(info requested|information requested|requested info|send info|more information|asked for info)\b/.test(text)) return 'info_requested';
   if(/\b(voicemail|voice mail|left vm|left message|vm followup|voicemail left)\b/.test(text)) return 'voicemail';
   if(/\b(not interested|no interest|declined|do not call|dnc|unsubscribe|unsubscribed|stop messaging|remove me)\b/.test(text)) return 'not_interested';
-  if(/\b(no answer|missed|missed call|unanswered|did not answer|didn't answer|no pickup|no pick up|type_no_show|no show)\b/.test(text)) return 'no_answer';
+  if(/\b(no answer|no-answer|no_answer|busy|missed|missed call|unanswered|did not answer|didn't answer|no pickup|no pick up|type_no_show|no show)\b/.test(text)) return 'no_answer';
   return 'unclassified';
 }
 
@@ -8131,26 +8131,32 @@ function goallSummaryFromRows(rows,{hoursPerDay=8,dialsPerHour=30,daysWorked=1}=
 
 async function fetchGoallMetricRowsForAccount(account,start,end){
   const errors=[];
-  const [convosRes,oppsOpenRes,oppsWonRes,calendarRes]=await Promise.allSettled([
+  const [convosRes,oppsOpenRes,oppsWonRes,calendarRes,userMapRes]=await Promise.allSettled([
     ghlTryForAccount(account,'GET',`/conversations/search?locationId=${encodeURIComponent(account.locationId)}&limit=100`),
     fetchGhlOpportunitiesForAccount(account,{status:'open',limit:100}),
     fetchGhlOpportunitiesForAccount(account,{status:'won',limit:100}),
-    ghlMcp.getCalendarEventsForAccount(account,start,end,{selectedCalendarIds:account.calendarIds||[]})
+    ghlMcp.getCalendarEventsForAccount(account,start,end,{selectedCalendarIds:account.calendarIds||[]}),
+    fetchGhlUserMapForAccount(account)
   ]);
   if(convosRes.status==='rejected') errors.push(`conversations: ${convosRes.reason.message}`);
   if(oppsOpenRes.status==='rejected') errors.push(`open opportunities: ${oppsOpenRes.reason.message}`);
   if(oppsWonRes.status==='rejected') errors.push(`won opportunities: ${oppsWonRes.reason.message}`);
   if(calendarRes.status==='rejected') errors.push(`calendar: ${calendarRes.reason.message}`);
+  if(userMapRes.status==='rejected') errors.push(`users: ${userMapRes.reason.message}`);
+  const userMap=userMapRes.status==='fulfilled'?userMapRes.value:new Map();
+  let callMessages=[];
+  try{
+    callMessages=await fetchGhlCallMessagesForAccount(account,start,end,userMap);
+  }catch(e){
+    errors.push(`call messages: ${e.message}`);
+  }
   const rawConversations=convosRes.status==='fulfilled'&&convosRes.value.ok
     ? ghlArray(convosRes.value.data,'conversations').filter(c=>goallMetricInWindow(c,start,end))
     : [];
   let conversations=rawConversations;
   if(rawConversations.length){
     try{
-      const [fieldMap,userMap]=await Promise.all([
-        fetchGhlCustomFieldMapForAccount(account),
-        fetchGhlUserMapForAccount(account)
-      ]);
+      const fieldMap=await fetchGhlCustomFieldMapForAccount(account);
       conversations=await mapWithConcurrency(rawConversations,6,conversation=>enrichGoallConversationForAccount(account,conversation,fieldMap,userMap));
     }catch(e){
       errors.push(`conversation contact enrichment: ${e.message}`);
@@ -8163,7 +8169,56 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
     ? ghlArray(oppsWonRes.value.data,'opportunities').filter(o=>String(o.status||'').toLowerCase()==='won').filter(o=>goallMetricInWindow(o,start,end))
     : [];
   const calendarEvents=calendarRes.status==='fulfilled'?calendarRes.value:[];
-  return {account,conversations,openOpps,wonOpps,calendarEvents,errors};
+  return {account,conversations:callMessages.length?callMessages:conversations,openOpps,wonOpps,calendarEvents,errors,sourceCounts:{callMessages:callMessages.length,conversationSearch:conversations.length}};
+}
+
+async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map()){
+  const rows=[];
+  let cursor='';
+  for(let page=0;page<5;page++){
+    const qs=new URLSearchParams({
+      locationId:account.locationId,
+      channel:'Call',
+      limit:'100',
+      startDate:start.toISOString(),
+      endDate:end.toISOString()
+    });
+    if(cursor) qs.set('cursor',cursor);
+    const result=await ghlTryForAccount(account,'GET',`/conversations/messages/export?${qs.toString()}`);
+    if(!result.ok){
+      const detail=result.data?.message||result.data?.error||result.data?.raw||`status ${result.status}`;
+      throw new Error(String(detail).slice(0,240));
+    }
+    const messages=ghlArray(result.data,'messages').filter(m=>goallMetricInWindow(m,start,end));
+    rows.push(...messages.map(message=>{
+      const callStatus=message.meta?.call?.status||message.status||'';
+      const userId=message.userId||message.assignedTo||'';
+      return {
+        id:message.id,
+        source:'ghl_call_message_export',
+        contactId:message.contactId||'',
+        conversationId:message.conversationId||'',
+        assignedTo:userId,
+        assignedToName:userMap.get(String(userId))||'',
+        userId,
+        status:message.status||callStatus,
+        callStatus,
+        type:message.type,
+        messageType:message.messageType,
+        lastMessageType:message.messageType,
+        lastMessageDirection:message.direction,
+        lastOutboundMessageAction:message.source||'',
+        dateAdded:message.dateAdded,
+        dateUpdated:message.dateUpdated,
+        updatedAt:message.dateUpdated||message.dateAdded,
+        meta:message.meta||{},
+        __goall:{callMessage:true,callDurationSeconds:message.meta?.call?.duration??null,customDispositionExposed:false}
+      };
+    }));
+    cursor=result.data?.nextCursor||'';
+    if(!cursor) break;
+  }
+  return rows;
 }
 
 function goallValueCounts(rows,reader,limit=12){
@@ -8256,7 +8311,14 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
         contactLeadStatuses:goallValueCounts(allConversations,c=>c.__goall?.contactFields?.leadStatus)
       },
       accounts:accounts.map(a=>({slug:a.slug,label:a.label,calendarIds:(a.calendarIds||[]).length})),
-      counts:{conversations:allConversations.length,openOpportunities:allOpenOpps.length,wonOpportunities:allWonOpps.length,calendarEvents:allCalendarEvents.length},
+      counts:{
+        conversations:allConversations.length,
+        callMessages:rows.reduce((sum,row)=>sum+(row.sourceCounts?.callMessages||0),0),
+        conversationSearch:rows.reduce((sum,row)=>sum+(row.sourceCounts?.conversationSearch||0),0),
+        openOpportunities:allOpenOpps.length,
+        wonOpportunities:allWonOpps.length,
+        calendarEvents:allCalendarEvents.length
+      },
       errors:rows.flatMap(r=>r.errors.map(error=>({account:r.account.label,error})))
     }
   };

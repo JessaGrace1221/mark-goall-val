@@ -43,6 +43,10 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
   assert.match(server,/dispositionCompleteness/);
   assert.match(server,/function goallDispositionQuality/);
   assert.match(server,/byAttemptTag/);
+  assert.match(server,/function fetchGhlCallMessagesForAccount/);
+  assert.match(server,/\/conversations\/messages\/export\?\$\{qs\.toString\(\)\}/);
+  assert.match(server,/channel:'Call'/);
+  assert.match(server,/customDispositionExposed:false/);
 });
 
 test('GOALL call-center metrics uses GHL conversation and contact field mapping',()=>{
@@ -50,6 +54,7 @@ test('GOALL call-center metrics uses GHL conversation and contact field mapping'
   assert.match(server,/fetchGhlCustomFieldMapForAccount\(account\)/);
   assert.match(server,/fetchGhlUserMapForAccount\(account\)/);
   assert.match(server,/\/users\/search\?\$\{qs\.toString\(\)\}/);
+  assert.match(server,/callMessages\.length\?callMessages:conversations/);
   assert.match(server,/enrichGoallConversationForAccount\(account,conversation,fieldMap,userMap\)/);
   assert.match(server,/assigned_caller_first_name/);
   assert.match(server,/const assignedToName=userMap\.get/);
