@@ -5413,13 +5413,16 @@ function renderCallCenterDashboard(metrics){
   var revenue=metrics.revenueDashboard||{};
   var agents=(metrics.agentDashboard&&metrics.agentDashboard.agents)||[];
   var topAgent=agents[0]||{};
+  var quality=owner.dispositionQuality||{};
+  var qualityAgents=Object.entries(quality.byAgent||{}).sort(function(a,b){return b[1]-a[1];});
+  var topQuality=qualityAgents[0];
   var totalDials=owner.totalDials||0;
   var meetings=owner.meetingsScheduled||0;
   var outcomes=owner.outcomeCounts||{};
   setText('scCallCenterVal',totalDials+' Dials');
   setText('scCallCenterSub',agents.length+' agent'+(agents.length===1?'':'s')+' · '+meetings+' meeting'+(meetings===1?'':'s'));
   setText('ccAgentMini',topAgent.agent?topAgent.agent+' · '+(topAgent.actualDials||0):'No agent data');
-  setText('ccOwnerMini',(owner.needsDisposition||0)+' need disposition');
+  setText('ccOwnerMini',(owner.needsDisposition||0)+' need disposition'+(topQuality?' · '+topQuality[0]:''));
   setText('ccRevenueMini',(revenue.enrollments||0)+' enroll · '+fmtMoney(revenue.revenueTotal));
 }
 
@@ -8335,14 +8338,19 @@ function askCallCenter(){
     var revenue=d.revenueDashboard||{};
     var agents=(d.agentDashboard&&d.agentDashboard.agents)||[];
     var outcomes=owner.outcomeCounts||{};
+    var quality=owner.dispositionQuality||{};
+    var qualityAgents=Object.entries(quality.byAgent||{}).map(function(pair){return pair[0]+': '+pair[1];}).join(', ');
+    var qualityAttempts=Object.entries(quality.byAttemptTag||{}).map(function(pair){return pair[0]+': '+pair[1];}).join(', ');
     var lines=[
       'GOALL call center dashboard review:',
       'Agent dashboard: '+agents.length+' agent(s); top rows: '+agents.slice(0,5).map(function(a){return (a.agent||'Unassigned')+' '+(a.actualDials||0)+' dials '+(a.paceStatus||'');}).join(', '),
       'Owner dashboard: '+(owner.totalDials||0)+' dials, '+(owner.meetingsScheduled||0)+' meetings scheduled, '+(owner.openOpportunities||0)+' open opportunities.',
       'Outcomes: no answer '+(outcomes.no_answer||0)+', voicemail '+(outcomes.voicemail||0)+', not interested '+(outcomes.not_interested||0)+', info requested '+(outcomes.info_requested||0)+', unclassified '+(outcomes.unclassified||0)+'.',
       'Data quality: '+(owner.needsDisposition||0)+' calls still need a disposition; disposition completeness '+fmtPct(owner.dispositionCompleteness||0)+'.',
+      qualityAgents?'Needs disposition by agent: '+qualityAgents+'.':'',
+      qualityAttempts?'Needs disposition by attempt tag: '+qualityAttempts+'.':'',
       'Revenue dashboard: '+(revenue.enrollments||0)+' enrollments, '+fmtMoney(revenue.revenueTotal)+' revenue, '+fmtPct(revenue.meetingToEnrollmentRate||0)+' meeting-to-enrollment rate.'
-    ];
+    ].filter(Boolean);
     ask(lines.join('\n')+'\n\nTell me what this means operationally, where the dashboard data is strong, where the GHL mapping still needs cleanup, and what the next call-center management action should be.');
   }).catch(function(){
     ask('Review the GOALL call center dashboard: agent activity, owner outcomes, revenue conversion, and what we need to clean up in GHL mapping next.');

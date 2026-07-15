@@ -8180,13 +8180,31 @@ function goallValueCounts(rows,reader,limit=12){
   return Object.fromEntries(Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,limit));
 }
 
+function goallCallAttemptTags(value){
+  return (Array.isArray(value?.tags)?value.tags:[])
+    .map(tag=>String(tag||'').trim())
+    .filter(tag=>/^make\s+\d+(st|nd|rd|th)?\s+call$/i.test(tag));
+}
+
+function goallDispositionQuality(rows){
+  const needing=rows.filter(goallNeedsDisposition);
+  return {
+    needsDisposition:needing.length,
+    byAgent:goallValueCounts(needing,goallAgentName,12),
+    byAttemptTag:goallValueCounts(needing,row=>goallCallAttemptTags(row),12),
+    byMessageType:goallValueCounts(needing,row=>row.lastMessageType||row.messageType||row.type,12),
+    byAction:goallValueCounts(needing,row=>row.lastOutboundMessageAction||row.action,12)
+  };
+}
+
 function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsPerHour,daysWorked}){
   const allConversations=rows.flatMap(r=>r.conversations.map(c=>({...c,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const allOpenOpps=rows.flatMap(r=>r.openOpps.map(o=>({...o,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const allWonOpps=rows.flatMap(r=>r.wonOpps.map(o=>({...o,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const allCalendarEvents=rows.flatMap(r=>r.calendarEvents.map(e=>({...e,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const summary=goallSummaryFromRows(allConversations,{hoursPerDay,dialsPerHour,daysWorked});
-  const needsDisposition=allConversations.filter(goallNeedsDisposition).length;
+  const dispositionQuality=goallDispositionQuality(allConversations);
+  const needsDisposition=dispositionQuality.needsDisposition;
   const meetingEvents=allCalendarEvents.filter(ev=>/\b(meeting|appointment|consult|call|demo|enrollment)\b/i.test(goallTextBlob(ev)));
   const revenueValues=allWonOpps.map(goallMoney).filter(n=>n>0);
   const enrollments=allWonOpps.length;
@@ -8213,6 +8231,7 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
       outcomeRates:summary.rates,
       needsDisposition,
       dispositionCompleteness:summary.totalDials?1-(needsDisposition/summary.totalDials):1,
+      dispositionQuality,
       meetingsScheduled:summary.outcomeCounts.meeting_scheduled+meetingEvents.length,
       openOpportunities:allOpenOpps.length
     },

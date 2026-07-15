@@ -41,6 +41,8 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
   assert.match(server,/unsubscribe/);
   assert.match(server,/function goallNeedsDisposition/);
   assert.match(server,/dispositionCompleteness/);
+  assert.match(server,/function goallDispositionQuality/);
+  assert.match(server,/byAttemptTag/);
 });
 
 test('GOALL call-center metrics uses GHL conversation and contact field mapping',()=>{
@@ -66,4 +68,6 @@ test('dashboard loads GOALL call-center metrics into live context',()=>{
   assert.match(dashboard,/function askCallCenter\(\)/);
   assert.match(dashboard,/need disposition/);
   assert.match(dashboard,/disposition completeness/);
+  assert.match(dashboard,/Needs disposition by agent/);
+  assert.match(dashboard,/Needs disposition by attempt tag/);
 });
