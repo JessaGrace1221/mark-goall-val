@@ -8080,9 +8080,18 @@ function normalizeGoallCallOutcome(value){
   if(/\b(meeting scheduled|meeting booked|appointment booked|appointment scheduled|scheduled meeting|booked meeting)\b/.test(text)) return 'meeting_scheduled';
   if(/\b(info requested|information requested|requested info|send info|more information|asked for info)\b/.test(text)) return 'info_requested';
   if(/\b(voicemail|voice mail|left vm|left message|vm followup|voicemail left)\b/.test(text)) return 'voicemail';
-  if(/\b(not interested|no interest|declined|do not call|dnc)\b/.test(text)) return 'not_interested';
-  if(/\b(no answer|missed call|unanswered|did not answer|no pickup|no pick up|type_no_show|no show)\b/.test(text)) return 'no_answer';
+  if(/\b(not interested|no interest|declined|do not call|dnc|unsubscribe|unsubscribed|stop messaging|remove me)\b/.test(text)) return 'not_interested';
+  if(/\b(no answer|missed|missed call|unanswered|did not answer|didn't answer|no pickup|no pick up|type_no_show|no show)\b/.test(text)) return 'no_answer';
   return 'unclassified';
+}
+
+function goallNeedsDisposition(value){
+  if(normalizeGoallCallOutcome(value)!=='unclassified') return false;
+  const body=String(value?.lastMessageBody||value?.body||'').trim();
+  const type=String(value?.lastMessageType||value?.messageType||value?.type||'').toUpperCase();
+  const direction=String(value?.lastMessageDirection||value?.direction||'').toLowerCase();
+  const action=String(value?.lastOutboundMessageAction||value?.action||'').toLowerCase();
+  return type==='TYPE_CALL'&&direction==='outbound'&&(!action||action==='manual')&&!body;
 }
 
 function goallAgentName(value){
@@ -8177,6 +8186,7 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
   const allWonOpps=rows.flatMap(r=>r.wonOpps.map(o=>({...o,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const allCalendarEvents=rows.flatMap(r=>r.calendarEvents.map(e=>({...e,accountSlug:r.account.slug,accountLabel:r.account.label})));
   const summary=goallSummaryFromRows(allConversations,{hoursPerDay,dialsPerHour,daysWorked});
+  const needsDisposition=allConversations.filter(goallNeedsDisposition).length;
   const meetingEvents=allCalendarEvents.filter(ev=>/\b(meeting|appointment|consult|call|demo|enrollment)\b/i.test(goallTextBlob(ev)));
   const revenueValues=allWonOpps.map(goallMoney).filter(n=>n>0);
   const enrollments=allWonOpps.length;
@@ -8201,6 +8211,8 @@ function buildGoallCallCenterMetrics({start,end,accounts,rows,hoursPerDay,dialsP
       daysWorked,
       outcomeCounts:summary.outcomeCounts,
       outcomeRates:summary.rates,
+      needsDisposition,
+      dispositionCompleteness:summary.totalDials?1-(needsDisposition/summary.totalDials):1,
       meetingsScheduled:summary.outcomeCounts.meeting_scheduled+meetingEvents.length,
       openOpportunities:allOpenOpps.length
     },

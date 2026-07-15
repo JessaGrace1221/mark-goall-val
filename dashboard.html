@@ -5419,7 +5419,7 @@ function renderCallCenterDashboard(metrics){
   setText('scCallCenterVal',totalDials+' Dials');
   setText('scCallCenterSub',agents.length+' agent'+(agents.length===1?'':'s')+' · '+meetings+' meeting'+(meetings===1?'':'s'));
   setText('ccAgentMini',topAgent.agent?topAgent.agent+' · '+(topAgent.actualDials||0):'No agent data');
-  setText('ccOwnerMini',(outcomes.no_answer||0)+' no answer · '+(outcomes.voicemail||0)+' VM');
+  setText('ccOwnerMini',(owner.needsDisposition||0)+' need disposition');
   setText('ccRevenueMini',(revenue.enrollments||0)+' enroll · '+fmtMoney(revenue.revenueTotal));
 }
 
@@ -8340,6 +8340,7 @@ function askCallCenter(){
       'Agent dashboard: '+agents.length+' agent(s); top rows: '+agents.slice(0,5).map(function(a){return (a.agent||'Unassigned')+' '+(a.actualDials||0)+' dials '+(a.paceStatus||'');}).join(', '),
       'Owner dashboard: '+(owner.totalDials||0)+' dials, '+(owner.meetingsScheduled||0)+' meetings scheduled, '+(owner.openOpportunities||0)+' open opportunities.',
       'Outcomes: no answer '+(outcomes.no_answer||0)+', voicemail '+(outcomes.voicemail||0)+', not interested '+(outcomes.not_interested||0)+', info requested '+(outcomes.info_requested||0)+', unclassified '+(outcomes.unclassified||0)+'.',
+      'Data quality: '+(owner.needsDisposition||0)+' calls still need a disposition; disposition completeness '+fmtPct(owner.dispositionCompleteness||0)+'.',
       'Revenue dashboard: '+(revenue.enrollments||0)+' enrollments, '+fmtMoney(revenue.revenueTotal)+' revenue, '+fmtPct(revenue.meetingToEnrollmentRate||0)+' meeting-to-enrollment rate.'
     ];
     ask(lines.join('\n')+'\n\nTell me what this means operationally, where the dashboard data is strong, where the GHL mapping still needs cleanup, and what the next call-center management action should be.');
