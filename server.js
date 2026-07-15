@@ -7911,6 +7911,26 @@ async function fetchGhlCustomFieldMapForAccount(account){
   return map;
 }
 
+const ghlUserMapCache=new Map();
+async function fetchGhlUserMapForAccount(account){
+  const cacheKey=`${account.slug||account.locationId||'default'}:${account.locationId||''}`;
+  const cached=ghlUserMapCache.get(cacheKey);
+  if(cached&&Date.now()-cached.fetchedAt<5*60*1000) return cached.map;
+  const locData=await ghlForAccount(account,'GET',`/locations/${encodeURIComponent(account.locationId)}`);
+  const companyId=locData.location?.companyId||locData.companyId||'';
+  const map=new Map();
+  if(companyId){
+    const qs=new URLSearchParams({companyId,locationId:account.locationId,limit:'100'});
+    const usersData=await ghlForAccount(account,'GET',`/users/search?${qs.toString()}`);
+    ghlArray(usersData,'users','data').forEach(user=>{
+      const name=user.name||[user.firstName,user.lastName].filter(Boolean).join(' ');
+      if(user.id&&name) map.set(String(user.id),String(name).trim());
+    });
+  }
+  ghlUserMapCache.set(cacheKey,{fetchedAt:Date.now(),map});
+  return map;
+}
+
 function goallContactFieldValues(contact={},fieldMap=new Map()){
   const values={};
   const customFields=Array.isArray(contact.customFields)?contact.customFields:[];
@@ -7927,19 +7947,24 @@ function goallContactFieldValues(contact={},fieldMap=new Map()){
   return values;
 }
 
-async function enrichGoallConversationForAccount(account,conversation,fieldMap){
+async function enrichGoallConversationForAccount(account,conversation,fieldMap,userMap=new Map()){
   const contactId=conversation.contactId||conversation.contact?.id||'';
   if(!contactId) return conversation;
   try{
     const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(contactId)}`);
     const contact=data.contact||data;
     const contactFields=goallContactFieldValues(contact,fieldMap);
+    const assignedTo=contact.assignedTo||conversation.assignedTo||conversation.contact?.assignedTo||'';
+    const assignedToName=userMap.get(String(assignedTo))||'';
     return {
       ...conversation,
+      assignedTo,
+      assignedToName:conversation.assignedToName||assignedToName,
       contact:{
         ...(conversation.contact||{}),
         id:contactId,
-        assignedTo:contact.assignedTo||conversation.contact?.assignedTo||'',
+        assignedTo,
+        assignedToName,
         tags:Array.from(new Set([...(conversation.tags||[]),...(contact.tags||[])]))
       },
       tags:Array.from(new Set([...(conversation.tags||[]),...(contact.tags||[])])),
@@ -8102,8 +8127,11 @@ async function fetchGoallMetricRowsForAccount(account,start,end){
   let conversations=rawConversations;
   if(rawConversations.length){
     try{
-      const fieldMap=await fetchGhlCustomFieldMapForAccount(account);
-      conversations=await mapWithConcurrency(rawConversations,6,conversation=>enrichGoallConversationForAccount(account,conversation,fieldMap));
+      const [fieldMap,userMap]=await Promise.all([
+        fetchGhlCustomFieldMapForAccount(account),
+        fetchGhlUserMapForAccount(account)
+      ]);
+      conversations=await mapWithConcurrency(rawConversations,6,conversation=>enrichGoallConversationForAccount(account,conversation,fieldMap,userMap));
     }catch(e){
       errors.push(`conversation contact enrichment: ${e.message}`);
     }

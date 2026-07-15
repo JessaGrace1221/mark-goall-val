@@ -43,8 +43,11 @@ test('GOALL call-center outcome normalization matches transcript outcomes',()=>{
 test('GOALL call-center metrics uses GHL conversation and contact field mapping',()=>{
   assert.match(server,/lastMessageDate\|\|value\?\.lastManualMessageDate/);
   assert.match(server,/fetchGhlCustomFieldMapForAccount\(account\)/);
-  assert.match(server,/enrichGoallConversationForAccount\(account,conversation,fieldMap\)/);
+  assert.match(server,/fetchGhlUserMapForAccount\(account\)/);
+  assert.match(server,/\/users\/search\?\$\{qs\.toString\(\)\}/);
+  assert.match(server,/enrichGoallConversationForAccount\(account,conversation,fieldMap,userMap\)/);
   assert.match(server,/assigned_caller_first_name/);
+  assert.match(server,/const assignedToName=userMap\.get/);
   assert.match(server,/contactCallOutcomes/);
   assert.match(server,/String\(o\.status\|\|''\)\.toLowerCase\(\)==='won'/);
 });
