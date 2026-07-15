@@ -8228,7 +8228,7 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
       throw new Error(String(detail).slice(0,240));
     }
     const messages=ghlArray(result.data,'messages').filter(m=>goallMetricInWindow(m,start,end));
-    const mapped=messages.map(message=>{
+    rows.push(...messages.map(message=>{
       const callStatus=message.meta?.call?.status||message.status||'';
       const userId=message.userId||message.assignedTo||'';
       const assignedToName=userMap.get(String(userId))||(userId?'Unknown GHL user':'');
@@ -8253,31 +8253,32 @@ async function fetchGhlCallMessagesForAccount(account,start,end,userMap=new Map(
         meta:message.meta||{},
         __goall:{callMessage:true,callDurationSeconds:message.meta?.call?.duration??null,customDispositionExposed:false}
       };
-    });
-    const enriched=await mapWithConcurrency(mapped,6,async row=>{
-      if(!row.contactId) return row;
-      try{
-        const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(row.contactId)}`);
-        const contact=data.contact||data;
-        const contactFields=goallContactFieldValues(contact,fieldMap);
-        if(contactFields.callDispositionAgent) contactFields.callDispositionAgent=canonicalGoallCallerName(contactFields.callDispositionAgent,userMap);
-        if(contactFields.assignedCallerFirstName) contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
-        return {
-          ...row,
-          assignedToName:contactFields.callDispositionAgent||row.assignedToName,
-          tags:Array.from(new Set([...(row.tags||[]),...(contact.tags||[])])),
-          contact:{id:row.contactId,assignedTo:contact.assignedTo||'',assignedToName:userMap.get(String(contact.assignedTo||''))||'',tags:contact.tags||[]},
-          __goall:{...(row.__goall||{}),contactFields,customDispositionExposed:!!contactFields.callDisposition}
-        };
-      }catch(_){
-        return row;
-      }
-    });
-    rows.push(...enriched);
+    }));
     cursor=result.data?.nextCursor||'';
     if(!cursor) break;
   }
-  return rows;
+  const uniqueContactIds=Array.from(new Set(rows.map(row=>row.contactId).filter(Boolean)));
+  const contactMap=new Map();
+  await mapWithConcurrency(uniqueContactIds,3,async contactId=>{
+    try{
+      const data=await ghlForAccount(account,'GET',`/contacts/${encodeURIComponent(contactId)}`);
+      contactMap.set(contactId,data.contact||data);
+    }catch(_){}
+  });
+  return rows.map(row=>{
+    const contact=contactMap.get(row.contactId);
+    if(!contact) return row;
+    const contactFields=goallContactFieldValues(contact,fieldMap);
+    if(contactFields.callDispositionAgent) contactFields.callDispositionAgent=canonicalGoallCallerName(contactFields.callDispositionAgent,userMap);
+    if(contactFields.assignedCallerFirstName) contactFields.assignedCallerFirstName=canonicalGoallCallerName(contactFields.assignedCallerFirstName,userMap);
+    return {
+      ...row,
+      assignedToName:contactFields.callDispositionAgent||row.assignedToName,
+      tags:Array.from(new Set([...(row.tags||[]),...(contact.tags||[])])),
+      contact:{id:row.contactId,assignedTo:contact.assignedTo||'',assignedToName:userMap.get(String(contact.assignedTo||''))||'',tags:contact.tags||[]},
+      __goall:{...(row.__goall||{}),contactFields,customDispositionExposed:!!contactFields.callDisposition}
+    };
+  });
 }
 
 function goallValueCounts(rows,reader,limit=12){
